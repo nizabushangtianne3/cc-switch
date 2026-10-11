@@ -3,20 +3,6 @@
   "items": [
     {
       "type": "new",
-      "zh": "新增 Android arm64 和 armv7 正式安装包",
-      "zh-TW": "新增 Android arm64 和 armv7 正式安裝包",
-      "en": "Added signed Android arm64 and armv7 installers",
-      "ja": "Android の arm64 と armv7 の正式署名付きインストーラーを追加"
-    },
-    {
-      "type": "improve",
-      "zh": "手机端可复用聚合模式，本地统一路由转发",
-      "zh-TW": "手機端可複用聚合模式，本地統一路由轉發",
-      "en": "Android reuses Aggregation mode for local unified routing",
-      "ja": "Android でも集約モードを再利用し、ローカルで統一ルーティングできるように"
-    },
-    {
-      "type": "new",
       "zh": "用量统计新增 Key 维度，可组合供应商和模型查看",
       "zh-TW": "用量統計新增 Key 維度，可組合供應商和模型查看",
       "en": "Usage statistics now include a key dimension with provider and model filters",
@@ -24,10 +10,17 @@
     },
     {
       "type": "improve",
-      "zh": "发布流程验签 Android 包，并为桌面更新生成专用签名",
-      "zh-TW": "發布流程驗簽 Android 包，並為桌面更新生成專用簽名",
-      "en": "Releases verify Android APKs and sign desktop updater artifacts with a fork key",
-      "ja": "リリースで Android APK を検証し、デスクトップ更新成果物に fork 専用署名を付与"
+      "zh": "重新梳理供应商添加流程，更简洁、更自动化",
+      "zh-TW": "重新整理供應商新增流程，更簡潔、更自動化",
+      "en": "A reworked add-provider flow that is simpler and more automated",
+      "ja": "プロバイダー追加の流れを見直し、よりシンプルで自動化された手順に"
+    },
+    {
+      "type": "fix",
+      "zh": "Codex 新建线程和自动化不再在 DeepSeek、xAI 等上游报错",
+      "zh-TW": "Codex 新建執行緒和自動化不再在 DeepSeek、xAI 等上游報錯",
+      "en": "Codex new threads and automations no longer fail on DeepSeek, xAI and similar upstreams",
+      "ja": "Codex の新規スレッドと自動化が DeepSeek や xAI などでエラーにならないように"
     }
   ]
 }
