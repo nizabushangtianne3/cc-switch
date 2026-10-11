@@ -139,6 +139,25 @@ export const usageKeys = {
       filters?.providerName ?? null,
       filters?.model ?? null,
     ] as const,
+  apiKeyStats: (
+    preset: UsageRangeSelection["preset"],
+    customStartDate: number | undefined,
+    customEndDate: number | undefined,
+    filters?: UsageScopeFilters,
+    liveEndTime?: boolean,
+  ) =>
+    [
+      ...usageKeys.all,
+      "api-key-stats",
+      preset,
+      customStartDate ?? 0,
+      customEndDate ?? 0,
+      liveEndTime ?? false,
+      filters?.appType ?? null,
+      filters?.providerName ?? null,
+      filters?.model ?? null,
+      filters?.apiKeyId ?? null,
+    ] as const,
   logs: (key: RequestLogsKey, page: number, pageSize: number) =>
     [
       ...usageKeys.all,
@@ -171,6 +190,7 @@ function normalizeScopeFilters(filters?: UsageScopeFilters): UsageScopeFilters {
     appType: filters?.appType === "all" ? undefined : filters?.appType,
     providerName: filters?.providerName,
     model: filters?.model,
+    apiKeyId: filters?.apiKeyId,
   };
 }
 
@@ -338,6 +358,37 @@ export function useModelStats(
         effective.appType,
         effective.providerName,
         effective.model,
+      );
+    },
+    placeholderData: keepPreviousData,
+    refetchInterval: options?.refetchInterval ?? DEFAULT_REFETCH_INTERVAL_MS,
+    refetchIntervalInBackground: options?.refetchIntervalInBackground ?? false,
+  });
+}
+
+export function useApiKeyStats(
+  range: UsageRangeSelection,
+  filters?: UsageScopeFilters,
+  options?: UsageQueryOptions,
+) {
+  const effective = normalizeScopeFilters(filters);
+  return useQuery({
+    queryKey: usageKeys.apiKeyStats(
+      range.preset,
+      range.customStartDate,
+      range.customEndDate,
+      effective,
+      range.liveEndTime,
+    ),
+    queryFn: () => {
+      const { startDate, endDate } = resolveUsageRange(range);
+      return usageApi.getApiKeyStats(
+        startDate,
+        endDate,
+        effective.appType,
+        effective.providerName,
+        effective.model,
+        effective.apiKeyId,
       );
     },
     placeholderData: keepPreviousData,

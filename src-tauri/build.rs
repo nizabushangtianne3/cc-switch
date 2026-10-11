@@ -11,8 +11,12 @@ fn main() {
     // 1. Embeds the manifest into test binaries via /MANIFEST:EMBED
     // 2. Uses /MANIFEST:NO for the main binary to avoid duplicate resources
     //    (Tauri already handles manifest embedding for the app binary)
-    #[cfg(target_os = "windows")]
+    // Cargo build scripts are compiled for the host, so cfg attributes cannot
+    // distinguish host and target platforms during cross-compilation.
     {
+        if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
+            return;
+        }
         let manifest_path = std::path::PathBuf::from(
             std::env::var("CARGO_MANIFEST_DIR").expect("missing CARGO_MANIFEST_DIR"),
         )

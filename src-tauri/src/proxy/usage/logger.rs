@@ -14,6 +14,7 @@ use sha2::{Digest, Sha256};
 struct UsageSemantic {
     app_type: String,
     provider_id: String,
+    api_key_id: String,
     model: String,
     input_token_semantics: i64,
     input_tokens: u32,
@@ -28,6 +29,7 @@ impl UsageSemantic {
         Self {
             app_type: log.app_type.clone(),
             provider_id: log.provider_id.clone(),
+            api_key_id: log.api_key_id.clone().unwrap_or_default(),
             model: log.model.clone(),
             input_token_semantics,
             input_tokens: log.usage.input_tokens,
@@ -42,6 +44,7 @@ impl UsageSemantic {
         let encoded = serde_json::to_vec(&(
             &self.app_type,
             &self.provider_id,
+            &self.api_key_id,
             &self.model,
             self.input_token_semantics,
             self.input_tokens,
@@ -63,6 +66,9 @@ impl UsageSemantic {
 pub struct RequestLog {
     pub request_id: String,
     pub provider_id: String,
+    /// SHA-256 fingerprint of the selected key-pool entry. Empty means the row
+    /// has no key attribution, such as imported session logs.
+    pub api_key_id: Option<String>,
     pub app_type: String,
     pub model: String,
     pub request_model: String,
@@ -167,13 +173,13 @@ impl<'a> UsageLogger<'a> {
         };
         let sql = format!(
             "{insert_verb} INTO proxy_request_logs (
-                request_id, provider_id, app_type, model, request_model, pricing_model,
+                request_id, provider_id, api_key_id, app_type, model, request_model, pricing_model,
                 input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
                 input_token_semantics,
                 input_cost_usd, output_cost_usd, cache_read_cost_usd, cache_creation_cost_usd, total_cost_usd,
                 latency_ms, first_token_ms, status_code, error_message, session_id,
                 provider_type, is_streaming, cost_multiplier, created_at
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)"
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)"
         );
         let affected_rows = conn
             .execute(
@@ -181,6 +187,7 @@ impl<'a> UsageLogger<'a> {
                 rusqlite::params![
                     request_id,
                     log.provider_id,
+                    log.api_key_id.clone().unwrap_or_default(),
                     log.app_type,
                     log.model,
                     log.request_model,
@@ -226,7 +233,7 @@ impl<'a> UsageLogger<'a> {
         request_id: &str,
     ) -> Result<Option<(Option<String>, UsageSemantic)>, AppError> {
         conn.query_row(
-            "SELECT data_source, app_type, provider_id, model, input_token_semantics,
+            "SELECT data_source, app_type, provider_id, api_key_id, model, input_token_semantics,
                     input_tokens, output_tokens, cache_read_tokens,
                     cache_creation_tokens, status_code
              FROM proxy_request_logs WHERE request_id = ?1",
@@ -237,13 +244,14 @@ impl<'a> UsageLogger<'a> {
                     UsageSemantic {
                         app_type: row.get(1)?,
                         provider_id: row.get(2)?,
-                        model: row.get(3)?,
-                        input_token_semantics: row.get(4)?,
-                        input_tokens: row.get::<_, i64>(5)? as u32,
-                        output_tokens: row.get::<_, i64>(6)? as u32,
-                        cache_read_tokens: row.get::<_, i64>(7)? as u32,
-                        cache_creation_tokens: row.get::<_, i64>(8)? as u32,
-                        status_code: row.get::<_, i64>(9)? as u16,
+                        api_key_id: row.get(3)?,
+                        model: row.get(4)?,
+                        input_token_semantics: row.get(5)?,
+                        input_tokens: row.get::<_, i64>(6)? as u32,
+                        output_tokens: row.get::<_, i64>(7)? as u32,
+                        cache_read_tokens: row.get::<_, i64>(8)? as u32,
+                        cache_creation_tokens: row.get::<_, i64>(9)? as u32,
+                        status_code: row.get::<_, i64>(10)? as u16,
                     },
                 ))
             },
@@ -270,6 +278,7 @@ impl<'a> UsageLogger<'a> {
         let log = RequestLog {
             request_id,
             provider_id,
+            api_key_id: None,
             app_type,
             model,
             request_model,
@@ -311,6 +320,7 @@ impl<'a> UsageLogger<'a> {
         let log = RequestLog {
             request_id,
             provider_id,
+            api_key_id: None,
             app_type,
             model,
             request_model,
@@ -384,6 +394,7 @@ impl<'a> UsageLogger<'a> {
         first_token_ms: Option<u64>,
         status_code: u16,
         session_id: Option<String>,
+        api_key_id: Option<String>,
         provider_type: Option<String>,
         is_streaming: bool,
     ) -> Result<(), AppError> {
@@ -408,6 +419,7 @@ impl<'a> UsageLogger<'a> {
         let log = RequestLog {
             request_id,
             provider_id,
+            api_key_id,
             app_type,
             model,
             request_model,
@@ -436,6 +448,7 @@ mod tests {
         RequestLog {
             request_id: request_id.to_string(),
             provider_id: "provider-1".to_string(),
+            api_key_id: None,
             app_type: "codex".to_string(),
             model: "gpt-5.6".to_string(),
             request_model: "gpt-5.6".to_string(),
@@ -500,6 +513,7 @@ mod tests {
             None,
             200,
             None,
+            None,
             Some("claude".to_string()),
             false,
         )?;
@@ -515,6 +529,26 @@ mod tests {
             .unwrap();
         assert_eq!(count, 1);
         assert_eq!(request_model, "req-model");
+        Ok(())
+    }
+
+    #[test]
+    fn test_log_request_persists_api_key_id() -> Result<(), AppError> {
+        let db = Database::memory()?;
+        let logger = UsageLogger::new(&db);
+        let api_key_id = crate::proxy::key_pool::api_key_fingerprint("sk-test-key");
+        let mut log = request_log("key-attributed", 10);
+        log.api_key_id = Some(api_key_id.clone());
+
+        logger.log_request(&log)?;
+
+        let conn = crate::database::lock_conn!(db.conn);
+        let persisted: String = conn.query_row(
+            "SELECT api_key_id FROM proxy_request_logs WHERE request_id = 'key-attributed'",
+            [],
+            |row| row.get(0),
+        )?;
+        assert_eq!(persisted, api_key_id);
         Ok(())
     }
 
@@ -703,6 +737,7 @@ mod tests {
         let log = RequestLog {
             request_id: "grok-semantics".to_string(),
             provider_id: "grok-provider".to_string(),
+            api_key_id: None,
             app_type: "grokbuild".to_string(),
             model: "grok-4.5".to_string(),
             request_model: "grok-4.5".to_string(),

@@ -33,7 +33,7 @@ describe("workflow account guards", () => {
   it("actually loads the workflow files it guards", () => {
     const names = Object.keys(workflows).map((path) => path.split("/").pop());
     // 空 glob 会让下面两条断言变成空转，这里先钉住真的读到了工作流。
-    expect(names).toContain("release-unsigned.yml");
+    expect(names).toContain("release-fork.yml");
     expect(names).toContain("release.yml");
     expect(names.length).toBeGreaterThan(3);
   });

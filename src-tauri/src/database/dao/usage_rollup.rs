@@ -123,13 +123,13 @@ impl Database {
         // 明细行的这两列可能为 NULL（历史/手工数据），归一为 ''。
         let aggregation_sql = format!(
             "INSERT OR REPLACE INTO usage_daily_rollups
-                (date, app_type, provider_id, model, request_model, pricing_model,
+                (date, app_type, provider_id, api_key_id, model, request_model, pricing_model,
                  request_count, success_count,
                  input_tokens, output_tokens,
                  cache_read_tokens, cache_creation_tokens,
                  input_token_semantics, total_cost_usd, avg_latency_ms)
             SELECT
-                d, a, p, m, rm, pm,
+                d, a, p, k, m, rm, pm,
                 COALESCE(old.request_count, 0) + new_req,
                 COALESCE(old.success_count, 0) + new_succ,
                 COALESCE({fresh_old_input}, 0) + new_in,
@@ -146,7 +146,8 @@ impl Database {
             FROM (
                 SELECT
                     date(l.created_at, 'unixepoch', 'localtime') as d,
-                    l.app_type as a, l.provider_id as p, l.model as m,
+                    l.app_type as a, l.provider_id as p,
+                    COALESCE(l.api_key_id, '') as k, l.model as m,
                     COALESCE(l.request_model, '') as rm,
                     COALESCE(l.pricing_model, '') as pm,
                     COUNT(*) as new_req,
@@ -159,11 +160,12 @@ impl Database {
                     COALESCE(AVG(l.latency_ms), 0) as new_lat
                 FROM proxy_request_logs l
                 WHERE l.created_at < ?1 AND {effective_filter}
-                GROUP BY d, a, p, m, rm, pm
+                GROUP BY d, a, p, k, m, rm, pm
             ) agg
             LEFT JOIN usage_daily_rollups old
                 ON old.date = agg.d AND old.app_type = agg.a
-                AND old.provider_id = agg.p AND old.model = agg.m
+                AND old.provider_id = agg.p AND old.api_key_id = agg.k
+                AND old.model = agg.m
                 AND old.request_model = agg.rm AND old.pricing_model = agg.pm"
         );
 
@@ -474,6 +476,53 @@ mod tests {
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].0, "claude-sonnet-4-6");
         assert_eq!(rows[1].0, "kimi-k2");
+        Ok(())
+    }
+
+    #[test]
+    fn test_rollup_preserves_api_key_dimension() -> Result<(), AppError> {
+        let db = Database::memory()?;
+        let now = chrono::Utc::now().timestamp();
+        let old_ts = now - 40 * 86400;
+
+        {
+            let conn = crate::database::lock_conn!(db.conn);
+            for (id, api_key_id, tokens) in [
+                ("key-a", "fingerprint-a", 100),
+                ("key-b", "fingerprint-b", 200),
+            ] {
+                conn.execute(
+                    "INSERT INTO proxy_request_logs (
+                        request_id, provider_id, app_type, model, api_key_id,
+                        input_tokens, output_tokens, total_cost_usd,
+                        latency_ms, status_code, created_at
+                    ) VALUES (?1, 'p1', 'claude', 'claude-3', ?2, ?3, 50, '0.01', 100, 200, ?4)",
+                    rusqlite::params![id, api_key_id, tokens, old_ts],
+                )?;
+            }
+        }
+
+        let deleted = db.rollup_and_prune(30)?;
+        assert_eq!(deleted, 2);
+
+        let conn = crate::database::lock_conn!(db.conn);
+        let mut stmt = conn.prepare(
+            "SELECT api_key_id, request_count FROM usage_daily_rollups
+             WHERE model = 'claude-3' ORDER BY api_key_id",
+        )?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        assert_eq!(
+            rows,
+            vec![
+                ("fingerprint-a".to_string(), 1),
+                ("fingerprint-b".to_string(), 1),
+            ]
+        );
         Ok(())
     }
 

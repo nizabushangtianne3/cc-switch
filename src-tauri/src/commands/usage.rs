@@ -158,6 +158,30 @@ pub async fn get_model_stats(
     .await
 }
 
+/// 获取 API Key 统计
+#[tauri::command]
+pub async fn get_api_key_stats(
+    state: State<'_, AppState>,
+    start_date: Option<i64>,
+    end_date: Option<i64>,
+    app_type: Option<String>,
+    provider_name: Option<String>,
+    model: Option<String>,
+    api_key_id: Option<String>,
+) -> Result<Vec<ApiKeyStats>, AppError> {
+    run_db_query(&state, move |db| {
+        db.get_api_key_stats(
+            start_date,
+            end_date,
+            app_type.as_deref(),
+            provider_name.as_deref(),
+            model.as_deref(),
+            api_key_id.as_deref(),
+        )
+    })
+    .await
+}
+
 /// 获取请求日志列表
 #[tauri::command]
 pub async fn get_request_logs(

@@ -2378,7 +2378,19 @@
       "label": "明細",
       "providers": "プロバイダー",
       "models": "モデル",
+      "keys": "キー",
       "pricing": "料金"
+    },
+    "keyStats": "キー統計",
+    "keyColumn": "キー",
+    "keyFilter": {
+      "title": "キーで絞り込む",
+      "label": "キー",
+      "all": "すべてのキー"
+    },
+    "keyLabel": {
+      "current": "キー #{{index}} · {{mask}}",
+      "deleted": "削除済み · {{fingerprint}}"
     },
     "sortedByRequests": "リクエスト数順",
     "app": "アプリ",

@@ -1402,6 +1402,10 @@ mod tests {
         #[cfg(windows)]
         let linked = std::os::windows::fs::symlink_dir(&enc, sub.join("cycle"));
         if let Err(err) = linked {
+            if err.raw_os_error() == Some(1314) {
+                eprintln!("symlink privilege is unavailable on this Windows host; skipping");
+                return;
+            }
             // Windows 在 \\wsl.localhost 上建不了符号链接（Incorrect function），夹具无从构造
             assert!(crate::config::is_wsl_path(temp.path()), "symlink: {err}");
             eprintln!("cannot create symlinks on WSL share ({err}); skipping");

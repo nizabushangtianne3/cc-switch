@@ -1,0 +1,308 @@
+name: Release (fork, signed Android and updater)
+
+# 上游 Release 工作流依赖仓库级 Tauri/Apple 签名密钥。本 fork 未配置这些 secrets，
+# 用这个仅手动触发的工作流构建 Windows/Linux/macOS 安装包并发布 GitHub 正式 Release。
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag, for example v4.0.5
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-fork-${{ inputs.tag }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            os: windows-2022
+            bundles: msi
+            platform: desktop
+          - name: Linux x64
+            os: ubuntu-22.04
+            bundles: appimage,deb,rpm
+            platform: desktop
+          - name: macOS Universal
+            os: macos-14
+            bundles: dmg
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+            tauri_target: universal-apple-darwin
+            platform: desktop
+          - name: Android arm64/armv7
+            os: ubuntu-22.04
+            bundles: apk
+            rust_targets: aarch64-linux-android,armv7-linux-androideabi
+            tauri_target: aarch64 armv7
+            platform: android
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      - name: Read pinned Rust toolchain
+        id: rust-toolchain
+        shell: bash
+        run: |
+          channel=$(sed -nE 's/^channel *= *"([^"]+)".*/\1/p' rust-toolchain.toml)
+          test -n "$channel"
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ steps.rust-toolchain.outputs.channel }}
+          targets: ${{ matrix.rust_targets }}
+
+      - name: Setup Android SDK
+        if: matrix.platform == 'android'
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK components
+        if: matrix.platform == 'android'
+        run: |
+          set -euxo pipefail
+          sdkmanager --install "platforms;android-36" "build-tools;36.0.0" "ndk;27.0.12077973"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
+
+      - name: Install Linux system deps
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            pkg-config \
+            curl \
+            wget \
+            file \
+            patchelf \
+            libssl-dev \
+            rpm \
+            libgtk-3-dev \
+            librsvg2-dev \
+            libayatana-appindicator3-dev \
+            libwebkit2gtk-4.1-dev \
+            libsoup-3.0-dev
+          sudo apt-get install -y --no-install-recommends \
+            flatpak \
+            flatpak-builder \
+            elfutils \
+            xdg-utils
+
+      - name: Setup pnpm
+        env:
+          COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+        run: |
+          corepack enable
+          corepack install
+          node --version
+          pnpm --version
+
+      - name: Install frontend deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare Tauri updater signing key
+        if: matrix.platform == 'desktop'
+        uses: ./.github/actions/prepare-tauri-signing-key
+        with:
+          private-key: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+
+      - name: Build Tauri bundles with updater signatures
+        if: matrix.platform == 'desktop' && runner.os != 'macOS'
+        shell: bash
+        run: pnpm tauri build --bundles "${{ matrix.bundles }}"
+
+      - name: Build macOS universal app and DMG with updater signature
+        if: matrix.platform == 'desktop' && runner.os == 'macOS'
+        shell: bash
+        run: pnpm tauri build --target "${{ matrix.tauri_target }}" --bundles app,dmg
+
+      - name: Build signed Android APKs
+        if: matrix.platform == 'android'
+        env:
+          ANDROID_KEYSTORE_FILE: ${{ runner.temp }}/cc-switch-release.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        shell: bash
+        run: |
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          test -n "$ANDROID_KEYSTORE_PASSWORD"
+          test -n "$ANDROID_KEY_ALIAS"
+          test -n "$ANDROID_KEY_PASSWORD"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_KEYSTORE_FILE"
+          pnpm tauri android build --ci --apk --target ${{ matrix.tauri_target }} --split-per-abi
+
+      - name: Verify signed Android APKs
+        if: matrix.platform == 'android'
+        shell: bash
+        run: |
+          set -euxo pipefail
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          test -x "$APKSIGNER"
+          mapfile -d '' apks < <(
+            find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print0
+          )
+          test "${#apks[@]}" -eq 2
+          for apk in "${apks[@]}"; do
+            "$APKSIGNER" verify --verbose "${apk%$'\0'}"
+          done
+
+      - name: Collect Windows assets
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release-assets | Out-Null
+          Get-ChildItem src-tauri\target\release\bundle -Recurse -File |
+            Where-Object { $_.Extension -in '.msi', '.exe', '.sig' } |
+            Copy-Item -Destination release-assets
+
+      - name: Collect Linux assets
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          mkdir -p release-assets
+          find src-tauri/target/release/bundle -type f \
+            \( -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' -o -name '*.sig' \) \
+            -exec cp {} release-assets/ \;
+
+      - name: Collect macOS assets
+        if: matrix.platform == 'desktop' && runner.os == 'macOS'
+        shell: bash
+        run: |
+          mkdir -p release-assets
+          find src-tauri/target/universal-apple-darwin/release/bundle \
+            -type f \( -name '*.dmg' -o -name '*.tar.gz' -o -name '*.sig' \) \
+            -exec cp {} release-assets/ \;
+
+      - name: Collect Android assets
+        if: matrix.platform == 'android'
+        shell: bash
+        run: |
+          mkdir -p release-assets
+          find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' \
+            -exec cp {} release-assets/ \;
+
+      - name: Upload release assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-assets-${{ matrix.platform }}-${{ runner.os }}
+          path: release-assets/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    runs-on: ubuntu-22.04
+    needs: build
+    steps:
+      - name: Download release assets
+        uses: actions/download-artifact@v8
+        with:
+          pattern: release-assets-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: List assets
+        run: ls -la release-assets
+
+      - name: Generate fork updater manifest
+        env:
+          REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+
+          const repo = process.env.REPO;
+          const tag = process.env.TAG;
+          const version = tag.replace(/^v/, '');
+          const assets = fs.readdirSync('release-assets');
+          const baseUrl = `https://github.com/${repo}/releases/download/${tag}`;
+          const platforms = {};
+
+          function addPlatform(key, fileName) {
+            const signatureFile = `${fileName}.sig`;
+            if (!assets.includes(signatureFile)) {
+              throw new Error(`Missing updater signature: ${signatureFile}`);
+            }
+            const signature = fs.readFileSync(path.join('release-assets', signatureFile), 'utf8').trim();
+            platforms[key] = {
+              signature,
+              url: `${baseUrl}/${encodeURIComponent(fileName)}`,
+            };
+          }
+
+          const mac = assets.find((name) => name.endsWith('.tar.gz'));
+          const windows = assets.find((name) => name.endsWith('.msi'));
+          const appImage = assets.find((name) => name.endsWith('.AppImage'));
+          const deb = assets.find((name) => name.endsWith('.deb'));
+          const rpm = assets.find((name) => name.endsWith('.rpm'));
+          for (const [name, file] of [
+            ['macOS updater artifact', mac],
+            ['Windows MSI', windows],
+            ['Linux AppImage', appImage],
+            ['Linux deb', deb],
+            ['Linux rpm', rpm],
+          ]) {
+            if (!file) throw new Error(`Missing updater asset: ${name}`);
+          }
+
+          addPlatform('darwin-aarch64', mac);
+          addPlatform('darwin-x86_64', mac);
+          addPlatform('windows-x86_64', windows);
+          addPlatform('linux-x86_64', appImage);
+          addPlatform('linux-x86_64-deb', deb);
+          addPlatform('linux-x86_64-rpm', rpm);
+
+          const manifest = {
+            version,
+            notes: `CC Switch ${tag}`,
+            pub_date: new Date().toISOString(),
+            platforms,
+          };
+          fs.writeFileSync('release-assets/latest.json', `${JSON.stringify(manifest, null, 2)}\n`);
+          console.log(`Generated latest.json for ${version}`);
+          NODE
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ inputs.tag }}
+          name: CC Switch ${{ inputs.tag }}
+          prerelease: false
+          body: |
+            ## CC Switch ${{ inputs.tag }}
+
+            本 Release 由 fork 的 GitHub Actions 构建。由于仓库未配置代码签名和 Apple 公证 secrets，
+            这些安装包未签名；安装时系统可能显示安全提示。
+
+            ### Downloads
+            Windows MSI、Linux AppImage / deb / rpm 和 macOS Universal DMG 见下方 Assets。
+            macOS 包为未签名/ad-hoc 构建，首次打开可能需要右键选择“打开”。
+            Android arm64 / armv7 APK 使用 GitHub Secrets 中的正式签名密钥构建，发布前已通过 apksigner 验签。
+            桌面端 `latest.json` 与 `.sig` 使用 fork 专用 Tauri 更新签名密钥生成，应用内更新只访问本仓库。
+          files: release-assets/*

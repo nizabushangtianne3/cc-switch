@@ -280,6 +280,8 @@ impl CopilotRequestContext {
 pub struct ForwardResult {
     pub response: ProxyResponse,
     pub provider: Provider,
+    /// SHA-256 fingerprint of the key-pool entry used by the successful try.
+    pub api_key_id: Option<String>,
     pub claude_api_format: Option<String>,
     /// Wire format selected for this specific Codex Responses request.
     ///
@@ -670,6 +672,7 @@ impl RequestForwarder {
         provider: &Provider,
         app_type_str: &str,
         used_half_open_permit: bool,
+        api_key_id: Option<String>,
         (response, claude_api_format, outbound_model): (
             ProxyResponse,
             Option<String>,
@@ -680,6 +683,7 @@ impl RequestForwarder {
         let result = ForwardResult {
             response,
             provider: provider.clone(),
+            api_key_id,
             claude_api_format,
             codex_upstream_format,
             outbound_model,
@@ -937,6 +941,9 @@ impl RequestForwarder {
             for (key_index, api_key) in key_attempts.iter().enumerate() {
                 // 池内还有下一个 Key 时，本 Key 失败先换 Key，不结算这家供应商。
                 let has_next_key = key_attempts.len() > key_index + 1;
+                let selected_api_key_id = api_key
+                    .as_ref()
+                    .map(|key| crate::proxy::key_pool::api_key_fingerprint(key));
 
                 // 整流器重试标记：每个 Key 尝试独立持有，避免标记跨 Key 短路
                 // —— 本 Key 整流后被 5xx/timeout 击落时，下一个 Key 仍能走整流流程。
@@ -968,6 +975,7 @@ impl RequestForwarder {
                                 provider,
                                 app_type_str,
                                 used_half_open_permit,
+                                selected_api_key_id.clone(),
                                 forwarded,
                                 attempted_codex_upstream_format,
                             )
@@ -1033,6 +1041,7 @@ impl RequestForwarder {
                                                 provider,
                                                 app_type_str,
                                                 used_half_open_permit,
+                                                selected_api_key_id.clone(),
                                                 forwarded,
                                                 media_retry_codex_upstream_format,
                                             )
@@ -1122,6 +1131,7 @@ impl RequestForwarder {
                                                 provider,
                                                 app_type_str,
                                                 used_half_open_permit,
+                                                selected_api_key_id.clone(),
                                                 forwarded,
                                                 opaque_retry_codex_upstream_format,
                                             )
@@ -1231,6 +1241,7 @@ impl RequestForwarder {
                                                     provider,
                                                     app_type_str,
                                                     used_half_open_permit,
+                                                    selected_api_key_id.clone(),
                                                     forwarded,
                                                     signature_retry_codex_upstream_format,
                                                 )
@@ -1334,6 +1345,7 @@ impl RequestForwarder {
                                                 provider,
                                                 app_type_str,
                                                 used_half_open_permit,
+                                                selected_api_key_id.clone(),
                                                 forwarded,
                                                 budget_retry_codex_upstream_format,
                                             )
@@ -4874,6 +4886,7 @@ mod tests {
                     &provider,
                     "codex",
                     false,
+                    None,
                     (response, None, Some("resolved-model".to_string())),
                     format,
                 )

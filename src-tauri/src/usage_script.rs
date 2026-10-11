@@ -1,3 +1,4 @@
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 use rquickjs::{Context, Function, Runtime};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -6,6 +7,7 @@ use url::{Host, Url};
 use crate::error::AppError;
 
 /// 执行用量查询脚本
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub async fn execute_usage_script(
     script_code: &str,
     api_key: &str,
@@ -230,6 +232,24 @@ pub async fn execute_usage_script(
     validate_result(&result)?;
 
     Ok(result)
+}
+
+/// Android 暂不加载 QuickJS，避免把不支持的 FFI 依赖带入移动端构建。
+#[cfg(target_os = "android")]
+pub async fn execute_usage_script(
+    _script_code: &str,
+    _api_key: &str,
+    _base_url: &str,
+    _timeout_secs: u64,
+    _access_token: Option<&str>,
+    _user_id: Option<&str>,
+    _template_type: Option<&str>,
+) -> Result<Value, AppError> {
+    Err(AppError::localized(
+        "usage_script.unsupported_on_platform",
+        "当前平台暂不支持用量脚本",
+        "Usage scripts are not supported on this platform",
+    ))
 }
 
 /// 请求配置结构

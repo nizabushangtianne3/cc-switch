@@ -222,29 +222,38 @@ pub async fn pick_directory(
     app: AppHandle,
     #[allow(non_snake_case)] defaultPath: Option<String>,
 ) -> Result<Option<String>, String> {
-    let initial = defaultPath
-        .map(|p| p.trim().to_string())
-        .filter(|p| !p.is_empty());
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        let _ = (app, defaultPath);
+        return Ok(None);
+    }
 
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        let mut builder = app.dialog().file();
-        if let Some(path) = initial {
-            builder = builder.set_directory(path);
-        }
-        builder.blocking_pick_folder()
-    })
-    .await
-    .map_err(|e| format!("弹出目录选择器失败: {e}"))?;
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    {
+        let initial = defaultPath
+            .map(|p| p.trim().to_string())
+            .filter(|p| !p.is_empty());
 
-    match result {
-        Some(file_path) => {
-            let resolved = file_path
-                .simplified()
-                .into_path()
-                .map_err(|e| format!("解析选择的目录失败: {e}"))?;
-            Ok(Some(resolved.to_string_lossy().to_string()))
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            let mut builder = app.dialog().file();
+            if let Some(path) = initial {
+                builder = builder.set_directory(path);
+            }
+            builder.blocking_pick_folder()
+        })
+        .await
+        .map_err(|e| format!("弹出目录选择器失败: {e}"))?;
+
+        match result {
+            Some(file_path) => {
+                let resolved = file_path
+                    .simplified()
+                    .into_path()
+                    .map_err(|e| format!("解析选择的目录失败: {e}"))?;
+                Ok(Some(resolved.to_string_lossy().to_string()))
+            }
+            None => Ok(None),
         }
-        None => Ok(None),
     }
 }
 

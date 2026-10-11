@@ -2378,7 +2378,19 @@
       "label": "Details",
       "providers": "Providers",
       "models": "Models",
+      "keys": "Keys",
       "pricing": "Pricing"
+    },
+    "keyStats": "Key statistics",
+    "keyColumn": "Key",
+    "keyFilter": {
+      "title": "Filter by key",
+      "label": "Key",
+      "all": "All keys"
+    },
+    "keyLabel": {
+      "current": "Key #{{index}} · {{mask}}",
+      "deleted": "Deleted · {{fingerprint}}"
     },
     "sortedByRequests": "Sorted by requests",
     "app": "App",

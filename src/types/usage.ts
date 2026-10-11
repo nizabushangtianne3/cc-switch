@@ -131,6 +131,27 @@ export interface ProviderStats {
   estSpeedDurationMs?: number;
 }
 
+export interface ApiKeyStats {
+  providerId: string;
+  appType: string;
+  providerName: string;
+  /** SHA-256 fingerprint; never the raw API key. */
+  apiKeyId: string;
+  /** One-based position in the provider's current key pool. */
+  keyIndex?: number;
+  /** Masked key such as `sk-a…0001`; absent for deleted or unknown keys. */
+  keyMask?: string;
+  requestCount: number;
+  totalTokens: number;
+  totalCost: string;
+  successRate: number;
+  avgLatencyMs: number;
+  speedOutputTokens?: number;
+  speedGenerationMs?: number;
+  estSpeedOutputTokens?: number;
+  estSpeedDurationMs?: number;
+}
+
 export interface ModelStats {
   model: string;
   requestCount: number;
@@ -167,6 +188,7 @@ export interface UsageScopeFilters {
   appType?: string;
   providerName?: string;
   model?: string;
+  apiKeyId?: string;
 }
 
 export interface ProviderLimitStatus {

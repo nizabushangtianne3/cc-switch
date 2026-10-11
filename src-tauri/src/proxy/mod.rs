@@ -18,7 +18,7 @@ mod handlers;
 pub mod http_client;
 pub mod hyper_client;
 pub(crate) mod json_canonical;
-mod key_pool;
+pub(crate) mod key_pool;
 pub mod log_codes;
 pub mod media_sanitizer;
 pub mod model_mapper;

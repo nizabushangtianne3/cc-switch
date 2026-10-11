@@ -1,5 +1,9 @@
 mod app_config;
 mod app_store;
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+mod auto_launch;
+#[cfg(any(target_os = "android", target_os = "ios"))]
+#[path = "auto_launch_mobile.rs"]
 mod auto_launch;
 mod claude_desktop_config;
 mod claude_mcp;
@@ -19,6 +23,10 @@ mod grok_config;
 pub mod hermes_config;
 mod init_status;
 mod jsonc_document;
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+mod lightweight;
+#[cfg(any(target_os = "android", target_os = "ios"))]
+#[path = "lightweight_mobile.rs"]
 mod lightweight;
 #[cfg(target_os = "linux")]
 mod linux_fix;
@@ -40,9 +48,14 @@ mod session_manager;
 mod settings;
 mod store;
 
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+mod tray;
+#[cfg(any(target_os = "android", target_os = "ios"))]
+#[path = "tray_mobile.rs"]
 mod tray;
 mod usage_events;
 mod usage_script;
+mod window_ops;
 
 pub use app_config::{AppType, InstalledSkill, McpApps, McpServer, MultiAppConfig, SkillApps};
 pub use codex_config::{
@@ -79,10 +92,13 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::{fmt, sync::Arc};
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use tauri::RunEvent;
 use tauri::{Emitter, Manager};
-use tauri_plugin_window_state::{AppHandleExt, StateFlags};
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+use tauri_plugin_window_state::StateFlags;
+mod window_state;
 
 #[cfg(target_os = "windows")]
 fn set_windows_app_user_model_id(app: &tauri::AppHandle) {
@@ -297,9 +313,9 @@ fn handle_deeplink_url(
                     {
                         let _ = window.set_skip_taskbar(false);
                     }
-                    let _ = window.unminimize();
-                    let _ = window.show();
-                    let _ = window.set_focus();
+                    window_ops::unminimize(&window);
+                    window_ops::show(&window);
+                    window_ops::set_focus(&window);
                     #[cfg(target_os = "linux")]
                     {
                         linux_fix::nudge_main_window(window.clone(), "deeplink");
@@ -332,20 +348,8 @@ async fn update_tray_menu(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<bool, String> {
-    match tray::create_tray_menu(&app, state.inner()) {
-        Ok(new_menu) => {
-            if let Some(tray) = app.tray_by_id(tray::TRAY_ID) {
-                tray.set_menu(Some(new_menu))
-                    .map_err(|e| format!("更新托盘菜单失败: {e}"))?;
-                return Ok(true);
-            }
-            Ok(false)
-        }
-        Err(err) => {
-            log::error!("创建托盘菜单失败: {err}");
-            Ok(false)
-        }
-    }
+    tray::update_menu(&app, state.inner());
+    Ok(true)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -392,9 +396,9 @@ pub fn run() {
                 {
                     let _ = window.set_skip_taskbar(false);
                 }
-                let _ = window.unminimize();
-                let _ = window.show();
-                let _ = window.set_focus();
+                window_ops::unminimize(&window);
+                window_ops::show(&window);
+                window_ops::set_focus(&window);
                 #[cfg(target_os = "linux")]
                 {
                     linux_fix::nudge_main_window(window.clone(), "single-instance");
@@ -440,7 +444,7 @@ pub fn run() {
 
                 if settings.minimize_to_tray_on_close {
                     api.prevent_close();
-                    let _ = window.hide();
+                    window_ops::hide(&window);
                     log::info!("关闭请求已处理：最小化到托盘");
                     #[cfg(target_os = "windows")]
                     {
@@ -460,12 +464,15 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_store::Builder::new().build())
-        .plugin(
-            tauri_plugin_window_state::Builder::default()
-                .with_state_flags(window_state_flags())
-                .build(),
-        )
+        .plugin(tauri_plugin_store::Builder::new().build());
+
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    let builder = builder.plugin(
+        tauri_plugin_window_state::Builder::default()
+            .with_state_flags(window_state_flags())
+            .build(),
+    );
+    let builder = builder
         .setup(|app| {
             let _ = rustls::crypto::ring::default_provider().install_default();
 
@@ -603,8 +610,8 @@ pub fn run() {
                         {
                             let _ = window.set_skip_taskbar(false);
                         }
-                        let _ = window.show();
-                        let _ = window.set_focus();
+                        window_ops::show(&window);
+                        window_ops::set_focus(&window);
                     }
                     return Ok(());
                 }
@@ -1102,9 +1109,11 @@ pub fn run() {
             });
             log::info!("✓ Deep-link URL handler registered");
 
-            // 创建动态托盘菜单
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
             let menu = tray::create_tray_menu(app.handle(), &app_state)?;
 
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+            {
             // 构建托盘
             let mut tray_builder = TrayIconBuilder::with_id(tray::TRAY_ID)
                 .tooltip("CC Switch") // 鼠标悬停提示
@@ -1155,6 +1164,7 @@ pub fn run() {
             }
 
             let _tray = tray_builder.build(app)?;
+            }
             crate::services::webdav_auto_sync::start_worker(
                 app_state.db.clone(),
                 app.handle().clone(),
@@ -1367,7 +1377,7 @@ pub fn run() {
                 }
                 if settings.silent_startup {
                     // 静默启动模式：保持窗口隐藏
-                    let _ = window.hide();
+                    window_ops::hide_webview(&window);
                     #[cfg(target_os = "windows")]
                     let _ = window.set_skip_taskbar(true);
                     #[cfg(target_os = "macos")]
@@ -1376,7 +1386,7 @@ pub fn run() {
                 } else {
                     // 正常启动模式：显示窗口
                     #[cfg(not(target_os = "windows"))]
-                    let _ = window.show();
+                    window_ops::show(&window);
                     #[cfg(target_os = "windows")]
                     log::info!("正常启动模式：等待主页面加载完成后显示主窗口");
                     #[cfg(not(target_os = "windows"))]
@@ -1646,6 +1656,7 @@ pub fn run() {
             commands::get_usage_first_date,
             commands::get_provider_stats,
             commands::get_model_stats,
+            commands::get_api_key_stats,
             commands::get_request_logs,
             commands::get_request_detail,
             commands::get_model_pricing,
@@ -1856,9 +1867,9 @@ pub fn run() {
                         {
                             let _ = window.set_skip_taskbar(false);
                         }
-                        let _ = window.unminimize();
-                        let _ = window.show();
-                        let _ = window.set_focus();
+                        window_ops::unminimize(&window);
+                        window_ops::show(&window);
+                        window_ops::set_focus(&window);
                         tray::apply_tray_policy(app_handle, true);
                     } else if crate::lightweight::is_lightweight_mode() {
                         if let Err(e) = crate::lightweight::exit_lightweight_mode(app_handle) {
@@ -1925,9 +1936,9 @@ pub fn run() {
                                 {
                                     let _ = window.set_skip_taskbar(false);
                                 }
-                                let _ = window.unminimize();
-                                let _ = window.show();
-                                let _ = window.set_focus();
+                                window_ops::unminimize(&window);
+                                window_ops::show(&window);
+                                window_ops::set_focus(&window);
                             }
                         }
                     }
@@ -1993,11 +2004,14 @@ fn cleanup_before_system_exit(app_handle: &tauri::AppHandle) {
 /// 在进程结束前干净地把图标摘掉。其它平台 `set_visible(false)` 也是
 /// 正常的隐藏/移除语义，作为跨平台兜底也安全。
 pub(crate) fn remove_tray_icon_before_exit(app_handle: &tauri::AppHandle) {
-    if let Some(tray) = app_handle.tray_by_id(tray::TRAY_ID) {
-        if let Err(e) = tray.set_visible(false) {
-            log::warn!("退出时移除托盘图标失败: {e}");
-        } else {
-            log::info!("已显式从系统托盘移除图标");
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    {
+        if let Some(tray) = app_handle.tray_by_id(tray::TRAY_ID) {
+            if let Err(e) = tray.set_visible(false) {
+                log::warn!("退出时移除托盘图标失败: {e}");
+            } else {
+                log::info!("已显式从系统托盘移除图标");
+            }
         }
     }
 }
@@ -2248,23 +2262,12 @@ fn classify_exit_request(code: Option<i32>) -> ExitRequestAction {
     }
 }
 
-// ============================================================
-// 在应用主动退出前显式持久化窗口状态
-// ============================================================
-
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 fn window_state_flags() -> StateFlags {
     StateFlags::POSITION | StateFlags::SIZE | StateFlags::MAXIMIZED
 }
 
-/// 当前应用的退出路径会拦截 `ExitRequested` 并最终直接 `std::process::exit(0)`，
-/// 这里需要在真正结束进程前手动落盘，避免 window-state 插件的默认退出钩子被绕过。
-pub fn save_window_state_before_exit(app_handle: &tauri::AppHandle) {
-    if let Err(err) = app_handle.save_window_state(window_state_flags()) {
-        log::error!("退出前保存窗口状态失败: {err}");
-    } else {
-        log::info!("已在退出前保存窗口状态");
-    }
-}
+pub use window_state::save_window_state_before_exit;
 
 /// 主动释放 single-instance 锁。
 ///

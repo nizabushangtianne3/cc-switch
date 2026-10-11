@@ -1,4 +1,16 @@
 use crate::provider::{ApiKeyEntry, ApiKeyStrategy};
+use sha2::{Digest, Sha256};
+
+/// Stable, non-reversible identifier for an API key.
+///
+/// Usage rows store this fingerprint instead of the raw key so statistics can
+/// survive key edits and remain safe to inspect or sync.
+pub fn api_key_fingerprint(key: &str) -> String {
+    Sha256::digest(key.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
 
 /// 按调度策略给出「同一供应商内 Key 的尝试顺序」。
 ///
@@ -81,6 +93,18 @@ fn weighted_index(valid: &[&ApiKeyEntry], random_seed: u64) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn api_key_fingerprint_is_stable_sha256() {
+        assert_eq!(
+            api_key_fingerprint("sk-test-key"),
+            "0d62f396c1317066f55a96086517047c737087c61eb2bf016b72e6298927b15b"
+        );
+        assert_ne!(
+            api_key_fingerprint("sk-test-key"),
+            api_key_fingerprint("sk-other-key")
+        );
+    }
 
     #[test]
     fn missing_weight_defaults_to_one() {

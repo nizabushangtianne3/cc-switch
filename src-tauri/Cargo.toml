@@ -1,10 +1,10 @@
 [package]
 name = "cc-switch"
-version = "4.0.8"
+version = "4.0.9"
 description = "All-in-One Assistant for Claude Code, Codex & Gemini CLI"
 authors = ["Jason Young"]
 license = "MIT"
-repository = "https://github.com/farion1231/cc-switch"
+repository = "https://github.com/nizabushangtianne3/cc-switch"
 edition = "2021"
 rust-version = "1.85.0"
 
@@ -35,12 +35,10 @@ tauri-plugin-updater = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-store = "2"
 tauri-plugin-deep-link = "2"
-tauri-plugin-window-state = "2"
 dirs = "5.0"
 toml = "0.8"
 toml_edit = "0.22"
-reqwest = { version = "0.12", features = ["rustls-tls", "json", "stream", "socks"] }
-arboard = "3.6"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream", "socks", "http2"] }
 flate2 = "1"
 brotli = "7"
 zstd = "0.13"
@@ -53,17 +51,16 @@ tower = "0.4"
 tower-http = { version = "0.5", features = ["cors"] }
 hyper = { version = "1.0", features = ["full"] }
 hyper-util = { version = "0.1", features = ["tokio", "http1", "client-legacy"] }
-hyper-rustls = { version = "0.27", features = ["http1", "tls12", "ring", "webpki-tokio"] }
+hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "tls12", "ring", "webpki-tokio"] }
 http = "1"
 http-body = "1"
 http-body-util = "0.1"
 httparse = "1"
-tokio-rustls = "0.26"
-rustls = "0.23"
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 webpki-roots = "0.26"
 rustls-native-certs = "0.8"
 regex = "1.10"
-rquickjs = { version = "0.8", features = ["array-buffer", "classes"] }
 thiserror = "2.0"
 anyhow = "1.0"
 zip = "2.2"
@@ -85,6 +82,9 @@ sys-locale = "0.3"
 
 [target.'cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = "2"
+tauri-plugin-window-state = "2"
+arboard = "3.6"
+rquickjs = { version = "0.8", features = ["array-buffer", "classes"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = { version = "2.0.1", features = ["v2_16"] }

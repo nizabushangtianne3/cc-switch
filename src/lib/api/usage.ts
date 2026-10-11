@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   UsageSummary,
   UsageSummaryByApp,
+  ApiKeyStats,
   DailyStats,
   ProviderStats,
   ModelStats,
@@ -145,6 +146,24 @@ export const usageApi = {
       appType,
       providerName,
       model,
+    });
+  },
+
+  getApiKeyStats: async (
+    startDate?: number,
+    endDate?: number,
+    appType?: string,
+    providerName?: string,
+    model?: string,
+    apiKeyId?: string,
+  ): Promise<ApiKeyStats[]> => {
+    return invoke("get_api_key_stats", {
+      startDate,
+      endDate,
+      appType,
+      providerName,
+      model,
+      apiKeyId,
     });
   },
 

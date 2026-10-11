@@ -2378,7 +2378,19 @@
       "label": "明细",
       "providers": "供应商",
       "models": "模型",
+      "keys": "Key",
       "pricing": "定价"
+    },
+    "keyStats": "Key 统计",
+    "keyColumn": "Key",
+    "keyFilter": {
+      "title": "按 Key 筛选",
+      "label": "Key",
+      "all": "全部 Key"
+    },
+    "keyLabel": {
+      "current": "Key #{{index}} · {{mask}}",
+      "deleted": "已删除 · {{fingerprint}}"
     },
     "sortedByRequests": "按请求数排序",
     "app": "应用",

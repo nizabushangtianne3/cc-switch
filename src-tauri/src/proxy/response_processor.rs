@@ -526,6 +526,7 @@ pub(crate) fn create_usage_collector(
     let stream_parser = parser_config.stream_parser;
     let model_extractor = parser_config.model_extractor;
     let session_id = ctx.session_id.clone();
+    let api_key_id = ctx.api_key_id.clone();
 
     Some(SseUsageCollector::new(
         start_time,
@@ -540,6 +541,7 @@ pub(crate) fn create_usage_collector(
                 let session_id = session_id.clone();
                 let request_model = request_model.clone();
                 let outbound_model = fallback_model.clone();
+                let api_key_id = api_key_id.clone();
 
                 tokio::spawn(async move {
                     log_usage_internal(
@@ -555,6 +557,7 @@ pub(crate) fn create_usage_collector(
                         true, // is_streaming
                         status_code,
                         Some(session_id),
+                        api_key_id.as_deref(),
                     )
                     .await;
                 });
@@ -566,6 +569,7 @@ pub(crate) fn create_usage_collector(
                 let session_id = session_id.clone();
                 let request_model = request_model.clone();
                 let outbound_model = fallback_model.clone();
+                let api_key_id = api_key_id.clone();
 
                 tokio::spawn(async move {
                     log_usage_internal(
@@ -581,6 +585,7 @@ pub(crate) fn create_usage_collector(
                         true, // is_streaming
                         status_code,
                         Some(session_id),
+                        api_key_id.as_deref(),
                     )
                     .await;
                 });
@@ -619,6 +624,7 @@ fn spawn_log_usage(
         .unwrap_or_else(|| ctx.request_model.clone());
     let latency_ms = ctx.latency_ms();
     let session_id = ctx.session_id.clone();
+    let api_key_id = ctx.api_key_id.clone();
 
     tokio::spawn(async move {
         log_usage_internal(
@@ -634,6 +640,7 @@ fn spawn_log_usage(
             is_streaming,
             status_code,
             Some(session_id),
+            api_key_id.as_deref(),
         )
         .await;
     });
@@ -667,6 +674,7 @@ async fn log_usage_internal(
     is_streaming: bool,
     status_code: u16,
     session_id: Option<String>,
+    api_key_id: Option<&str>,
 ) {
     use super::usage::logger::UsageLogger;
 
@@ -691,6 +699,7 @@ async fn log_usage_internal(
     let model = model.to_string();
     let request_model = request_model.to_string();
     let outbound_model = outbound_model.to_string();
+    let api_key_id = api_key_id.map(str::to_string);
     let write = tokio::task::spawn_blocking(move || {
         let logger = UsageLogger::new(&db);
         // 计费模式读取的 DAO 是伪 async（无真实挂起点、直接取阻塞锁），
@@ -714,6 +723,7 @@ async fn log_usage_internal(
             first_token_ms,
             status_code,
             session_id,
+            api_key_id,
             None, // provider_type
             is_streaming,
         )
@@ -1278,6 +1288,7 @@ mod tests {
             false,
             200,
             None,
+            None,
         )
         .await;
 
@@ -1344,6 +1355,7 @@ mod tests {
             None,
             false,
             200,
+            None,
             None,
         )
         .await;
@@ -1438,6 +1450,7 @@ mod tests {
                 None,
                 false,
                 200,
+                None,
                 None,
             )
             .await;

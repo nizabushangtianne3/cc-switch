@@ -5,6 +5,29 @@ All notable changes to CC Switch will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.9] - 2026-10-11
+
+The fork release adds officially signed Android arm64 and armv7 packages, redirects in-app updates to the fork, and introduces key-level usage statistics.
+
+**Stats**: 1 commit | 96 files changed | +2761 insertions | -551 deletions
+
+### Added
+
+- **Signed Android Packages**: The release workflow builds `arm64-v8a` and `armeabi-v7a` APKs with the fork release keystore, verifies both with `apksigner`, and publishes them alongside the desktop packages.
+- **Key-Level Usage Statistics**: Proxy usage now records a SHA-256 fingerprint of the selected key-pool entry without storing the raw key. The Usage page adds a Keys tab and an app / provider / model / key combined filter covering requests, tokens, cost, success rate, latency, and speed.
+
+### Changed
+
+- **Fork-Only Update Tracking**: The Tauri updater endpoint, GitHub links, and release manifest now point to `nizabushangtianne3/cc-switch`. Desktop updater artifacts are signed with a fork-specific minisign key and published through the fork's `latest.json`.
+
+### Fixed
+
+- **Android Cross-Builds from Windows**: `build.rs` now checks `CARGO_CFG_TARGET_OS` instead of host cfg attributes, so compiling Android from Windows no longer passes MSVC manifest linker flags to Android Clang.
+
+### Upgrade notes
+
+- **Database schema version 21**: `proxy_request_logs` and `usage_daily_rollups` gain an `api_key_id` fingerprint dimension. Existing rows cannot reveal their historical key and are omitted from key statistics.
+
 ## [4.0.8] - 2026-10-10
 
 The fourth patch release on the 4.0 stable line. Codex aggregation works for users who only installed the Codex desktop app, and when the official model list is unavailable the notice now says why and clears itself once the list is back. Model fetching in the Claude, Codex, Grok Build and OpenCode forms sends the configured request headers, Settings > Data gains an "Open log" button, and dark-mode text is less glaring.

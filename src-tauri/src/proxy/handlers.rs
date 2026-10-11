@@ -355,6 +355,7 @@ async fn handle_messages_for_app(
 
     let connection_guard = result.connection_guard.take();
     ctx.outbound_model = result.outbound_model.take();
+    ctx.api_key_id = result.api_key_id.take();
     ctx.provider = result.provider;
     let api_format = result
         .claude_api_format
@@ -434,6 +435,7 @@ struct ClaudeUsageLog {
     outbound_model: String,
     app_type: &'static str,
     provider_id: String,
+    api_key_id: Option<String>,
     session_id: String,
     usage: TokenUsage,
     latency_ms: u64,
@@ -467,6 +469,7 @@ fn prepare_claude_usage_log(
             .unwrap_or_else(|| ctx.request_model.clone()),
         app_type: ctx.app_type_str,
         provider_id: ctx.provider.id.clone(),
+        api_key_id: ctx.api_key_id.clone(),
         session_id: ctx.session_id.clone(),
         usage,
         latency_ms: ctx.latency_ms(),
@@ -489,6 +492,7 @@ async fn write_claude_usage_log(state: &ProxyState, log: ClaudeUsageLog) {
         log.is_streaming,
         log.status_code,
         Some(log.session_id),
+        log.api_key_id.as_deref(),
     )
     .await;
 }
@@ -595,6 +599,7 @@ async fn handle_claude_transform(
             let status_code = status.as_u16();
             let start_time = ctx.start_time;
             let session_id = ctx.session_id.clone();
+            let api_key_id = ctx.api_key_id.clone();
             // 用 ctx 的 app_type：Claude Desktop 网关也走此转换路径，硬编码
             // "claude" 会把 claude-desktop 的行错记到 claude 名下
             let app_type_str = ctx.app_type_str;
@@ -615,6 +620,7 @@ async fn handle_claude_transform(
                         let session_id = session_id.clone();
                         let request_model = request_model.clone();
                         let outbound_model = fallback_model.clone();
+                        let api_key_id = api_key_id.clone();
 
                         tokio::spawn(async move {
                             log_usage(
@@ -630,6 +636,7 @@ async fn handle_claude_transform(
                                 true,
                                 status_code,
                                 Some(session_id),
+                                api_key_id.as_deref(),
                             )
                             .await;
                         });
@@ -953,6 +960,7 @@ pub async fn handle_chat_completions(
 
     let connection_guard = result.connection_guard.take();
     ctx.outbound_model = result.outbound_model.take();
+    ctx.api_key_id = result.api_key_id.take();
     ctx.provider = result.provider;
     let response = result.response;
 
@@ -1079,6 +1087,7 @@ async fn handle_responses_for_app(
     let connection_guard = result.connection_guard.take();
     let codex_upstream_format = result.codex_upstream_format;
     ctx.outbound_model = result.outbound_model.take();
+    ctx.api_key_id = result.api_key_id.take();
     ctx.provider = result.provider;
     let response = result.response;
 
@@ -1310,6 +1319,7 @@ async fn handle_codex_standalone_passthrough(
 
     let connection_guard = result.connection_guard.take();
     ctx.outbound_model = result.outbound_model.take();
+    ctx.api_key_id = result.api_key_id.take();
     ctx.provider = result.provider;
 
     process_response(
@@ -1408,6 +1418,7 @@ async fn handle_responses_compact_for_app(
     let connection_guard = result.connection_guard.take();
     let codex_upstream_format = result.codex_upstream_format;
     ctx.outbound_model = result.outbound_model.take();
+    ctx.api_key_id = result.api_key_id.take();
     ctx.provider = result.provider;
     let response = result.response;
 
@@ -1608,6 +1619,7 @@ async fn handle_codex_xai_native_responses_rewrite(
                     .clone()
                     .unwrap_or_else(|| ctx.request_model.clone());
                 let app_type_str = ctx.app_type_str;
+                let api_key_id = ctx.api_key_id.clone();
                 tokio::spawn({
                     let state = state.clone();
                     let provider_id = ctx.provider.id.clone();
@@ -1627,6 +1639,7 @@ async fn handle_codex_xai_native_responses_rewrite(
                             false,
                             status.as_u16(),
                             Some(session_id),
+                            api_key_id.as_deref(),
                         )
                         .await;
                     }
@@ -1696,6 +1709,7 @@ async fn handle_codex_chat_to_responses_transform(
             let app_type_str = ctx.app_type_str;
             let start_time = ctx.start_time;
             let session_id = ctx.session_id.clone();
+            let api_key_id = ctx.api_key_id.clone();
 
             Some(SseUsageCollector::new(
                 start_time,
@@ -1724,6 +1738,7 @@ async fn handle_codex_chat_to_responses_transform(
                     let request_model = request_model.clone();
                     let outbound_model = fallback_model.clone();
                     let session_id = session_id.clone();
+                    let api_key_id = api_key_id.clone();
 
                     tokio::spawn(async move {
                         log_usage(
@@ -1739,6 +1754,7 @@ async fn handle_codex_chat_to_responses_transform(
                             true,
                             status.as_u16(),
                             Some(session_id),
+                            api_key_id.as_deref(),
                         )
                         .await;
                     });
@@ -1841,6 +1857,7 @@ async fn handle_codex_chat_to_responses_transform(
             .clone()
             .unwrap_or_else(|| ctx.request_model.clone());
         let app_type_str = ctx.app_type_str;
+        let api_key_id = ctx.api_key_id.clone();
         tokio::spawn({
             let state = state.clone();
             let provider_id = ctx.provider.id.clone();
@@ -1860,6 +1877,7 @@ async fn handle_codex_chat_to_responses_transform(
                     false,
                     status.as_u16(),
                     Some(session_id),
+                    api_key_id.as_deref(),
                 )
                 .await;
             }
@@ -2006,6 +2024,7 @@ async fn handle_codex_anthropic_to_responses_transform(
             .clone()
             .unwrap_or_else(|| ctx.request_model.clone());
         let app_type_str = ctx.app_type_str;
+        let api_key_id = ctx.api_key_id.clone();
         tokio::spawn({
             let state = state.clone();
             let provider_id = ctx.provider.id.clone();
@@ -2025,6 +2044,7 @@ async fn handle_codex_anthropic_to_responses_transform(
                     false,
                     status.as_u16(),
                     Some(session_id),
+                    api_key_id.as_deref(),
                 )
                 .await;
             }
@@ -2075,6 +2095,7 @@ fn build_codex_anthropic_sse_response(
         let app_type_str = ctx.app_type_str;
         let start_time = ctx.start_time;
         let session_id = ctx.session_id.clone();
+        let api_key_id = ctx.api_key_id.clone();
 
         Some(SseUsageCollector::new(
             start_time,
@@ -2097,6 +2118,7 @@ fn build_codex_anthropic_sse_response(
                 let request_model = request_model.clone();
                 let outbound_model = fallback_model.clone();
                 let session_id = session_id.clone();
+                let api_key_id = api_key_id.clone();
 
                 tokio::spawn(async move {
                     log_usage(
@@ -2112,6 +2134,7 @@ fn build_codex_anthropic_sse_response(
                         true,
                         status.as_u16(),
                         Some(session_id),
+                        api_key_id.as_deref(),
                     )
                     .await;
                 });
@@ -2481,6 +2504,7 @@ pub async fn handle_gemini(
 
     let connection_guard = result.connection_guard.take();
     ctx.outbound_model = result.outbound_model.take();
+    ctx.api_key_id = result.api_key_id.take();
     ctx.provider = result.provider;
     let response = result.response;
 
@@ -3171,6 +3195,7 @@ async fn log_usage(
     is_streaming: bool,
     status_code: u16,
     session_id: Option<String>,
+    api_key_id: Option<&str>,
 ) {
     use super::usage::logger::UsageLogger;
 
@@ -3190,6 +3215,7 @@ async fn log_usage(
     let model = model.to_string();
     let request_model = request_model.to_string();
     let outbound_model = outbound_model.to_string();
+    let api_key_id = api_key_id.map(str::to_string);
     let write = tokio::task::spawn_blocking(move || {
         let logger = UsageLogger::new(&db);
         // 计费模式读取的 DAO 是伪 async（无真实挂起点、直接取阻塞锁），
@@ -3213,6 +3239,7 @@ async fn log_usage(
             first_token_ms,
             status_code,
             session_id,
+            api_key_id,
             None, // provider_type
             is_streaming,
         )

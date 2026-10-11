@@ -139,6 +139,30 @@ pub struct ProviderStats {
     pub est_speed_duration_ms: u64,
 }
 
+/// Key-pool usage statistics. `api_key_id` is a SHA-256 fingerprint; the index
+/// and mask are resolved from the provider's current key pool when possible.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiKeyStats {
+    pub provider_id: String,
+    pub app_type: String,
+    pub provider_name: String,
+    pub api_key_id: String,
+    /// One-based position in the provider's current key pool.
+    pub key_index: Option<u32>,
+    /// Masked key such as `sk-a…0001`; absent for deleted or unknown keys.
+    pub key_mask: Option<String>,
+    pub request_count: u64,
+    pub total_tokens: u64,
+    pub total_cost: String,
+    pub success_rate: f32,
+    pub avg_latency_ms: u64,
+    pub speed_output_tokens: u64,
+    pub speed_generation_ms: u64,
+    pub est_speed_output_tokens: u64,
+    pub est_speed_duration_ms: u64,
+}
+
 /// 计速度的门槛：输出少于这个数的请求（工具调用这类）不算速度，避免 0.1 秒回 15 个 token 算出离谱的数。
 pub const SPEED_MIN_OUTPUT_TOKENS: i64 = 100;
 
@@ -312,6 +336,34 @@ fn provider_name_coalesce(log_alias: &str, provider_alias: &str) -> String {
          WHEN '_pi_session' THEN 'Pi (Session)' \
          ELSE {log_alias}.provider_id END)"
     )
+}
+
+fn mask_api_key(key: &str) -> String {
+    let chars: Vec<char> = key.trim().chars().collect();
+    if chars.len() <= 8 {
+        return "••••".to_string();
+    }
+    let prefix: String = chars.iter().take(4).collect();
+    let suffix: String = chars.iter().skip(chars.len() - 4).collect();
+    format!("{prefix}…{suffix}")
+}
+
+fn resolve_api_key_label(
+    provider_meta: Option<&str>,
+    api_key_id: &str,
+) -> (Option<u32>, Option<String>) {
+    let Ok(meta) =
+        serde_json::from_str::<crate::provider::ProviderMeta>(provider_meta.unwrap_or_default())
+    else {
+        return (None, None);
+    };
+
+    meta.api_keys
+        .iter()
+        .enumerate()
+        .find(|(_, entry)| crate::proxy::key_pool::api_key_fingerprint(&entry.key) == api_key_id)
+        .map(|(index, entry)| (Some(index as u32 + 1), Some(mask_api_key(&entry.key))))
+        .unwrap_or((None, None))
 }
 
 pub(crate) const SESSION_PROXY_DEDUP_WINDOW_SECONDS: i64 = 10 * 60;
@@ -1789,6 +1841,177 @@ impl Database {
         }
 
         Ok(stats)
+    }
+
+    /// 获取 API Key 统计。当前供应商配置里的 Key 会解析出序号和掩码；
+    /// 已删除或历史未识别的 Key 只保留不可逆指纹。
+    pub fn get_api_key_stats(
+        &self,
+        start_date: Option<i64>,
+        end_date: Option<i64>,
+        app_type: Option<&str>,
+        provider_name: Option<&str>,
+        model: Option<&str>,
+        api_key_id: Option<&str>,
+    ) -> Result<Vec<ApiKeyStats>, AppError> {
+        let conn = lock_conn!(self.conn);
+
+        let mut detail_conditions = vec![
+            effective_usage_log_filter_for_range(&conn, "l", start_date, end_date)?,
+            "COALESCE(l.api_key_id, '') <> ''".to_string(),
+        ];
+        let mut detail_params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        if let Some(start) = start_date {
+            detail_conditions.push("l.created_at >= ?".to_string());
+            detail_params.push(Box::new(start));
+        }
+        if let Some(end) = end_date {
+            detail_conditions.push("l.created_at <= ?".to_string());
+            detail_params.push(Box::new(end));
+        }
+        if let Some(at) = app_type {
+            detail_conditions.push(format!("{} = ?", folded_app_type_sql("l.app_type")));
+            detail_params.push(Box::new(at.to_string()));
+        }
+        push_provider_model_filters(
+            &mut detail_conditions,
+            &mut detail_params,
+            "l",
+            "p",
+            provider_name,
+            model,
+        );
+        if let Some(key_id) = api_key_id {
+            detail_conditions.push("l.api_key_id = ?".to_string());
+            detail_params.push(Box::new(key_id.to_string()));
+        }
+        let detail_where = format!("WHERE {}", detail_conditions.join(" AND "));
+
+        let mut rollup_conditions = vec!["COALESCE(r.api_key_id, '') <> ''".to_string()];
+        let mut rollup_params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        let rollup_bounds = compute_rollup_date_bounds(start_date, end_date)?;
+        push_rollup_date_filters(
+            &mut rollup_conditions,
+            &mut rollup_params,
+            "r.date",
+            &rollup_bounds,
+        );
+        if let Some(at) = app_type {
+            rollup_conditions.push(format!("{} = ?", folded_app_type_sql("r.app_type")));
+            rollup_params.push(Box::new(at.to_string()));
+        }
+        push_provider_model_filters(
+            &mut rollup_conditions,
+            &mut rollup_params,
+            "r",
+            "p2",
+            provider_name,
+            model,
+        );
+        if let Some(key_id) = api_key_id {
+            rollup_conditions.push("r.api_key_id = ?".to_string());
+            rollup_params.push(Box::new(key_id.to_string()));
+        }
+        let rollup_where = format!("WHERE {}", rollup_conditions.join(" AND "));
+
+        let detail_pname = provider_name_coalesce("l", "p");
+        let rollup_pname = provider_name_coalesce("r", "p2");
+        let real_total_detail = real_total_tokens_sql("l");
+        let real_total_rollup = real_total_tokens_sql("r");
+        let speed_ok = speed_eligible_sql("l");
+        let est_ok = speed_estimate_eligible_sql("l");
+        let sql = format!(
+            "SELECT
+                provider_id, app_type, provider_name, provider_meta, api_key_id,
+                SUM(request_count) as request_count,
+                SUM(total_tokens) as total_tokens,
+                SUM(total_cost) as total_cost,
+                SUM(success_count) as success_count,
+                CASE WHEN SUM(request_count) > 0
+                    THEN SUM(latency_sum) / SUM(request_count)
+                    ELSE 0 END as avg_latency,
+                SUM(speed_output) as speed_output,
+                SUM(speed_gen_ms) as speed_gen_ms,
+                SUM(est_output) as est_output,
+                SUM(est_ms) as est_ms
+            FROM (
+                SELECT l.provider_id, l.app_type,
+                    {detail_pname} as provider_name,
+                    p.meta as provider_meta,
+                    l.api_key_id,
+                    COUNT(*) as request_count,
+                    COALESCE(SUM({real_total_detail}), 0) as total_tokens,
+                    COALESCE(SUM(CAST(l.total_cost_usd AS REAL)), 0) as total_cost,
+                    COALESCE(SUM(CASE WHEN l.status_code >= 200 AND l.status_code < 300 THEN 1 ELSE 0 END), 0) as success_count,
+                    COALESCE(SUM(l.latency_ms), 0) as latency_sum,
+                    COALESCE(SUM(CASE WHEN {speed_ok} THEN l.output_tokens ELSE 0 END), 0) as speed_output,
+                    COALESCE(SUM(CASE WHEN {speed_ok} THEN l.latency_ms - l.first_token_ms ELSE 0 END), 0) as speed_gen_ms,
+                    COALESCE(SUM(CASE WHEN {est_ok} THEN l.output_tokens ELSE 0 END), 0) as est_output,
+                    COALESCE(SUM(CASE WHEN {est_ok} THEN l.latency_ms ELSE 0 END), 0) as est_ms
+                FROM proxy_request_logs l
+                LEFT JOIN providers p ON l.provider_id = p.id AND l.app_type = p.app_type
+                {detail_where}
+                GROUP BY l.provider_id, l.app_type, l.api_key_id
+                UNION ALL
+                SELECT r.provider_id, r.app_type,
+                    {rollup_pname} as provider_name,
+                    p2.meta as provider_meta,
+                    r.api_key_id,
+                    COALESCE(SUM(r.request_count), 0),
+                    COALESCE(SUM({real_total_rollup}), 0),
+                    COALESCE(SUM(CAST(r.total_cost_usd AS REAL)), 0),
+                    COALESCE(SUM(r.success_count), 0),
+                    COALESCE(SUM(r.avg_latency_ms * r.request_count), 0),
+                    0, 0, 0, 0
+                FROM usage_daily_rollups r
+                LEFT JOIN providers p2 ON r.provider_id = p2.id AND r.app_type = p2.app_type
+                {rollup_where}
+                GROUP BY r.provider_id, r.app_type, r.api_key_id
+            )
+            GROUP BY provider_id, app_type, provider_name, provider_meta, api_key_id
+            ORDER BY total_cost DESC"
+        );
+
+        let mut stmt = conn.prepare(&sql)?;
+        let mut all_params: Vec<Box<dyn rusqlite::ToSql>> = detail_params;
+        all_params.extend(rollup_params);
+        let param_refs: Vec<&dyn rusqlite::ToSql> =
+            all_params.iter().map(|param| param.as_ref()).collect();
+        let rows = stmt
+            .query_map(param_refs.as_slice(), |row| {
+                let request_count: i64 = row.get(5)?;
+                let success_count: i64 = row.get(8)?;
+                let success_rate = if request_count > 0 {
+                    (success_count as f32 / request_count as f32) * 100.0
+                } else {
+                    0.0
+                };
+                let provider_meta: Option<String> = row.get(3)?;
+                let api_key_id: String = row.get(4)?;
+                let (key_index, key_mask) =
+                    resolve_api_key_label(provider_meta.as_deref(), &api_key_id);
+
+                Ok(ApiKeyStats {
+                    provider_id: row.get(0)?,
+                    app_type: row.get(1)?,
+                    provider_name: row.get(2)?,
+                    api_key_id,
+                    key_index,
+                    key_mask,
+                    request_count: request_count as u64,
+                    total_tokens: row.get::<_, i64>(6)? as u64,
+                    total_cost: format!("{:.6}", row.get::<_, f64>(7)?),
+                    success_rate,
+                    avg_latency_ms: row.get::<_, f64>(9)? as u64,
+                    speed_output_tokens: row.get::<_, i64>(10)?.max(0) as u64,
+                    speed_generation_ms: row.get::<_, i64>(11)?.max(0) as u64,
+                    est_speed_output_tokens: row.get::<_, i64>(12)?.max(0) as u64,
+                    est_speed_duration_ms: row.get::<_, i64>(13)?.max(0) as u64,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(rows)
     }
 
     /// 获取模型统计
@@ -4972,6 +5195,76 @@ mod tests {
         assert_eq!(stats[0].request_count, 1);
         assert_eq!(stats[0].total_tokens, 275);
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_api_key_stats_combines_provider_and_model_filters() -> Result<(), AppError> {
+        let db = Database::memory()?;
+        let key_a = crate::proxy::key_pool::api_key_fingerprint("sk-alpha-key-0001");
+        let key_b = crate::proxy::key_pool::api_key_fingerprint("sk-beta-key-0002");
+
+        {
+            let conn = lock_conn!(db.conn);
+            let meta = serde_json::json!({
+                "apiKeys": [
+                    {"key": "sk-alpha-key-0001"},
+                    {"key": "sk-beta-key-0002"}
+                ]
+            })
+            .to_string();
+            conn.execute(
+                "INSERT INTO providers (id, app_type, name, settings_config, meta)
+                 VALUES ('key-provider', 'claude', 'Key Provider', '{}', ?1)",
+                params![meta],
+            )?;
+            for (id, key_id, model, tokens) in [
+                ("key-a", key_a.as_str(), "gpt-5.5", 100),
+                ("key-b", key_b.as_str(), "claude-sonnet-4-6", 200),
+            ] {
+                conn.execute(
+                    "INSERT INTO proxy_request_logs (
+                        request_id, provider_id, app_type, model, api_key_id,
+                        input_tokens, output_tokens, total_cost_usd,
+                        latency_ms, status_code, created_at
+                    ) VALUES (?1, 'key-provider', 'claude', ?2, ?3, ?4, 50, '0.01', 100, 200, 1000)",
+                    params![id, model, key_id, tokens],
+                )?;
+            }
+        }
+
+        let stats = db.get_api_key_stats(
+            None,
+            None,
+            None,
+            Some("Key Provider"),
+            Some("gpt-5.5"),
+            None,
+        )?;
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].provider_id, "key-provider");
+        assert_eq!(stats[0].provider_name, "Key Provider");
+        assert_eq!(stats[0].api_key_id, key_a);
+        assert_eq!(stats[0].key_index, Some(1));
+        assert_eq!(stats[0].key_mask.as_deref(), Some("sk-a…0001"));
+        assert_eq!(stats[0].request_count, 1);
+        assert_eq!(stats[0].total_tokens, 150);
+
+        let all_models =
+            db.get_api_key_stats(None, None, None, Some("Key Provider"), None, None)?;
+        assert_eq!(all_models.len(), 2);
+        assert!(all_models.iter().any(|stat| stat.key_index == Some(2)));
+
+        let filtered = db.get_api_key_stats(
+            None,
+            None,
+            None,
+            Some("Key Provider"),
+            None,
+            Some(key_a.as_str()),
+        )?;
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].api_key_id, key_a);
         Ok(())
     }
 

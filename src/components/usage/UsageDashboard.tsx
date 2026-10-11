@@ -34,6 +34,7 @@ import {
 } from "@/types/usage";
 import {
   usageKeys,
+  useApiKeyStats,
   useModelStats,
   useProviderStats,
   useSessionUsageLastSync,
@@ -46,6 +47,7 @@ import { UsageHero } from "./UsageHero";
 import { UsageTrendChart } from "./UsageTrendChart";
 import { RequestLogTable } from "./RequestLogTable";
 import { ProviderStatsTable } from "./ProviderStatsTable";
+import { ApiKeyStatsTable, apiKeyStatsLabel } from "./ApiKeyStatsTable";
 import { ModelStatsTable } from "./ModelStatsTable";
 import { PricingConfigPanel } from "./PricingConfigPanel";
 import { RequestDetailPanel } from "./RequestDetailPanel";
@@ -69,8 +71,8 @@ const normalizeRefreshInterval = (value: number | undefined) =>
 
 const STATUS_CODE_OPTIONS = [200, 400, 401, 429, 500] as const;
 
-type UsageTab = "logs" | "providers" | "models" | "pricing";
-const TABS: UsageTab[] = ["logs", "providers", "models", "pricing"];
+type UsageTab = "logs" | "providers" | "models" | "keys" | "pricing";
+const TABS: UsageTab[] = ["logs", "providers", "models", "keys", "pricing"];
 
 /**
  * 手动「立即同步」的时间，离开页面再回来也还在。后端也会记下最近一次扫描（后台定时和
@@ -145,7 +147,7 @@ interface UsageDashboardProps {
 }
 
 /**
- * 用量统计全局页（v7 S6）：页头 → 筛选行 → 指标 → 趋势图 → 子页签（请求日志 / 供应商 / 模型 / 定价）。
+ * 用量统计全局页（v7 S6）：页头 → 筛选行 → 指标 → 趋势图 → 子页签（请求日志 / 供应商 / 模型 / Key / 定价）。
  */
 export function UsageDashboard({
   refreshIntervalMs: savedRefreshIntervalMs,
@@ -165,6 +167,7 @@ export function UsageDashboard({
     undefined,
   );
   const [model, setModel] = useState<string | undefined>(undefined);
+  const [apiKeyId, setApiKeyId] = useState<string | undefined>(undefined);
   const [statusCode, setStatusCode] = useState<number | undefined>(undefined);
   const [tab, setTab] = useState<UsageTab>("logs");
   // 没有用量时也能进定价页：新装的人往往先配好 models.dev 同步再开始用
@@ -198,6 +201,7 @@ export function UsageDashboard({
     setAppType(initialAppType);
     setProviderName(undefined);
     setModel(undefined);
+    setApiKeyId(undefined);
   }, [initialAppType]);
 
   // 切应用时清掉下游筛选，避免留下一个在新范围内查无数据的"幽灵"组合；
@@ -207,12 +211,14 @@ export function UsageDashboard({
     if (next !== appType) {
       setProviderName(undefined);
       setModel(undefined);
+      setApiKeyId(undefined);
     }
   };
   const changeProviderName = (next: string | undefined) => {
     setProviderName(next);
     if (next !== providerName) {
       setModel(undefined);
+      setApiKeyId(undefined);
     }
   };
 
@@ -322,6 +328,11 @@ export function UsageDashboard({
     { appType, providerName },
     refetch,
   );
+  const { data: apiKeyOptionsData } = useApiKeyStats(
+    range,
+    { appType, providerName, model },
+    refetch,
+  );
   // 有没有任何用量（不分时间范围）：一条都没有时显示空状态
   const { data: allTimeSummary } = useQuery({
     queryKey: [...usageKeys.all, "all-time-summary"],
@@ -358,6 +369,37 @@ export function UsageDashboard({
 
   const providerTotal = providerOptions.reduce((sum, p) => sum + p.count, 0);
   const modelTotal = modelOptions.reduce((sum, m) => sum + m.count, 0);
+  const apiKeyOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const stat of apiKeyOptionsData ?? []) {
+      counts.set(
+        stat.apiKeyId,
+        (counts.get(stat.apiKeyId) ?? 0) + stat.requestCount,
+      );
+    }
+    if (apiKeyId && !counts.has(apiKeyId)) counts.set(apiKeyId, 0);
+    return Array.from(counts, ([id, count]) => ({ id, count })).sort(
+      (a, b) => b.count - a.count,
+    );
+  }, [apiKeyId, apiKeyOptionsData]);
+
+  const apiKeyLabelById = useMemo(() => {
+    const labels = new Map<string, string>();
+    for (const stat of apiKeyOptionsData ?? []) {
+      labels.set(stat.apiKeyId, apiKeyStatsLabel(stat, t));
+    }
+    if (apiKeyId && !labels.has(apiKeyId)) {
+      labels.set(
+        apiKeyId,
+        t("usage.keyLabel.deleted", {
+          fingerprint: apiKeyId.slice(0, 8),
+        }),
+      );
+    }
+    return labels;
+  }, [apiKeyId, apiKeyOptionsData, t]);
+
+  const apiKeyTotal = apiKeyOptions.reduce((sum, key) => sum + key.count, 0);
 
   // ── 页头 ─────────────────────────────────────────────────────────────
   const syncedLabel = useMemo(() => {
@@ -589,7 +631,10 @@ export function UsageDashboard({
         >
           <DropdownMenuItem
             className={menuItemClass}
-            onSelect={() => setModel(undefined)}
+            onSelect={() => {
+              setModel(undefined);
+              setApiKeyId(undefined);
+            }}
           >
             <MenuCheck checked={model == null} />
             {t("usage.allModels")}
@@ -600,11 +645,62 @@ export function UsageDashboard({
               key={option.name}
               className={menuItemClass}
               title={option.name}
-              onSelect={() => setModel(option.name)}
+              onSelect={() => {
+                setModel(option.name);
+                setApiKeyId(undefined);
+              }}
             >
               <MenuCheck checked={model === option.name} />
               <span className="min-w-0 truncate font-mono text-caption">
                 {option.name}
+              </span>
+              <MenuMeta>{fmtInt(option.count, locale)}</MenuMeta>
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="neutral"
+            size="regular"
+            className="min-w-[72px] max-w-[176px] shrink gap-1 pe-2 ps-3"
+            title={
+              (apiKeyId && apiKeyLabelById.get(apiKeyId)) ||
+              t("usage.keyFilter.title")
+            }
+          >
+            <span className="min-w-0 truncate">
+              {(apiKeyId && apiKeyLabelById.get(apiKeyId)) ||
+                t("usage.keyFilter.label")}
+            </span>
+            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-fg-2" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="end"
+          aria-label={t("usage.keyFilter.title")}
+          className={cn(menuContentClass, "max-h-[360px] overflow-y-auto")}
+        >
+          <DropdownMenuItem
+            className={menuItemClass}
+            onSelect={() => setApiKeyId(undefined)}
+          >
+            <MenuCheck checked={apiKeyId == null} />
+            {t("usage.keyFilter.all")}
+            <MenuMeta>{fmtInt(apiKeyTotal, locale)}</MenuMeta>
+          </DropdownMenuItem>
+          {apiKeyOptions.map((option) => (
+            <DropdownMenuItem
+              key={option.id}
+              className={menuItemClass}
+              title={apiKeyLabelById.get(option.id)}
+              onSelect={() => setApiKeyId(option.id)}
+            >
+              <MenuCheck checked={apiKeyId === option.id} />
+              <span className="min-w-0 truncate text-caption">
+                {apiKeyLabelById.get(option.id)}
               </span>
               <MenuMeta>{fmtInt(option.count, locale)}</MenuMeta>
             </DropdownMenuItem>
@@ -624,6 +720,7 @@ export function UsageDashboard({
     logs: t("usage.requestLogs"),
     providers: t("usage.tabs.providers"),
     models: t("usage.tabs.models"),
+    keys: t("usage.tabs.keys"),
     pricing: t("usage.tabs.pricing"),
   };
   const statusLabel =
@@ -669,7 +766,7 @@ export function UsageDashboard({
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
-    ) : tab === "providers" || tab === "models" ? (
+    ) : tab === "providers" || tab === "models" || tab === "keys" ? (
       <span className="text-caption text-fg-3">
         {t("usage.sortedByRequests")}
       </span>
@@ -720,6 +817,16 @@ export function UsageDashboard({
             appType={appType}
             providerName={providerName}
             model={model}
+            refreshIntervalMs={refreshIntervalMs}
+          />
+        )}
+        {tab === "keys" && (
+          <ApiKeyStatsTable
+            range={range}
+            appType={appType}
+            providerName={providerName}
+            model={model}
+            apiKeyId={apiKeyId}
             refreshIntervalMs={refreshIntervalMs}
           />
         )}
