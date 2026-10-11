@@ -1,4 +1,4 @@
-name: Release (fork, signed Android and updater)
+name: Release (fork, updater signed)
 
 # 上游 Release 工作流依赖仓库级 Tauri/Apple 签名密钥。本 fork 未配置这些 secrets，
 # 用这个仅手动触发的工作流构建 Windows/Linux/macOS 安装包并发布 GitHub 正式 Release。
@@ -38,12 +38,6 @@ jobs:
             rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
             tauri_target: universal-apple-darwin
             platform: desktop
-          - name: Android arm64/armv7
-            os: ubuntu-22.04
-            bundles: apk
-            rust_targets: aarch64-linux-android,armv7-linux-androideabi
-            tauri_target: aarch64 armv7
-            platform: android
 
     runs-on: ${{ matrix.os }}
 
@@ -71,28 +65,6 @@ jobs:
         with:
           toolchain: ${{ steps.rust-toolchain.outputs.channel }}
           targets: ${{ matrix.rust_targets }}
-
-      - name: Setup JDK 17
-        if: matrix.platform == 'android'
-        uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Install Android SDK components
-        if: matrix.platform == 'android'
-        env:
-          ANDROID_HOME: /usr/local/lib/android/sdk
-        run: |
-          set -euxo pipefail
-          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          test -x "$SDKMANAGER"
-          set +o pipefail
-          yes | "$SDKMANAGER" --licenses >/dev/null
-          set -o pipefail
-          "$SDKMANAGER" --install "platforms;android-36" "build-tools;36.0.0" "ndk;27.0.12077973"
-          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
-          echo "NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
 
       - name: Install Linux system deps
         if: matrix.platform == 'desktop' && runner.os == 'Linux'
@@ -148,35 +120,6 @@ jobs:
         shell: bash
         run: pnpm tauri build --target "${{ matrix.tauri_target }}" --bundles app,dmg
 
-      - name: Build signed Android APKs
-        if: matrix.platform == 'android'
-        env:
-          ANDROID_KEYSTORE_FILE: ${{ runner.temp }}/cc-switch-release.jks
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-        shell: bash
-        run: |
-          test -n "$ANDROID_KEYSTORE_BASE64"
-          test -n "$ANDROID_KEYSTORE_PASSWORD"
-          test -n "$ANDROID_KEY_ALIAS"
-          test -n "$ANDROID_KEY_PASSWORD"
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_KEYSTORE_FILE"
-          pnpm tauri android build --ci --apk --target ${{ matrix.tauri_target }} --split-per-abi
-
-      - name: Verify signed Android APKs
-        if: matrix.platform == 'android'
-        shell: bash
-        run: |
-          set -euxo pipefail
-          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
-          test -x "$APKSIGNER"
-          APK_COUNT="$(find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' | wc -l)"
-          test "$APK_COUNT" -eq 2
-          find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' \
-            -exec "$APKSIGNER" verify --verbose {} \;
-
       - name: Collect Windows assets
         if: matrix.platform == 'desktop' && runner.os == 'Windows'
         shell: pwsh
@@ -202,14 +145,6 @@ jobs:
           mkdir -p release-assets
           find src-tauri/target/universal-apple-darwin/release/bundle \
             -type f \( -name '*.dmg' -o -name '*.tar.gz' -o -name '*.sig' \) \
-            -exec cp {} release-assets/ \;
-
-      - name: Collect Android assets
-        if: matrix.platform == 'android'
-        shell: bash
-        run: |
-          mkdir -p release-assets
-          find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' \
             -exec cp {} release-assets/ \;
 
       - name: Upload release assets
@@ -311,6 +246,5 @@ jobs:
             ### Downloads
             Windows MSI、Linux AppImage / deb / rpm 和 macOS Universal DMG 见下方 Assets。
             macOS 包为未签名/ad-hoc 构建，首次打开可能需要右键选择“打开”。
-            Android arm64 / armv7 APK 使用 GitHub Secrets 中的正式签名密钥构建，发布前已通过 apksigner 验签。
             桌面端 `latest.json` 与 `.sig` 使用 fork 专用 Tauri 更新签名密钥生成，应用内更新只访问本仓库。
           files: release-assets/*

@@ -2,9 +2,6 @@ mod app_config;
 mod app_store;
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 mod auto_launch;
-#[cfg(any(target_os = "android", target_os = "ios"))]
-#[path = "auto_launch_mobile.rs"]
-mod auto_launch;
 mod claude_desktop_config;
 mod claude_mcp;
 mod claude_plugin;
@@ -24,9 +21,6 @@ pub mod hermes_config;
 mod init_status;
 mod jsonc_document;
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
-mod lightweight;
-#[cfg(any(target_os = "android", target_os = "ios"))]
-#[path = "lightweight_mobile.rs"]
 mod lightweight;
 #[cfg(target_os = "linux")]
 mod linux_fix;
@@ -49,9 +43,6 @@ mod settings;
 mod store;
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
-mod tray;
-#[cfg(any(target_os = "android", target_os = "ios"))]
-#[path = "tray_mobile.rs"]
 mod tray;
 mod usage_events;
 mod usage_script;
@@ -352,7 +343,6 @@ async fn update_tray_menu(
     Ok(true)
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // 设置 panic hook，在应用崩溃时记录日志到 <app_config_dir>/crash.log（默认 ~/.cc-switch/crash.log）
     panic_hook::setup_panic_hook();

@@ -11,6 +11,3 @@ pub fn save_window_state_before_exit(app: &tauri::AppHandle) {
         log::info!("已在退出前保存窗口状态");
     }
 }
-
-#[cfg(any(target_os = "android", target_os = "ios"))]
-pub fn save_window_state_before_exit(_app: &tauri::AppHandle) {}

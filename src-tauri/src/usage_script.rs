@@ -234,24 +234,6 @@ pub async fn execute_usage_script(
     Ok(result)
 }
 
-/// Android 暂不加载 QuickJS，避免把不支持的 FFI 依赖带入移动端构建。
-#[cfg(target_os = "android")]
-pub async fn execute_usage_script(
-    _script_code: &str,
-    _api_key: &str,
-    _base_url: &str,
-    _timeout_secs: u64,
-    _access_token: Option<&str>,
-    _user_id: Option<&str>,
-    _template_type: Option<&str>,
-) -> Result<Value, AppError> {
-    Err(AppError::localized(
-        "usage_script.unsupported_on_platform",
-        "当前平台暂不支持用量脚本",
-        "Usage scripts are not supported on this platform",
-    ))
-}
-
 /// 请求配置结构
 #[derive(Debug, serde::Deserialize)]
 struct RequestConfig {

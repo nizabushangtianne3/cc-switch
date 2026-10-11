@@ -68,9 +68,6 @@ pub async fn copy_text_to_clipboard(text: String) -> Result<bool, String> {
         .await
         .map_err(|e| format!("剪贴板任务执行失败: {e}"))?
     }
-
-    #[cfg(target_os = "android")]
-    Ok(false)
 }
 
 /// 检查更新
@@ -5414,12 +5411,6 @@ read -r _
 /// theme: "dark" | "light" | "system"
 #[tauri::command]
 pub async fn set_window_theme(window: tauri::Window, theme: String) -> Result<(), String> {
-    #[cfg(any(target_os = "android", target_os = "ios"))]
-    {
-        let _ = (window, theme);
-        return Ok(());
-    }
-
     #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     {
         use tauri::Theme;

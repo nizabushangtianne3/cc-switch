@@ -222,12 +222,6 @@ pub async fn pick_directory(
     app: AppHandle,
     #[allow(non_snake_case)] defaultPath: Option<String>,
 ) -> Result<Option<String>, String> {
-    #[cfg(any(target_os = "android", target_os = "ios"))]
-    {
-        let _ = (app, defaultPath);
-        return Ok(None);
-    }
-
     #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     {
         let initial = defaultPath
