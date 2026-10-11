@@ -172,13 +172,10 @@ jobs:
           set -euxo pipefail
           APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
           test -x "$APKSIGNER"
-          mapfile -d '' apks < <(
-            find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print0
-          )
-          test "${#apks[@]}" -eq 2
-          for apk in "${apks[@]}"; do
-            "$APKSIGNER" verify --verbose "${apk%$'\0'}"
-          done
+          APK_COUNT="$(find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' | wc -l)"
+          test "$APK_COUNT" -eq 2
+          find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' \
+            -exec "$APKSIGNER" verify --verbose {} \;
 
       - name: Collect Windows assets
         if: runner.os == 'Windows'
