@@ -1,0 +1,26 @@
+{
+  "version": "4.0.10",
+  "items": [
+    {
+      "type": "new",
+      "zh": "用量统计新增 Key 维度，可组合供应商和模型查看",
+      "zh-TW": "用量統計新增 Key 維度，可組合供應商和模型查看",
+      "en": "Usage statistics now include a key dimension with provider and model filters",
+      "ja": "使用量統計にキー単位を追加し、プロバイダーとモデルで絞り込めるように"
+    },
+    {
+      "type": "improve",
+      "zh": "重新梳理供应商添加流程，更简洁、更自动化",
+      "zh-TW": "重新整理供應商新增流程，更簡潔、更自動化",
+      "en": "A reworked add-provider flow that is simpler and more automated",
+      "ja": "プロバイダー追加の流れを見直し、よりシンプルで自動化された手順に"
+    },
+    {
+      "type": "fix",
+      "zh": "Codex 新建线程和自动化不再在 DeepSeek、xAI 等上游报错",
+      "zh-TW": "Codex 新建執行緒和自動化不再在 DeepSeek、xAI 等上游報錯",
+      "en": "Codex new threads and automations no longer fail on DeepSeek, xAI and similar upstreams",
+      "ja": "Codex の新規スレッドと自動化が DeepSeek や xAI などでエラーにならないように"
+    }
+  ]
+}

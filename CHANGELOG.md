@@ -5,6 +5,18 @@ All notable changes to CC Switch will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.10] - 2026-10-12
+
+Fork release that syncs upstream v4.0.9 (35 commits: provider form rework, Codex tool-result fixes, local routing connection address, macOS local-network permission, i18n cold-start fix, and new presets) and preserves the fork's multi-key pool and key-level usage statistics. Android support remains removed. Desktop builds cover Windows MSI, Linux AppImage / deb / rpm, and macOS Universal DMG with fork-specific Tauri updater signing.
+
+### Added
+
+- **Key-level usage statistics (fork, carried from 4.0.9):** Proxy requests store a SHA-256 fingerprint of the selected key; the Usage page adds a Keys tab with app, provider, model and key filters. Database schema 21 adds `api_key_id` to detail logs and 30-day rollups.
+
+### Changed
+
+- **Synced upstream v4.0.9:** Provider forms follow the fill order with a model picker dialog and sub-agent fields; Codex tool results without matching calls no longer fail on strict Chat or xAI native Responses upstreams; local routing gains a "Connection address" for WSL2 and similar clients; macOS requests Local Network permission; UI language applies at cold start; new presets include TokenFlux, SoruxGPT, IKunCode, RunToken, BotCF, YYLX and OpenModel.
+
 ## [4.0.9] - 2026-10-11
 
 The fifth patch release on the 4.0 stable line. Codex threads that carry tool results with no matching call, such as the create_thread receipt the Codex desktop app injects into new threads, no longer fail on strict Chat upstreams (HTTP 400) or xAI native Responses (HTTP 422). Clients that cannot reach the host's loopback, such as Claude Desktop sessions in WSL2, can be given a separate connection address for local routing. Fetched models are now picked in a dialog that can also remove them and shows each model's parameters, Codex can set a default sub-agent model and reasoning effort, and the provider forms move field explanations into help tips. Other fixes cover OpenAI-format Claude upstreams receiving `x-api-key`, aggregation compatibility switches, the UI language on cold start, macOS local network access and flicker when opening the provider editor.
