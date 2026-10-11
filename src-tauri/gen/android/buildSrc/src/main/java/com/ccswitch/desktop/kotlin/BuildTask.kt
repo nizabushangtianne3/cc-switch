@@ -48,10 +48,18 @@ open class BuildTask : DefaultTask() {
         val rootDirRel = rootDirRel ?: throw GradleException("rootDirRel cannot be null")
         val target = target ?: throw GradleException("target cannot be null")
         val release = release ?: throw GradleException("release cannot be null")
-        val args = listOf("tauri", "android", "android-studio-script");
+        val workingDirectory = File(project.projectDir, rootDirRel)
+        val tauriCli = File(
+            workingDirectory,
+            "../node_modules/@tauri-apps/cli/tauri.js"
+        ).canonicalFile
+        if (!tauriCli.isFile) {
+            throw GradleException("Tauri CLI entry not found: $tauriCli")
+        }
+        val args = listOf(tauriCli.absolutePath, "android", "android-studio-script");
 
         project.exec {
-            workingDir(File(project.projectDir, rootDirRel))
+            workingDir(workingDirectory)
             executable(executable)
             args(args)
             if (project.logger.isEnabled(LogLevel.DEBUG)) {
