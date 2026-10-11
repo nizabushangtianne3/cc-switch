@@ -79,15 +79,19 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Android SDK
-        if: matrix.platform == 'android'
-        uses: android-actions/setup-android@v3
-
       - name: Install Android SDK components
         if: matrix.platform == 'android'
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
         run: |
           set -euxo pipefail
-          sdkmanager --install "platforms;android-36" "build-tools;36.0.0" "ndk;27.0.12077973"
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$SDKMANAGER"
+          set +o pipefail
+          yes | "$SDKMANAGER" --licenses >/dev/null
+          set -o pipefail
+          "$SDKMANAGER" --install "platforms;android-36" "build-tools;36.0.0" "ndk;27.0.12077973"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
           echo "NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
 
       - name: Install Linux system deps
