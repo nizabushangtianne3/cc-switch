@@ -95,7 +95,7 @@ jobs:
           echo "NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
 
       - name: Install Linux system deps
-        if: runner.os == 'Linux'
+        if: matrix.platform == 'desktop' && runner.os == 'Linux'
         shell: bash
         run: |
           set -euxo pipefail
@@ -178,7 +178,7 @@ jobs:
             -exec "$APKSIGNER" verify --verbose {} \;
 
       - name: Collect Windows assets
-        if: runner.os == 'Windows'
+        if: matrix.platform == 'desktop' && runner.os == 'Windows'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force release-assets | Out-Null
@@ -187,7 +187,7 @@ jobs:
             Copy-Item -Destination release-assets
 
       - name: Collect Linux assets
-        if: runner.os == 'Linux'
+        if: matrix.platform == 'desktop' && runner.os == 'Linux'
         shell: bash
         run: |
           mkdir -p release-assets
