@@ -3788,8 +3788,9 @@ impl Database {
         log::warn!(
             "proxy_request_logs 列结构与当前版本不一致，重建表并丢弃历史请求日志"
         );
-        conn.execute("DROP TABLE proxy_request_logs", [])
-            .map_err(|e| AppError::Database(format!("重建 proxy_request_logs 前删除旧表失败: {e}")))?;
+        conn.execute("DROP TABLE proxy_request_logs", []).map_err(|e| {
+            AppError::Database(format!("重建 proxy_request_logs 前删除旧表失败: {e}"))
+        })?;
         Ok(())
     }
 
