@@ -1979,11 +1979,11 @@ function ProviderFormFull({
           ? codexCopilotApiFormat
           : undefined,
       apiKeys:
-        apiKeyEntries.filter((entry) => entry.key.trim() !== "").length > 1
+        apiKeyEntries.filter((entry) => entry.key.trim() !== "").length > 0
           ? apiKeyEntries.filter((entry) => entry.key.trim() !== "")
           : undefined,
       apiKeyStrategy:
-        apiKeyEntries.filter((entry) => entry.key.trim() !== "").length > 1
+        apiKeyEntries.filter((entry) => entry.key.trim() !== "").length > 0
           ? apiKeyStrategy
           : undefined,
       apiKeyField:
