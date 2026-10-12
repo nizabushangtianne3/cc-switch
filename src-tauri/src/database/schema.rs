@@ -217,11 +217,7 @@ impl Database {
 
         conn.execute("CREATE INDEX IF NOT EXISTS idx_request_logs_provider ON proxy_request_logs(provider_id, app_type)", [])
             .map_err(|e| AppError::Database(e.to_string()))?;
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_request_logs_api_key ON proxy_request_logs(api_key_id)",
-            [],
-        )
-        .map_err(|e| AppError::Database(e.to_string()))?;
+        Self::create_request_logs_api_key_index_if_supported(conn)?;
         conn.execute("CREATE INDEX IF NOT EXISTS idx_request_logs_created_at ON proxy_request_logs(created_at)", [])
             .map_err(|e| AppError::Database(e.to_string()))?;
         conn.execute(
@@ -1443,6 +1439,7 @@ impl Database {
                 "api_key_id",
                 "TEXT NOT NULL DEFAULT ''",
             )?;
+            Self::create_request_logs_api_key_index_if_supported(conn)?;
         }
 
         if !Self::table_exists(conn, "usage_daily_rollups")? {
@@ -3729,6 +3726,24 @@ impl Database {
         Ok(())
     }
 
+    fn create_request_logs_api_key_index_if_supported(
+        conn: &Connection,
+    ) -> Result<(), AppError> {
+        if !Self::table_exists(conn, "proxy_request_logs")?
+            || !Self::has_column(conn, "proxy_request_logs", "api_key_id")?
+        {
+            return Ok(());
+        }
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_request_logs_api_key
+             ON proxy_request_logs(api_key_id)",
+            [],
+        )
+        .map_err(|e| AppError::Database(format!("创建 API Key 用量索引失败: {e}")))?;
+        Ok(())
+    }
+
     fn validate_identifier(s: &str, kind: &str) -> Result<(), AppError> {
         if s.is_empty() {
             return Err(AppError::Database(format!("{kind} 不能为空")));
@@ -3816,6 +3831,38 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn create_tables_tolerates_legacy_request_logs_without_api_key_column() -> Result<(), AppError> {
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch(
+            "CREATE TABLE proxy_request_logs (
+                request_id TEXT PRIMARY KEY,
+                provider_id TEXT NOT NULL,
+                app_type TEXT NOT NULL,
+                model TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            );",
+        )?;
+        Database::set_user_version(&conn, 20)?;
+
+        Database::create_tables_on_conn(&conn)?;
+        Database::apply_schema_migrations_on_conn(&conn)?;
+
+        assert_eq!(Database::get_user_version(&conn)?, SCHEMA_VERSION);
+        assert!(Database::has_column(&conn, "proxy_request_logs", "api_key_id")?);
+        let index_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master
+             WHERE type = 'index'
+               AND name = 'idx_request_logs_api_key'
+               AND tbl_name = 'proxy_request_logs'",
+            [],
+            |row| row.get(0),
+        )?;
+        assert_eq!(index_count, 1);
+
+        Ok(())
+    }
 
     #[test]
     fn migrate_v12_to_v13_adds_input_token_semantics_columns() -> Result<(), AppError> {
