@@ -3841,6 +3841,8 @@ mod tests {
                 provider_id TEXT NOT NULL,
                 app_type TEXT NOT NULL,
                 model TEXT NOT NULL,
+                session_id TEXT,
+                status_code INTEGER NOT NULL,
                 created_at INTEGER NOT NULL
             );",
         )?;
