@@ -5,6 +5,12 @@ All notable changes to CC Switch will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.11] - 2026-10-12
+
+### Fixed
+
+- **Single-key provider metadata:** Provider forms now persist one API key into `meta.apiKeys` with its selected strategy, so newly added single-key providers can participate in key-level usage attribution without deriving credentials from live configuration.
+
 ## [4.0.10] - 2026-10-12
 
 Fork release that syncs upstream v4.0.9 (35 commits: provider form rework, Codex tool-result fixes, local routing connection address, macOS local-network permission, i18n cold-start fix, and new presets) and preserves the fork's multi-key pool and key-level usage statistics. Android support remains removed. Desktop builds cover Windows MSI, Linux AppImage / deb / rpm, and macOS Universal DMG with fork-specific Tauri updater signing.

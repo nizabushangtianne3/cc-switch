@@ -1,0 +1,12 @@
+{
+  "version": "4.0.11",
+  "items": [
+    {
+      "type": "fix",
+      "zh": "单 Key 供应商保存时写入 Key 元数据",
+      "zh-TW": "單 Key 供應商儲存時寫入 Key 元資料",
+      "en": "Single-key providers now save their key metadata",
+      "ja": "シングルキーのプロバイダーがキーメタデータを保存するようになりました"
+    }
+  ]
+}

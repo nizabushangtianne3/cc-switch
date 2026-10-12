@@ -3,6 +3,7 @@
 exports[`ProviderForm 预设新增行金标 > claude > AWS Bedrock (API Key) 1`] = `
 {
   "apiKeyLocations": [
+    "meta.apiKeys[0].key",
     "settingsConfig.env.AWS_BEARER_TOKEN_BEDROCK",
   ],
   "row": {
@@ -10,6 +11,13 @@ exports[`ProviderForm 预设新增行金标 > claude > AWS Bedrock (API Key) 1`]
     "iconColor": "#FF9900",
     "meta": {
       "apiFormat": "anthropic",
+      "apiKeyStrategy": "round_robin",
+      "apiKeys": [
+        {
+          "key": "sk-golden-test",
+          "weight": 1,
+        },
+      ],
       "endpointAutoSelect": true,
     },
     "name": "AWS Bedrock (API Key)",
@@ -57,6 +65,7 @@ exports[`ProviderForm 预设新增行金标 > claude > Claude Official 1`] = `
 exports[`ProviderForm 预设新增行金标 > claude > E-FlowCode 1`] = `
 {
   "apiKeyLocations": [
+    "meta.apiKeys[0].key",
     "settingsConfig.env.ANTHROPIC_AUTH_TOKEN",
   ],
   "row": {
@@ -64,6 +73,13 @@ exports[`ProviderForm 预设新增行金标 > claude > E-FlowCode 1`] = `
     "iconColor": "#000000",
     "meta": {
       "apiFormat": "anthropic",
+      "apiKeyStrategy": "round_robin",
+      "apiKeys": [
+        {
+          "key": "sk-golden-test",
+          "weight": 1,
+        },
+      ],
       "endpointAutoSelect": true,
     },
     "name": "E-FlowCode",
@@ -86,6 +102,7 @@ exports[`ProviderForm 预设新增行金标 > claude > E-FlowCode 1`] = `
 exports[`ProviderForm 预设新增行金标 > claude > Kimi For Coding 1`] = `
 {
   "apiKeyLocations": [
+    "meta.apiKeys[0].key",
     "settingsConfig.env.ANTHROPIC_AUTH_TOKEN",
   ],
   "row": {
@@ -93,6 +110,13 @@ exports[`ProviderForm 预设新增行金标 > claude > Kimi For Coding 1`] = `
     "iconColor": "#6366F1",
     "meta": {
       "apiFormat": "anthropic",
+      "apiKeyStrategy": "round_robin",
+      "apiKeys": [
+        {
+          "key": "sk-golden-test",
+          "weight": 1,
+        },
+      ],
       "endpointAutoSelect": true,
     },
     "name": "Kimi For Coding",
@@ -120,6 +144,7 @@ exports[`ProviderForm 预设新增行金标 > claude > Kimi For Coding 1`] = `
 exports[`ProviderForm 预设新增行金标 > claude > Nvidia 1`] = `
 {
   "apiKeyLocations": [
+    "meta.apiKeys[0].key",
     "settingsConfig.env.ANTHROPIC_AUTH_TOKEN",
   ],
   "row": {
@@ -127,6 +152,13 @@ exports[`ProviderForm 预设新增行金标 > claude > Nvidia 1`] = `
     "iconColor": "#000000",
     "meta": {
       "apiFormat": "openai_chat",
+      "apiKeyStrategy": "round_robin",
+      "apiKeys": [
+        {
+          "key": "sk-golden-test",
+          "weight": 1,
+        },
+      ],
       "endpointAutoSelect": true,
     },
     "name": "Nvidia",
@@ -152,6 +184,7 @@ exports[`ProviderForm 预设新增行金标 > claude > Nvidia 1`] = `
 exports[`ProviderForm 预设新增行金标 > claude > RelaxyCode 1`] = `
 {
   "apiKeyLocations": [
+    "meta.apiKeys[0].key",
     "settingsConfig.env.ANTHROPIC_AUTH_TOKEN",
   ],
   "row": {
@@ -159,6 +192,13 @@ exports[`ProviderForm 预设新增行金标 > claude > RelaxyCode 1`] = `
     "iconColor": "",
     "meta": {
       "apiFormat": "anthropic",
+      "apiKeyStrategy": "round_robin",
+      "apiKeys": [
+        {
+          "key": "sk-golden-test",
+          "weight": 1,
+        },
+      ],
       "endpointAutoSelect": true,
     },
     "name": "RelaxyCode",
@@ -180,6 +220,7 @@ exports[`ProviderForm 预设新增行金标 > claude > RelaxyCode 1`] = `
 exports[`ProviderForm 预设新增行金标 > codex > E-FlowCode 1`] = `
 {
   "apiKeyLocations": [
+    "meta.apiKeys[0].key",
     "settingsConfig.auth.OPENAI_API_KEY",
   ],
   "row": {
@@ -187,6 +228,13 @@ exports[`ProviderForm 预设新增行金标 > codex > E-FlowCode 1`] = `
     "iconColor": "#000000",
     "meta": {
       "apiFormat": "openai_responses",
+      "apiKeyStrategy": "round_robin",
+      "apiKeys": [
+        {
+          "key": "sk-golden-test",
+          "weight": 1,
+        },
+      ],
       "endpointAutoSelect": true,
     },
     "name": "E-FlowCode",
@@ -218,6 +266,7 @@ model_auto_compact_token_limit = 9000000",
 exports[`ProviderForm 预设新增行金标 > codex > Nvidia 1`] = `
 {
   "apiKeyLocations": [
+    "meta.apiKeys[0].key",
     "settingsConfig.auth.OPENAI_API_KEY",
   ],
   "row": {
@@ -225,6 +274,13 @@ exports[`ProviderForm 预设新增行金标 > codex > Nvidia 1`] = `
     "iconColor": "#000000",
     "meta": {
       "apiFormat": "openai_chat",
+      "apiKeyStrategy": "round_robin",
+      "apiKeys": [
+        {
+          "key": "sk-golden-test",
+          "weight": 1,
+        },
+      ],
       "codexChatReasoning": {
         "effortParam": "reasoning_effort",
         "effortValueMode": "passthrough",
@@ -303,6 +359,7 @@ exports[`ProviderForm 预设新增行金标 > codex > OpenAI Official 1`] = `
 exports[`ProviderForm 预设新增行金标 > codex > xAI (Grok) 1`] = `
 {
   "apiKeyLocations": [
+    "meta.apiKeys[0].key",
     "settingsConfig.auth.OPENAI_API_KEY",
   ],
   "row": {
@@ -310,6 +367,13 @@ exports[`ProviderForm 预设新增行金标 > codex > xAI (Grok) 1`] = `
     "iconColor": "#000000",
     "meta": {
       "apiFormat": "openai_responses",
+      "apiKeyStrategy": "round_robin",
+      "apiKeys": [
+        {
+          "key": "sk-golden-test",
+          "weight": 1,
+        },
+      ],
       "endpointAutoSelect": true,
     },
     "name": "xAI (Grok)",
