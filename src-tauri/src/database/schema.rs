@@ -3897,8 +3897,8 @@ mod tests {
 
         conn.execute(
             "INSERT INTO proxy_request_logs
-                (request_id, provider_id, app_type, model, created_at)
-             VALUES ('legacy', 'provider', 'claude', 'claude-3', 1)",
+                (request_id, provider_id, app_type, model, status_code, created_at)
+             VALUES ('legacy', 'provider', 'claude', 'claude-3', 200, 1)",
             [],
         )?;
 
