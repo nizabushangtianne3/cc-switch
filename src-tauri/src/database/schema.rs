@@ -3763,9 +3763,7 @@ impl Database {
         "data_source",
     ];
 
-    fn recreate_proxy_request_logs_if_columns_mismatch(
-        conn: &Connection,
-    ) -> Result<(), AppError> {
+    fn recreate_proxy_request_logs_if_columns_mismatch(conn: &Connection) -> Result<(), AppError> {
         if !Self::table_exists(conn, "proxy_request_logs")? {
             return Ok(());
         }
@@ -3785,12 +3783,11 @@ impl Database {
             return Ok(());
         }
 
-        log::warn!(
-            "proxy_request_logs 列结构与当前版本不一致，重建表并丢弃历史请求日志"
-        );
-        conn.execute("DROP TABLE proxy_request_logs", []).map_err(|e| {
-            AppError::Database(format!("重建 proxy_request_logs 前删除旧表失败: {e}"))
-        })?;
+        log::warn!("proxy_request_logs 列结构与当前版本不一致，重建表并丢弃历史请求日志");
+        conn.execute("DROP TABLE proxy_request_logs", [])
+            .map_err(|e| {
+                AppError::Database(format!("重建 proxy_request_logs 前删除旧表失败: {e}"))
+            })?;
         Ok(())
     }
 
@@ -3909,7 +3906,11 @@ mod tests {
         Database::apply_schema_migrations_on_conn(&conn)?;
 
         assert_eq!(Database::get_user_version(&conn)?, SCHEMA_VERSION);
-        assert!(Database::has_column(&conn, "proxy_request_logs", "api_key_id")?);
+        assert!(Database::has_column(
+            &conn,
+            "proxy_request_logs",
+            "api_key_id"
+        )?);
         let row_count: i64 =
             conn.query_row("SELECT COUNT(*) FROM proxy_request_logs", [], |row| {
                 row.get(0)
