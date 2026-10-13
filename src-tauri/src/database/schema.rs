@@ -3726,9 +3726,7 @@ impl Database {
         Ok(())
     }
 
-    fn create_request_logs_api_key_index_if_supported(
-        conn: &Connection,
-    ) -> Result<(), AppError> {
+    fn create_request_logs_api_key_index_if_supported(conn: &Connection) -> Result<(), AppError> {
         if !Self::table_exists(conn, "proxy_request_logs")?
             || !Self::has_column(conn, "proxy_request_logs", "api_key_id")?
         {
