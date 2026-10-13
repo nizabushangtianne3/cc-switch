@@ -195,9 +195,6 @@ impl Database {
         )", []).map_err(|e| AppError::Database(e.to_string()))?;
 
         // 10. Proxy Request Logs 表
-        // 表结构按当前版本固定：列集合不一致时直接重建，避免半迁移的老表
-        // 卡在“先建索引、后补字段”这类顺序问题上。
-        Self::recreate_proxy_request_logs_if_columns_mismatch(conn)?;
         // pricing_model = 写入时实际用于计价的模型名（pricing_model_source 解析结果），
         // 回填按它重算；NULL 表示 v11 之前的历史行，'' 表示未计价的错误行。
         conn.execute("CREATE TABLE IF NOT EXISTS proxy_request_logs (
@@ -220,11 +217,7 @@ impl Database {
 
         conn.execute("CREATE INDEX IF NOT EXISTS idx_request_logs_provider ON proxy_request_logs(provider_id, app_type)", [])
             .map_err(|e| AppError::Database(e.to_string()))?;
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_request_logs_api_key ON proxy_request_logs(api_key_id)",
-            [],
-        )
-        .map_err(|e| AppError::Database(e.to_string()))?;
+        Self::create_request_logs_api_key_index_if_supported(conn)?;
         conn.execute("CREATE INDEX IF NOT EXISTS idx_request_logs_created_at ON proxy_request_logs(created_at)", [])
             .map_err(|e| AppError::Database(e.to_string()))?;
         conn.execute(
@@ -1446,6 +1439,7 @@ impl Database {
                 "api_key_id",
                 "TEXT NOT NULL DEFAULT ''",
             )?;
+            Self::create_request_logs_api_key_index_if_supported(conn)?;
         }
 
         if !Self::table_exists(conn, "usage_daily_rollups")? {
@@ -3732,62 +3726,21 @@ impl Database {
         Ok(())
     }
 
-    const PROXY_REQUEST_LOG_COLUMNS: [&str; 28] = [
-        "request_id",
-        "provider_id",
-        "api_key_id",
-        "app_type",
-        "model",
-        "request_model",
-        "pricing_model",
-        "input_tokens",
-        "output_tokens",
-        "cache_read_tokens",
-        "cache_creation_tokens",
-        "input_token_semantics",
-        "input_cost_usd",
-        "output_cost_usd",
-        "cache_read_cost_usd",
-        "cache_creation_cost_usd",
-        "total_cost_usd",
-        "latency_ms",
-        "first_token_ms",
-        "duration_ms",
-        "status_code",
-        "error_message",
-        "session_id",
-        "provider_type",
-        "is_streaming",
-        "cost_multiplier",
-        "created_at",
-        "data_source",
-    ];
-
-    fn recreate_proxy_request_logs_if_columns_mismatch(conn: &Connection) -> Result<(), AppError> {
-        if !Self::table_exists(conn, "proxy_request_logs")? {
+    fn create_request_logs_api_key_index_if_supported(
+        conn: &Connection,
+    ) -> Result<(), AppError> {
+        if !Self::table_exists(conn, "proxy_request_logs")?
+            || !Self::has_column(conn, "proxy_request_logs", "api_key_id")?
+        {
             return Ok(());
         }
 
-        let mut columns = conn
-            .prepare("SELECT name FROM pragma_table_info('proxy_request_logs')")?
-            .query_map([], |row| row.get::<_, String>(0))?
-            .collect::<Result<Vec<_>, _>>()?;
-        columns.sort_unstable_by_key(|column| column.to_ascii_lowercase());
-        let mut expected = Self::PROXY_REQUEST_LOG_COLUMNS
-            .iter()
-            .map(|column| column.to_ascii_lowercase())
-            .collect::<Vec<_>>();
-        expected.sort_unstable();
-
-        if columns == expected {
-            return Ok(());
-        }
-
-        log::warn!("proxy_request_logs 列结构与当前版本不一致，重建表并丢弃历史请求日志");
-        conn.execute("DROP TABLE proxy_request_logs", [])
-            .map_err(|e| {
-                AppError::Database(format!("重建 proxy_request_logs 前删除旧表失败: {e}"))
-            })?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_request_logs_api_key
+             ON proxy_request_logs(api_key_id)",
+            [],
+        )
+        .map_err(|e| AppError::Database(format!("创建 API Key 用量索引失败: {e}")))?;
         Ok(())
     }
 
@@ -3880,7 +3833,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rebuilds_request_logs_with_mismatched_columns() -> Result<(), AppError> {
+    fn migrates_request_logs_api_key_column_and_index() -> Result<(), AppError> {
         let conn = Connection::open_in_memory()?;
         conn.execute_batch(
             "CREATE TABLE proxy_request_logs (
@@ -3915,7 +3868,7 @@ mod tests {
             conn.query_row("SELECT COUNT(*) FROM proxy_request_logs", [], |row| {
                 row.get(0)
             })?;
-        assert_eq!(row_count, 0);
+        assert_eq!(row_count, 1);
         let index_count: i64 = conn.query_row(
             "SELECT COUNT(*) FROM sqlite_master
              WHERE type = 'index'
