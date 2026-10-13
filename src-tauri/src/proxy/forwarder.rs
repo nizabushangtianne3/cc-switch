@@ -75,7 +75,7 @@ fn conversation_fingerprint(body: &Value) -> Option<String> {
     let mut hasher = Sha256::new();
     let mut fed = false;
     if let Some(system) = body.get("system") {
-        hasher.update(without_cache_control(system).to_string().as_bytes());
+        write_json_without_cache_control(system, &mut hasher);
         fed = true;
     }
     if let Some(first_user) = body
@@ -87,7 +87,7 @@ fn conversation_fingerprint(body: &Value) -> Option<String> {
                 .find(|m| m.get("role").and_then(Value::as_str) == Some("user"))
         })
     {
-        hasher.update(without_cache_control(first_user).to_string().as_bytes());
+        write_json_without_cache_control(first_user, &mut hasher);
         fed = true;
     }
     if !fed {
@@ -139,16 +139,36 @@ fn pick_opencode_session<'a>(
 /// Clients move that marker between messages as the conversation grows (Claude
 /// Code puts it on the first user message, then on the last one), so hashing it
 /// would change the session id once, mid-conversation.
-fn without_cache_control(value: &Value) -> Value {
+fn write_json_without_cache_control(value: &Value, hasher: &mut Sha256) {
     match value {
-        Value::Object(map) => Value::Object(
-            map.iter()
+        Value::Object(map) => {
+            hasher.update(b"{");
+            for (index, (key, child)) in map
+                .iter()
                 .filter(|(key, _)| key.as_str() != "cache_control")
-                .map(|(key, value)| (key.clone(), without_cache_control(value)))
-                .collect(),
-        ),
-        Value::Array(items) => Value::Array(items.iter().map(without_cache_control).collect()),
-        other => other.clone(),
+                .enumerate()
+            {
+                if index > 0 {
+                    hasher.update(b",");
+                }
+                serde_json::to_writer(&mut *hasher, key).expect("serialize object key");
+                hasher.update(b":");
+                write_json_without_cache_control(child, hasher);
+            }
+            hasher.update(b"}");
+        }
+        Value::Array(items) => {
+            hasher.update(b"[");
+            for (index, child) in items.iter().enumerate() {
+                if index > 0 {
+                    hasher.update(b",");
+                }
+                write_json_without_cache_control(child, hasher);
+            }
+            hasher.update(b"]");
+        }
+        other => serde_json::to_writer(&mut *hasher, other)
+            .expect("serialize JSON value"),
     }
 }
 
