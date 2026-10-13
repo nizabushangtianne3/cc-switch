@@ -289,7 +289,7 @@ async fn handle_messages_for_app(
     strip_prefix: Option<&'static str>,
 ) -> Result<axum::response::Response, ProxyError> {
     let (parts, body) = request.into_parts();
-    let method = parts.method.clone();
+    let method = parts.method;
     let uri = parts.uri;
     let headers = parts.headers;
     let extensions = parts.extensions;
@@ -329,6 +329,14 @@ async fn handle_messages_for_app(
         .and_then(|s| s.as_bool())
         .unwrap_or(false);
 
+    let adapter = get_adapter(&app_type).ok_or_else(|| {
+        ProxyError::ConfigError(format!(
+            "{} does not support proxy routing",
+            app_type.as_str()
+        ))
+    })?;
+    let needs_transform = adapter.needs_transform(&ctx.provider);
+
     // 转发请求
     let forwarder = ctx.create_forwarder(&state);
     let mut result = match forwarder
@@ -336,7 +344,7 @@ async fn handle_messages_for_app(
             &app_type,
             method,
             endpoint,
-            body.clone(),
+            if needs_transform { body.clone() } else { body },
             headers,
             extensions,
             ctx.get_providers(),
@@ -363,15 +371,6 @@ async fn handle_messages_for_app(
         .unwrap_or_else(|| get_claude_api_format(&ctx.provider))
         .to_string();
     let response = result.response;
-
-    // 检查是否需要格式转换（OpenRouter 等中转服务）
-    let adapter = get_adapter(&app_type).ok_or_else(|| {
-        ProxyError::ConfigError(format!(
-            "{} does not support proxy routing",
-            app_type.as_str()
-        ))
-    })?;
-    let needs_transform = adapter.needs_transform(&ctx.provider);
 
     // Claude 特有：格式转换处理
     if needs_transform {
@@ -901,7 +900,7 @@ pub async fn handle_chat_completions(
     request: axum::extract::Request,
 ) -> Result<axum::response::Response, ProxyError> {
     let (parts, req_body) = request.into_parts();
-    let method = parts.method.clone();
+    let method = parts.method;
     let uri = parts.uri;
     let mut headers = parts.headers;
     let extensions = parts.extensions;
@@ -1021,7 +1020,7 @@ async fn handle_responses_for_app(
     app_type_str: &'static str,
 ) -> Result<axum::response::Response, ProxyError> {
     let (parts, req_body) = request.into_parts();
-    let method = parts.method.clone();
+    let method = parts.method;
     let uri = parts.uri;
     let mut headers = parts.headers;
     let extensions = parts.extensions;
@@ -1269,7 +1268,7 @@ async fn handle_codex_standalone_passthrough(
     canonical_endpoint: &'static str,
 ) -> Result<axum::response::Response, ProxyError> {
     let (parts, req_body) = request.into_parts();
-    let method = parts.method.clone();
+    let method = parts.method;
     let uri = parts.uri;
     let mut headers = parts.headers;
     let extensions = parts.extensions;
@@ -1355,7 +1354,7 @@ async fn handle_responses_compact_for_app(
     app_type_str: &'static str,
 ) -> Result<axum::response::Response, ProxyError> {
     let (parts, req_body) = request.into_parts();
-    let method = parts.method.clone();
+    let method = parts.method;
     let uri = parts.uri;
     let mut headers = parts.headers;
     let extensions = parts.extensions;
@@ -2438,7 +2437,7 @@ pub async fn handle_gemini(
     request: axum::extract::Request,
 ) -> Result<axum::response::Response, ProxyError> {
     let (parts, req_body) = request.into_parts();
-    let method = parts.method.clone();
+    let method = parts.method;
     let headers = parts.headers;
     let extensions = parts.extensions;
     let body_bytes = req_body

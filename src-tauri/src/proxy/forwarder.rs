@@ -679,6 +679,14 @@ impl RequestForwarder {
         if !self.routing_state_enabled() {
             return;
         }
+        {
+            let status = self.status.read().await;
+            if status.current_provider.as_deref() == Some(provider.name.as_str())
+                && status.current_provider_id.as_deref() == Some(provider.id.as_str())
+            {
+                return;
+            }
+        }
         let mut status = self.status.write().await;
         status.current_provider = Some(provider.name.clone());
         status.current_provider_id = Some(provider.id.clone());
