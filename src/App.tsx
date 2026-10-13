@@ -1,6 +1,8 @@
 import {
   useCallback,
   useEffect,
+  Suspense,
+  lazy,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -13,6 +15,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   ExternalLink,
   KeyRound,
+  Loader2,
   MoreHorizontal,
   Plus,
   Search,
@@ -77,35 +80,22 @@ import { WindowControls } from "@/components/shell/WindowControls";
 import { APP_DISPLAY_NAME, AppGlyph } from "@/components/shell/AppGlyph";
 import { ProfileSwitcher } from "@/components/profiles/ProfileSwitcher";
 import { ProviderList } from "@/components/providers/ProviderList";
-import { AddProviderDialog } from "@/components/providers/AddProviderDialog";
 import {
   hasOpencodeDefinition,
   isNativeOpencodeConfig,
 } from "@/components/providers/forms/helpers/opencodeFormUtils";
-import { EditProviderDialog } from "@/components/providers/EditProviderDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { discardUnsavedChanges, hasUnsavedChanges } from "@/lib/unsavedChanges";
-import { SettingsPage } from "@/components/settings/SettingsPage";
-import { AuthCenterPanel } from "@/components/settings/AuthCenterPanel";
-import { AppsPage } from "@/components/apps/AppsPage";
 import {
   checkToolUpdatesInBackground,
   useToolUpdatesAvailable,
 } from "@/components/apps/useToolManagement";
-import { UsagePage } from "@/components/usage/UsagePage";
 import { EnvWarningBanner } from "@/components/env/EnvWarningBanner";
 import { SwitchModePanel } from "@/components/providers/mode/SwitchModePanel";
 import { DesktopAccessBar } from "@/components/providers/mode/DesktopAccessBar";
 import { proxyApi } from "@/lib/api/proxy";
 import type { AppMode, StartupAttachFailure } from "@/types/proxy";
-import UsageScriptModal from "@/components/UsageScriptModal";
-import UnifiedMcpPanel from "@/components/mcp/UnifiedMcpPanel";
-import PromptPanel from "@/components/prompts/PromptPanel";
 import { PROMPT_APP_IDS } from "@/lib/query/prompts";
-import UnifiedSkillsPanel from "@/components/skills/UnifiedSkillsPanel";
-import { DeepLinkImportDialog } from "@/components/DeepLinkImportDialog";
-import { FirstRunNoticeDialog } from "@/components/FirstRunNoticeDialog";
-import { WhatsNewNotice } from "@/components/WhatsNewDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { HoverTip } from "@/components/ui/hover-tip";
@@ -118,25 +108,107 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { SessionManagerPage } from "@/components/sessions/SessionManagerPage";
 import {
   useDisableCurrentOmo,
   useDisableCurrentOmoSlim,
 } from "@/lib/query/omo";
 import { invalidatePiProviderCaches, usePiCurrentState } from "@/lib/query/pi";
-import WorkspaceFilesPanel from "@/components/workspace/WorkspaceFilesPanel";
-import EnvPanel from "@/components/openclaw/EnvPanel";
-import ToolsPanel from "@/components/openclaw/ToolsPanel";
-import AgentsDefaultsPanel from "@/components/openclaw/AgentsDefaultsPanel";
 import OpenClawHealthBanner from "@/components/openclaw/OpenClawHealthBanner";
-import HermesMemoryPanel, {
-  HermesMemorySaveButton,
-} from "@/components/hermes/HermesMemoryPanel";
 import {
   APP_IDS,
   DEFAULT_VISIBLE_APPS,
   isProxyAppId,
 } from "@/config/appConfig";
+
+const LazyAddProviderDialog = lazy(() =>
+  import("@/components/providers/AddProviderDialog").then((module) => ({
+    default: module.AddProviderDialog,
+  })),
+);
+const LazyEditProviderDialog = lazy(() =>
+  import("@/components/providers/EditProviderDialog").then((module) => ({
+    default: module.EditProviderDialog,
+  })),
+);
+const LazySettingsPage = lazy(() =>
+  import("@/components/settings/SettingsPage").then((module) => ({
+    default: module.SettingsPage,
+  })),
+);
+const LazyAuthCenterPanel = lazy(() =>
+  import("@/components/settings/AuthCenterPanel").then((module) => ({
+    default: module.AuthCenterPanel,
+  })),
+);
+const LazyAppsPage = lazy(() =>
+  import("@/components/apps/AppsPage").then((module) => ({
+    default: module.AppsPage,
+  })),
+);
+const LazyUsagePage = lazy(() =>
+  import("@/components/usage/UsagePage").then((module) => ({
+    default: module.UsagePage,
+  })),
+);
+const LazyUsageScriptModal = lazy(
+  () => import("@/components/UsageScriptModal"),
+);
+const LazyUnifiedMcpPanel = lazy(
+  () => import("@/components/mcp/UnifiedMcpPanel"),
+);
+const LazyPromptPanel = lazy(() => import("@/components/prompts/PromptPanel"));
+const LazyUnifiedSkillsPanel = lazy(
+  () => import("@/components/skills/UnifiedSkillsPanel"),
+);
+const LazyDeepLinkImportDialog = lazy(() =>
+  import("@/components/DeepLinkImportDialog").then((module) => ({
+    default: module.DeepLinkImportDialog,
+  })),
+);
+const LazyFirstRunNoticeDialog = lazy(() =>
+  import("@/components/FirstRunNoticeDialog").then((module) => ({
+    default: module.FirstRunNoticeDialog,
+  })),
+);
+const LazyWhatsNewNotice = lazy(() =>
+  import("@/components/WhatsNewDialog").then((module) => ({
+    default: module.WhatsNewNotice,
+  })),
+);
+const LazySessionManagerPage = lazy(() =>
+  import("@/components/sessions/SessionManagerPage").then((module) => ({
+    default: module.SessionManagerPage,
+  })),
+);
+const LazyWorkspaceFilesPanel = lazy(
+  () => import("@/components/workspace/WorkspaceFilesPanel"),
+);
+const LazyEnvPanel = lazy(() => import("@/components/openclaw/EnvPanel"));
+const LazyToolsPanel = lazy(() => import("@/components/openclaw/ToolsPanel"));
+const LazyAgentsDefaultsPanel = lazy(
+  () => import("@/components/openclaw/AgentsDefaultsPanel"),
+);
+const LazyHermesMemoryPanel = lazy(() =>
+  import("@/components/hermes/HermesMemoryPanel").then((module) => ({
+    default: module.default,
+  })),
+);
+const LazyHermesMemorySaveButton = lazy(() =>
+  import("@/components/hermes/HermesMemoryPanel").then((module) => ({
+    default: module.HermesMemorySaveButton,
+  })),
+);
+
+function PageLoader() {
+  return (
+    <div
+      aria-busy="true"
+      className="flex min-h-0 flex-1 items-center justify-center"
+    >
+      <Loader2 aria-hidden="true" className="h-5 w-5 animate-spin text-fg-2" />
+    </div>
+  );
+}
 
 interface SyncStatusUpdatedPayload {
   source?: string;
@@ -1219,7 +1291,7 @@ function App() {
               {t("provider.addProvider")}
             </Button>
           )}
-          {currentView === "hermesMemory" && <HermesMemorySaveButton />}
+          {currentView === "hermesMemory" && <LazyHermesMemorySaveButton />}
           {appMenu}
         </>
       }
@@ -1369,7 +1441,7 @@ function App() {
     const body = (() => {
       switch (currentView) {
         case "workspace":
-          return <WorkspaceFilesPanel />;
+          return <LazyWorkspaceFilesPanel />;
         case "openclawConfig":
           return (
             <>
@@ -1396,11 +1468,11 @@ function App() {
                 className="min-h-0 flex-1 overflow-y-auto scroll-stable"
               >
                 {openclawConfigTab === "env" ? (
-                  <EnvPanel />
+                  <LazyEnvPanel />
                 ) : openclawConfigTab === "tools" ? (
-                  <ToolsPanel />
+                  <LazyToolsPanel />
                 ) : (
-                  <AgentsDefaultsPanel />
+                  <LazyAgentsDefaultsPanel />
                 )}
               </div>
             </>
@@ -1411,7 +1483,7 @@ function App() {
               id="main-content"
               className="min-h-0 flex-1 overflow-y-auto scroll-stable"
             >
-              <HermesMemoryPanel onOpenWebUI={openHermesWebUI} />
+              <LazyHermesMemoryPanel onOpenWebUI={openHermesWebUI} />
             </div>
           );
         default:
@@ -1437,7 +1509,7 @@ function App() {
     switch (currentView) {
       case "usage":
         return (
-          <UsagePage
+          <LazyUsagePage
             initialAppType={usageAppFilter}
             onOpenRoutingSettings={() => openSettings("routing")}
           />
@@ -1467,20 +1539,22 @@ function App() {
               className="min-h-0 flex-1 overflow-y-auto scroll-stable"
             >
               <div className="px-6 pb-10 pt-4">
-                <AuthCenterPanel showIntro={false} />
+                <LazyAuthCenterPanel showIntro={false} />
               </div>
             </div>
           </>
         );
       case "mcp":
         return (
-          <UnifiedMcpPanel onInteractionBlockedChange={setMcpManagementBusy} />
+          <LazyUnifiedMcpPanel
+            onInteractionBlockedChange={setMcpManagementBusy}
+          />
         );
       case "skills":
       case "skillsDiscovery":
         // 「已安装 / 发现」合成一页；旧的 skillsDiscovery 视图直接打开「发现」段
         return (
-          <UnifiedSkillsPanel
+          <LazyUnifiedSkillsPanel
             initialView={
               currentView === "skillsDiscovery" ? "discover" : "installed"
             }
@@ -1490,7 +1564,7 @@ function App() {
       case "prompts":
         return (
           <div id="main-content" className="flex min-h-0 flex-1 flex-col">
-            <PromptPanel
+            <LazyPromptPanel
               appId={promptsApp}
               apps={PROMPT_APP_IDS.filter(
                 (app) =>
@@ -1506,7 +1580,7 @@ function App() {
       case "sessions":
         // 页头（含 ⋯ 菜单）由会话页自己画：菜单里的操作都在页面状态里
         return (
-          <SessionManagerPage
+          <LazySessionManagerPage
             key={sharedFeatureApp}
             appId={sharedFeatureApp}
             fromApp={activeApp}
@@ -1514,7 +1588,7 @@ function App() {
           />
         );
       case "apps":
-        return <AppsPage />;
+        return <LazyAppsPage />;
       default:
         return null;
     }
@@ -1523,7 +1597,7 @@ function App() {
   const renderContent = () => {
     if (currentView === "settings") {
       return (
-        <SettingsPage
+        <LazySettingsPage
           section={settingsSection}
           appConfigScrollTarget={appConfigScrollTarget}
           onImportSuccess={handleImportSuccess}
@@ -1595,105 +1669,111 @@ function App() {
             }
             className="flex min-h-0 flex-1 flex-col"
           >
-            {renderContent()}
+            <Suspense fallback={<PageLoader />}>{renderContent()}</Suspense>
           </div>
         </main>
       </div>
 
-      <AddProviderDialog
-        open={isAddOpen}
-        onOpenChange={setIsAddOpen}
-        appId={activeApp}
-        onSubmit={addProvider}
-        modeView={formModeView}
-      />
+      <Suspense fallback={null}>
+        {isAddOpen && (
+          <LazyAddProviderDialog
+            open={isAddOpen}
+            onOpenChange={setIsAddOpen}
+            appId={activeApp}
+            onSubmit={addProvider}
+            modeView={formModeView}
+          />
+        )}
 
-      <EditProviderDialog
-        open={Boolean(editingProvider)}
-        provider={effectiveEditingProvider}
-        onOpenChange={(open) => {
-          if (!open) {
-            setEditingProvider(null);
+        {Boolean(editingProvider) && (
+          <LazyEditProviderDialog
+            open={Boolean(editingProvider)}
+            provider={effectiveEditingProvider}
+            onOpenChange={(open) => {
+              if (!open) {
+                setEditingProvider(null);
+              }
+            }}
+            onSubmit={handleEditProvider}
+            appId={activeApp}
+            isProxyTakeover={isCurrentAppTakeoverActive}
+            isCurrent={effectiveEditingProvider?.id === currentProviderId}
+            modeView={formModeView}
+          />
+        )}
+
+        {effectiveUsageProvider && (
+          <LazyUsageScriptModal
+            key={effectiveUsageProvider.id}
+            provider={effectiveUsageProvider}
+            appId={activeApp}
+            isOpen={Boolean(usageProvider)}
+            onClose={() => setUsageProvider(null)}
+            onSave={(script) => {
+              if (usageProvider) {
+                void saveUsageScript(usageProvider, script);
+              }
+            }}
+          />
+        )}
+
+        <ConfirmDialog
+          isOpen={Boolean(confirmAction)}
+          title={
+            confirmAction?.action === "remove"
+              ? t("confirm.removeProvider")
+              : t("confirm.deleteProvider")
           }
-        }}
-        onSubmit={handleEditProvider}
-        appId={activeApp}
-        isProxyTakeover={isCurrentAppTakeoverActive}
-        isCurrent={effectiveEditingProvider?.id === currentProviderId}
-        modeView={formModeView}
-      />
-
-      {effectiveUsageProvider && (
-        <UsageScriptModal
-          key={effectiveUsageProvider.id}
-          provider={effectiveUsageProvider}
-          appId={activeApp}
-          isOpen={Boolean(usageProvider)}
-          onClose={() => setUsageProvider(null)}
-          onSave={(script) => {
-            if (usageProvider) {
-              void saveUsageScript(usageProvider, script);
-            }
-          }}
+          message={confirmActionMessage}
+          // 「移除」只是从应用配置里拿掉、CC Switch 里还留着，可以再加回去，不用红色
+          variant={confirmAction?.action === "remove" ? "info" : "destructive"}
+          onConfirm={() => void handleConfirmAction()}
+          onCancel={() => setConfirmAction(null)}
         />
-      )}
 
-      <ConfirmDialog
-        isOpen={Boolean(confirmAction)}
-        title={
-          confirmAction?.action === "remove"
-            ? t("confirm.removeProvider")
-            : t("confirm.deleteProvider")
-        }
-        message={confirmActionMessage}
-        // 「移除」只是从应用配置里拿掉、CC Switch 里还留着，可以再加回去，不用红色
-        variant={confirmAction?.action === "remove" ? "info" : "destructive"}
-        onConfirm={() => void handleConfirmAction()}
-        onCancel={() => setConfirmAction(null)}
-      />
+        <ConfirmDialog
+          isOpen={pendingLeave !== null}
+          title={t("common.unsavedLeaveTitle")}
+          message={t("common.unsavedLeaveMessage")}
+          confirmText={t("common.unsavedLeaveConfirm")}
+          cancelText={t("common.unsavedLeaveCancel")}
+          zIndex="top"
+          onConfirm={() => {
+            const proceed = pendingLeave;
+            setPendingLeave(null);
+            discardUnsavedChanges();
+            proceed?.();
+          }}
+          onCancel={() => setPendingLeave(null)}
+        />
 
-      <ConfirmDialog
-        isOpen={pendingLeave !== null}
-        title={t("common.unsavedLeaveTitle")}
-        message={t("common.unsavedLeaveMessage")}
-        confirmText={t("common.unsavedLeaveConfirm")}
-        cancelText={t("common.unsavedLeaveCancel")}
-        zIndex="top"
-        onConfirm={() => {
-          const proceed = pendingLeave;
-          setPendingLeave(null);
-          discardUnsavedChanges();
-          proceed?.();
-        }}
-        onCancel={() => setPendingLeave(null)}
-      />
+        <ConfirmDialog
+          isOpen={launchDashboardOpen}
+          title={t("hermes.webui.launchConfirmTitle")}
+          message={t("hermes.webui.launchConfirmMessage")}
+          confirmText={t("hermes.webui.launchConfirmAction")}
+          variant="info"
+          onConfirm={() => {
+            setLaunchDashboardOpen(false);
+            void (async () => {
+              try {
+                await hermesApi.launchDashboard();
+                toast.success(t("hermes.webui.launching"));
+              } catch (error) {
+                toast.error(t("hermes.webui.launchFailed"), {
+                  description: extractErrorMessage(error) || undefined,
+                });
+              }
+            })();
+          }}
+          onCancel={() => setLaunchDashboardOpen(false)}
+        />
 
-      <ConfirmDialog
-        isOpen={launchDashboardOpen}
-        title={t("hermes.webui.launchConfirmTitle")}
-        message={t("hermes.webui.launchConfirmMessage")}
-        confirmText={t("hermes.webui.launchConfirmAction")}
-        variant="info"
-        onConfirm={() => {
-          setLaunchDashboardOpen(false);
-          void (async () => {
-            try {
-              await hermesApi.launchDashboard();
-              toast.success(t("hermes.webui.launching"));
-            } catch (error) {
-              toast.error(t("hermes.webui.launchFailed"), {
-                description: extractErrorMessage(error) || undefined,
-              });
-            }
-          })();
-        }}
-        onCancel={() => setLaunchDashboardOpen(false)}
-      />
-
-      <DeepLinkImportDialog />
-      <FirstRunNoticeDialog />
-      <NewLayoutDialog />
-      <WhatsNewNotice />
+        <LazyDeepLinkImportDialog />
+        <LazyFirstRunNoticeDialog />
+        <NewLayoutDialog />
+        <LazyWhatsNewNotice />
+      </Suspense>
     </WindowControlsContext.Provider>
   );
 }
