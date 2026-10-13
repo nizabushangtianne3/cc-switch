@@ -168,7 +168,11 @@ impl ProxyServer {
                                 let mut peek_buf = vec![0u8; 8192];
                                 match stream.peek(&mut peek_buf).await {
                                     Ok(n) => {
-                                        let cases = super::hyper_client::OriginalHeaderCases::from_raw_bytes(&peek_buf[..n]);
+                                        let cases = Arc::new(
+                                            super::hyper_client::OriginalHeaderCases::from_raw_bytes(
+                                                &peek_buf[..n],
+                                            ),
+                                        );
                                         log::debug!(
                                             "[ProxyServer] Peeked {} bytes, captured {} header casings",
                                             n, cases.cases.len()
@@ -177,7 +181,9 @@ impl ProxyServer {
                                     }
                                     Err(e) => {
                                         log::debug!("[ProxyServer] peek failed (non-fatal): {e}");
-                                        super::hyper_client::OriginalHeaderCases::default()
+                                        Arc::new(
+                                            super::hyper_client::OriginalHeaderCases::default(),
+                                        )
                                     }
                                 }
                             };

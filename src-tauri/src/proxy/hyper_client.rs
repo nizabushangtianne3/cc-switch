@@ -10,7 +10,7 @@ use futures::{stream::Stream, StreamExt};
 use http_body_util::BodyExt;
 use hyper_rustls::HttpsConnectorBuilder;
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 /// Our own header case map: maps lowercase header name → original wire-casing bytes.
 ///
@@ -49,6 +49,9 @@ impl OriginalHeaderCases {
         Self { cases }
     }
 }
+
+/// Connection-level extension type so per-request clones stay cheap.
+pub(crate) type SharedOriginalHeaderCases = Arc<OriginalHeaderCases>;
 
 type HyperClient = Client<
     hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>,
@@ -266,7 +269,9 @@ pub async fn send_request(
     proxy_url: Option<&str>,
 ) -> Result<ProxyResponse, ProxyError> {
     // Extract our own OriginalHeaderCases if available
-    let original_cases = original_extensions.get::<OriginalHeaderCases>().cloned();
+    let original_cases = original_extensions
+        .get::<SharedOriginalHeaderCases>()
+        .cloned();
     let has_cases = original_cases
         .as_ref()
         .map(|c| !c.cases.is_empty())
@@ -624,38 +629,39 @@ fn build_raw_request(
     //
     // This replaces the old `for name in headers.keys()` loop which iterated
     // in hash-map order, destroying the original header sequence.
-    let mut emitted: std::collections::HashSet<String> =
-        std::collections::HashSet::with_capacity(original_cases.cases.len());
+    let mut emitted: Vec<&str> = Vec::with_capacity(original_cases.cases.len());
     // Per-name cursor: how many values we have already emitted for each name.
-    let mut value_cursor: std::collections::HashMap<String, usize> =
+    let mut value_cursor: std::collections::HashMap<&str, usize> =
         std::collections::HashMap::with_capacity(original_cases.cases.len());
 
     for (lower_name, orig_name_bytes) in &original_cases.cases {
         if let Ok(header_name) = http::header::HeaderName::from_bytes(lower_name.as_bytes()) {
             let all_values: Vec<_> = headers.get_all(&header_name).iter().collect();
-            let cursor = value_cursor.entry(lower_name.clone()).or_insert(0);
+            let cursor = value_cursor.entry(lower_name.as_str()).or_insert(0);
             if let Some(value) = all_values.get(*cursor) {
                 raw.extend_from_slice(orig_name_bytes);
                 raw.extend_from_slice(b": ");
                 raw.extend_from_slice(value.as_bytes());
                 raw.extend_from_slice(b"\r\n");
                 *cursor += 1;
-                emitted.insert(lower_name.clone());
+                emitted.push(lower_name.as_str());
             }
         }
     }
 
     // Append proxy-added headers (not present in the original request).
     for name in headers.keys() {
-        let lower = name.as_str().to_ascii_lowercase();
-        if !emitted.contains(&lower) {
+        if !emitted
+            .iter()
+            .any(|seen| seen.eq_ignore_ascii_case(name.as_str()))
+        {
             for value in headers.get_all(name) {
                 raw.extend_from_slice(name.as_str().as_bytes());
                 raw.extend_from_slice(b": ");
                 raw.extend_from_slice(value.as_bytes());
                 raw.extend_from_slice(b"\r\n");
             }
-            emitted.insert(lower);
+            emitted.push(name.as_str());
         }
     }
 
@@ -789,6 +795,24 @@ mod tests {
         assert!(buffered_with_content_type(Some("application/problem+json")).is_json());
         assert!(!buffered_with_content_type(Some("text/event-stream")).is_json());
         assert!(!buffered_with_content_type(None).is_json());
+    }
+
+    #[test]
+    fn build_raw_request_preserves_original_header_casing() {
+        let cases =
+            OriginalHeaderCases::from_raw_bytes(b"POST /x HTTP/1.1\r\nX-Cc-Switch: yes\r\n\r\n");
+        let mut headers = http::HeaderMap::new();
+        headers.insert("x-cc-switch", http::HeaderValue::from_static("yes"));
+
+        let raw = build_raw_request(&http::Method::POST, "/x", &headers, &cases, b"hello");
+
+        let text = String::from_utf8(raw).unwrap();
+        assert!(
+            text.starts_with(
+                "POST /x HTTP/1.1\r\nX-Cc-Switch: yes\r\nContent-Length: 5\r\n\r\nhello"
+            ),
+            "{text}"
+        );
     }
 
     #[tokio::test]
