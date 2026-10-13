@@ -5901,7 +5901,7 @@ model_provider = "c"
         let chain = |ctx: &crate::proxy::handler_context::RequestContext| {
             ctx.get_providers()
                 .iter()
-                .map(|provider| provider.id.as_str())
+                .map(|provider| provider.id.clone())
                 .collect::<Vec<_>>()
         };
 
