@@ -54,37 +54,27 @@ pub struct DeleteSessionOutcome {
 }
 
 pub fn scan_sessions() -> Vec<SessionMeta> {
-    let (r1, r2, r3, r4, r5, r6, r7, r8) = std::thread::scope(|s| {
-        let h1 = s.spawn(codex::scan_sessions);
-        let h2 = s.spawn(claude::scan_sessions);
-        let h3 = s.spawn(opencode::scan_sessions);
-        let h4 = s.spawn(openclaw::scan_sessions);
-        let h5 = s.spawn(gemini::scan_sessions);
-        let h6 = s.spawn(hermes::scan_sessions);
-        let h7 = s.spawn(grokbuild::scan_sessions);
-        let h8 = s.spawn(pi::scan_sessions);
-        (
-            h1.join().unwrap_or_default(),
-            h2.join().unwrap_or_default(),
-            h3.join().unwrap_or_default(),
-            h4.join().unwrap_or_default(),
-            h5.join().unwrap_or_default(),
-            h6.join().unwrap_or_default(),
-            h7.join().unwrap_or_default(),
-            h8.join().unwrap_or_default(),
-        )
+    let results = std::thread::scope(|s| {
+        [
+            codex::scan_sessions,
+            claude::scan_sessions,
+            opencode::scan_sessions,
+            openclaw::scan_sessions,
+            gemini::scan_sessions,
+            hermes::scan_sessions,
+            grokbuild::scan_sessions,
+            pi::scan_sessions,
+            mcode::scan_sessions,
+        ]
+        .into_iter()
+        .map(|scan| s.spawn(scan))
+        .collect::<Vec<_>>()
+        .into_iter()
+        .map(|handle| handle.join().unwrap_or_default())
+        .collect::<Vec<_>>()
     });
 
-    let mut sessions = Vec::new();
-    sessions.extend(r1);
-    sessions.extend(r2);
-    sessions.extend(r3);
-    sessions.extend(r4);
-    sessions.extend(r5);
-    sessions.extend(r6);
-    sessions.extend(r7);
-    sessions.extend(r8);
-    sessions.extend(mcode::scan_sessions());
+    let mut sessions = results.into_iter().flatten().collect::<Vec<_>>();
 
     sessions.sort_by(|a, b| {
         let a_ts = a.last_active_at.or(a.created_at).unwrap_or(0);
@@ -376,5 +366,49 @@ mod tests {
             outcomes[2].error.as_deref(),
             Some("Session was not deleted")
         );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn scan_sessions_includes_mcode_runtime_sessions() {
+        let home = tempdir().expect("test home");
+        let data_dir = tempdir().expect("mcode data dir");
+        let database = data_dir.path().join("v2/sqlite/runtime-state.sqlite");
+        std::fs::create_dir_all(database.parent().expect("database parent"))
+            .expect("create mcode database directory");
+
+        let connection = rusqlite::Connection::open(&database).expect("open mcode database");
+        connection
+            .execute_batch(
+                "CREATE TABLE local_runtime_sessions (
+                    session_id TEXT, title TEXT, workspace_dir TEXT, created_at_ms INTEGER,
+                    updated_at_ms INTEGER, visibility TEXT, parent_session_id TEXT,
+                    session_kind TEXT, archived INTEGER);
+                INSERT INTO local_runtime_sessions VALUES
+                    ('mvs_public', 'Project', '/work', 100, 200, 'visible', NULL,
+                     'conversation', 0);",
+            )
+            .expect("seed mcode session");
+        drop(connection);
+
+        let previous_home = std::env::var_os("CC_SWITCH_TEST_HOME");
+        let previous_data_dir = std::env::var_os("MINIMAX_DATA_DIR");
+        std::env::set_var("CC_SWITCH_TEST_HOME", home.path());
+        std::env::set_var("MINIMAX_DATA_DIR", data_dir.path());
+
+        let sessions = scan_sessions();
+
+        match previous_home {
+            Some(value) => std::env::set_var("CC_SWITCH_TEST_HOME", value),
+            None => std::env::remove_var("CC_SWITCH_TEST_HOME"),
+        }
+        match previous_data_dir {
+            Some(value) => std::env::set_var("MINIMAX_DATA_DIR", value),
+            None => std::env::remove_var("MINIMAX_DATA_DIR"),
+        }
+
+        assert!(sessions.iter().any(|session| {
+            session.provider_id == "mcode" && session.session_id == "mvs_public"
+        }));
     }
 }
