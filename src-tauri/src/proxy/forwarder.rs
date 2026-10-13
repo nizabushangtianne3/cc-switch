@@ -3088,14 +3088,14 @@ impl RequestForwarder {
         let headers = response.headers().clone();
         let encoding = get_content_encoding(&headers);
         let raw = response.bytes_with_limit(MAX_RESPONSE_BODY_BYTES).await?;
-        let decoded = match encoding {
+        let decoded: std::borrow::Cow<'_, [u8]> = match encoding {
             Some(encoding) => {
                 match decompress_body_with_limit(&encoding, &raw, MAX_RESPONSE_BODY_BYTES) {
-                    Ok(Some(decompressed)) => decompressed,
-                    _ => raw.to_vec(),
+                    Ok(Some(decompressed)) => std::borrow::Cow::Owned(decompressed),
+                    _ => std::borrow::Cow::Borrowed(&raw[..]),
                 }
             }
-            None => raw.to_vec(),
+            None => std::borrow::Cow::Borrowed(&raw[..]),
         };
 
         if let Some(message) = codex_anthropic_error_envelope_message(&decoded) {
@@ -3115,14 +3115,14 @@ impl RequestForwarder {
         let headers = response.headers().clone();
         let encoding = get_content_encoding(&headers);
         let raw = response.bytes_with_limit(MAX_RESPONSE_BODY_BYTES).await?;
-        let decoded = match encoding {
+        let decoded: std::borrow::Cow<'_, [u8]> = match encoding {
             Some(encoding) => {
                 match decompress_body_with_limit(&encoding, &raw, MAX_RESPONSE_BODY_BYTES) {
-                    Ok(Some(decompressed)) => decompressed,
-                    _ => raw.to_vec(),
+                    Ok(Some(decompressed)) => std::borrow::Cow::Owned(decompressed),
+                    _ => std::borrow::Cow::Borrowed(&raw[..]),
                 }
             }
-            None => raw.to_vec(),
+            None => std::borrow::Cow::Borrowed(&raw[..]),
         };
 
         if let Some(message) = responses_error_envelope_message(&decoded) {
