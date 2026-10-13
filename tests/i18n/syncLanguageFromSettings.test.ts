@@ -11,7 +11,7 @@ describe("syncLanguageFromSettings", () => {
     await i18n.changeLanguage("en");
     localStorage.removeItem("language");
 
-    syncLanguageFromSettings("zh");
+    await syncLanguageFromSettings("zh");
 
     expect(i18n.language).toBe("zh");
     expect(localStorage.getItem("language")).toBe("zh");
@@ -21,7 +21,7 @@ describe("syncLanguageFromSettings", () => {
     await i18n.changeLanguage("ja");
     localStorage.setItem("language", "ja");
 
-    syncLanguageFromSettings("zh-TW");
+    await syncLanguageFromSettings("zh-TW");
 
     expect(i18n.language).toBe("zh-TW");
     expect(localStorage.getItem("language")).toBe("zh-TW");
@@ -30,8 +30,8 @@ describe("syncLanguageFromSettings", () => {
   it("leaves the current language alone when nothing is saved", async () => {
     await i18n.changeLanguage("en");
 
-    syncLanguageFromSettings(undefined);
-    syncLanguageFromSettings("fr");
+    await syncLanguageFromSettings(undefined);
+    await syncLanguageFromSettings("fr");
 
     expect(i18n.language).toBe("en");
     expect(localStorage.getItem("language")).toBeNull();

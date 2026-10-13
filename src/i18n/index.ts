@@ -1,10 +1,6 @@
-import i18n from "i18next";
+import i18next from "i18next";
 import { initReactI18next } from "react-i18next";
-
-import en from "./locales/en.json";
-import ja from "./locales/ja.json";
-import zh from "./locales/zh.json";
-import zhTW from "./locales/zh-TW.json";
+import type { BackendModule, ReadCallback } from "i18next";
 
 type Language = "zh" | "zh-TW" | "en" | "ja";
 
@@ -59,33 +55,43 @@ const getInitialLanguage = (): Language => {
   return DEFAULT_LANGUAGE;
 };
 
-const resources = {
-  en: {
-    translation: en,
-  },
-  ja: {
-    translation: ja,
-  },
-  zh: {
-    translation: zh,
-  },
-  "zh-TW": {
-    translation: zhTW,
+const localeLoaders: Record<Language, () => Promise<{ default: object }>> = {
+  en: () => import("./locales/en.json"),
+  ja: () => import("./locales/ja.json"),
+  zh: () => import("./locales/zh.json"),
+  "zh-TW": () => import("./locales/zh-TW.json"),
+};
+
+const localeBackend: BackendModule = {
+  type: "backend",
+  init() {},
+  read(language: string, _namespace: string, callback: ReadCallback): void {
+    const loader = localeLoaders[language as Language];
+    if (!loader) {
+      callback(null, {});
+      return;
+    }
+    loader()
+      .then(({ default: translation }) => callback(null, translation))
+      .catch((error: Error) => callback(error, null));
   },
 };
 
-i18n.use(initReactI18next).init({
-  resources,
-  lng: getInitialLanguage(), // 根据本地存储或系统语言选择默认语言
-  fallbackLng: "en", // 如果缺少中文翻译则退回英文
+const i18n = i18next.createInstance();
+export const i18nReady = i18n
+  .use(localeBackend)
+  .use(initReactI18next)
+  .init({
+    lng: getInitialLanguage(), // 根据本地存储或系统语言选择默认语言
+    fallbackLng: "en", // 如果缺少中文翻译则退回英文
 
-  interpolation: {
-    escapeValue: false, // React 已经默认转义
-  },
+    interpolation: {
+      escapeValue: false, // React 已经默认转义
+    },
 
-  // 开发模式下显示调试信息
-  debug: false,
-});
+    // 开发模式下显示调试信息
+    debug: false,
+  });
 
 /**
  * 用后端 settings.json 里保存的语言校正界面语言。
@@ -94,11 +100,13 @@ i18n.use(initReactI18next).init({
  * WebView 来源不同、WebView 数据被清空时都会读不到或读到旧值，界面就落到
  * 系统语言。启动后拿到后端设置再对一次，不一致时切换并回写缓存。
  */
-export const syncLanguageFromSettings = (language?: string | null): void => {
+export const syncLanguageFromSettings = async (
+  language?: string | null,
+): Promise<void> => {
   if (!isLanguage(language)) return;
 
   if (i18n.language !== language) {
-    void i18n.changeLanguage(language);
+    await i18n.changeLanguage(language);
   }
 
   try {

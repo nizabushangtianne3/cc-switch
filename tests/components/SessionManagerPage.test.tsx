@@ -125,7 +125,7 @@ describe("SessionManagerPage", () => {
         summary: "Claude summary",
         projectDir: "/mock/claude",
         createdAt: now - 2 * HOUR,
-        lastActiveAt: now - 30 * 60 * 1000,
+        lastActiveAt: now,
         sourcePath: "/mock/claude/session-1.jsonl",
         resumeCommand: "claude --resume claude-session-1",
       },
