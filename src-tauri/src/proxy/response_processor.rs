@@ -107,11 +107,12 @@ pub(crate) async fn read_decoded_body(
         format_headers(&headers)
     );
 
-    let mut body_bytes = raw_bytes.clone();
+    let mut body_bytes = raw_bytes;
     let mut decoded = false;
 
     if let Some(encoding) = get_content_encoding(&headers) {
         log::debug!("[{tag}] 解压非流式响应: content-encoding={encoding}");
+        let raw_bytes = body_bytes;
         match decompress_body_with_limit(&encoding, &raw_bytes, MAX_RESPONSE_BODY_BYTES) {
             Ok(Some(decompressed)) => {
                 // 解码器在预算耗尽处即截停，此处必然 ≤ MAX_RESPONSE_BODY_BYTES
@@ -120,12 +121,13 @@ pub(crate) async fn read_decoded_body(
             }
             // 不支持的编码：原样透传且保留 content-encoding 头，
             // 让下游诊断/客户端知道这仍是压缩字节
-            Ok(None) => {}
+            Ok(None) => body_bytes = raw_bytes,
             Err(DecompressError::TooLarge { .. }) => {
                 return Err(ProxyError::ResponseBodyTooLarge(MAX_RESPONSE_BODY_BYTES));
             }
             Err(DecompressError::Io(e)) => {
                 log::warn!("[{tag}] 解压失败 ({encoding}): {e}，使用原始数据");
+                body_bytes = raw_bytes;
             }
         }
     }
