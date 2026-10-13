@@ -71,14 +71,11 @@ impl UsageCache {
         provider_id: &str,
         f: impl FnOnce(&UsageResult) -> R,
     ) -> Option<R> {
-        self.script
-            .read()
-            .ok()
-            .and_then(|r| {
-                r.get(app_type)
-                    .and_then(|providers| providers.get(provider_id))
-                    .map(f)
-            })
+        self.script.read().ok().and_then(|r| {
+            r.get(app_type)
+                .and_then(|providers| providers.get(provider_id))
+                .map(f)
+        })
     }
 
     pub fn invalidate_script(&self, app_type: &AppType, provider_id: &str) {
