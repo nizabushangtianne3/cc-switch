@@ -267,12 +267,14 @@ describe("SessionManagerPage", () => {
     expect(screen.getByText("Codex 2")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "按时间" }));
-    expect(
-      within(sessionList()).getByRole("heading", { name: "今天" }),
-    ).toBeInTheDocument();
-    expect(
-      within(sessionList()).getByRole("heading", { name: "更早" }),
-    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        within(sessionList()).getByRole("heading", { name: "今天" }),
+      ).toBeInTheDocument();
+      expect(
+        within(sessionList()).getByRole("heading", { name: "更早" }),
+      ).toBeInTheDocument();
+    });
   });
 
   it("only offers apps that are shown in the sidebar", async () => {
