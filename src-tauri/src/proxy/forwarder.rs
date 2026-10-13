@@ -1637,16 +1637,19 @@ impl RequestForwarder {
         // uses `base_url` - none of the URL-construction branches below rewrites the
         // authority (the only one that replaces the host wholesale is Copilot's
         // dynamic endpoint, which points at GitHub, never opencode.ai).
-        let base_url_host = base_url
-            .parse::<http::Uri>()
-            .ok()
-            .and_then(|u| u.authority().map(|a| a.to_string()));
         let opencode_conversation_fingerprint = if !self.session_client_provided
             && !headers.contains_key("x-opencode-session")
             && native_session_header(headers).is_none()
-            && is_opencode_upstream(base_url_host.as_deref())
         {
-            conversation_fingerprint(&mapped_body)
+            let base_url_host = base_url
+                .parse::<http::Uri>()
+                .ok()
+                .and_then(|u| u.authority().map(|a| a.to_string()));
+            if is_opencode_upstream(base_url_host.as_deref()) {
+                conversation_fingerprint(&mapped_body)
+            } else {
+                None
+            }
         } else {
             None
         };
