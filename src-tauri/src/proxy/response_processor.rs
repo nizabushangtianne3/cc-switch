@@ -616,14 +616,14 @@ fn spawn_log_usage(
 
     let state = state.clone();
     let provider_id = ctx.provider.id.clone();
-    let app_type_str = ctx.app_type_str.to_string();
+    let app_type_str = ctx.app_type_str;
     let model = model.to_string();
     let request_model = request_model.to_string();
     // 「按请求计价」模式的锚点：映射后的出站模型，无映射时等于 request_model
     let outbound_model = ctx
         .outbound_model
         .clone()
-        .unwrap_or_else(|| ctx.request_model.clone());
+        .unwrap_or_else(|| request_model.clone());
     let latency_ms = ctx.latency_ms();
     let session_id = ctx.session_id.clone();
     let api_key_id = ctx.api_key_id.clone();
