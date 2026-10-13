@@ -887,6 +887,7 @@ impl RequestForwarder {
         let mut last_error = None;
         let mut last_provider = None;
         let mut attempted_providers = 0usize;
+        let body = Arc::new(body);
 
         // 单 Provider 场景下跳过熔断器检查（故障转移关闭时）；Stack 模型的请求不碰熔断器。
         let bypass_circuit_breaker = providers.len() == 1 || !self.routing_state_enabled();
@@ -922,20 +923,19 @@ impl RequestForwarder {
                 continue;
             }
 
-            // PRE-SEND 优化器：每个 provider 独立决定是否优化
-            // clone body 以避免 Bedrock 优化字段泄漏到非 Bedrock provider（failover 场景）
-            let mut provider_body =
+            // PRE-SEND 优化器：普通路径只共享请求体；Bedrock 需要写入时再复制。
+            let provider_body =
                 if self.optimizer_config.enabled && is_bedrock_provider(provider) {
-                    let mut b = body.clone();
+                    let mut b = (*body).clone();
                     if self.optimizer_config.thinking_optimizer {
                         super::thinking_optimizer::optimize(&mut b, &self.optimizer_config);
                     }
                     if self.optimizer_config.cache_injection {
                         super::cache_injector::inject(&mut b, &self.optimizer_config);
                     }
-                    b
+                    Arc::new(b)
                 } else {
-                    body.clone()
+                    Arc::clone(&body)
                 };
 
             attempted_providers += 1;
@@ -1016,7 +1016,7 @@ impl RequestForwarder {
                             &provider_body,
                             &e,
                         ) {
-                            let mut media_body = provider_body.clone();
+                            let mut media_body = (*provider_body).clone();
                             let replaced_images =
                                 super::media_sanitizer::replace_image_blocks_with_marker(
                                     &mut media_body,
@@ -1100,7 +1100,7 @@ impl RequestForwarder {
                             &e,
                         ) {
                             let agent_task = carries_encrypted_agent_task(&provider_body);
-                            let mut opaque_body = provider_body.clone();
+                            let mut opaque_body = (*provider_body).clone();
                             let rectified = rectify_opaque_state(&mut opaque_body, rejection);
                             if !rectified.applied && agent_task {
                                 log::warn!(
@@ -1215,8 +1215,10 @@ impl RequestForwarder {
                                         .await);
                                 }
 
-                                // 首次触发：整流请求体
-                                let rectified = rectify_anthropic_request(&mut provider_body);
+                                // 首次触发：整流请求体。保留原体，避免污染后续供应商。
+                                let mut signature_body = Arc::clone(&provider_body);
+                                let rectified =
+                                    rectify_anthropic_request(Arc::make_mut(&mut signature_body));
 
                                 // 整流未生效：继续尝试 budget 整流路径，避免误判后短路
                                 if !rectified.applied {
@@ -1244,7 +1246,7 @@ impl RequestForwarder {
                                             &method,
                                             provider,
                                             endpoint,
-                                            &provider_body,
+                                            &signature_body,
                                             &headers,
                                             &extensions,
                                             adapter.as_ref(),
@@ -1314,7 +1316,9 @@ impl RequestForwarder {
                                         .await);
                                 }
 
-                                let budget_rectified = rectify_thinking_budget(&mut provider_body);
+                                let mut budget_body = Arc::clone(&provider_body);
+                                let budget_rectified =
+                                    rectify_thinking_budget(Arc::make_mut(&mut budget_body));
                                 if !budget_rectified.applied {
                                     log::warn!(
                                     "[{app_type_str}] [RECT-014] budget 整流器触发但无可整流内容，不做无意义重试"
@@ -1346,7 +1350,7 @@ impl RequestForwarder {
                                         &method,
                                         provider,
                                         endpoint,
-                                        &provider_body,
+                                        &budget_body,
                                         &headers,
                                         &extensions,
                                         adapter.as_ref(),
