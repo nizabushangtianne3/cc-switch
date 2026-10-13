@@ -167,8 +167,7 @@ fn write_json_without_cache_control(value: &Value, hasher: &mut Sha256) {
             }
             hasher.update(b"]");
         }
-        other => serde_json::to_writer(&mut *hasher, other)
-            .expect("serialize JSON value"),
+        other => serde_json::to_writer(&mut *hasher, other).expect("serialize JSON value"),
     }
 }
 
