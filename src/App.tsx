@@ -76,9 +76,7 @@ import {
   AppPageHeader,
   WindowControlsContext,
 } from "@/components/shell/AppPageHeader";
-import { WindowControls } from "@/components/shell/WindowControls";
 import { APP_DISPLAY_NAME, AppGlyph } from "@/components/shell/AppGlyph";
-import { ProfileSwitcher } from "@/components/profiles/ProfileSwitcher";
 import { ProviderList } from "@/components/providers/ProviderList";
 import {
   hasOpencodeDefinition,
@@ -90,9 +88,6 @@ import {
   checkToolUpdatesInBackground,
   useToolUpdatesAvailable,
 } from "@/components/apps/useToolManagement";
-import { EnvWarningBanner } from "@/components/env/EnvWarningBanner";
-import { SwitchModePanel } from "@/components/providers/mode/SwitchModePanel";
-import { DesktopAccessBar } from "@/components/providers/mode/DesktopAccessBar";
 import { proxyApi } from "@/lib/api/proxy";
 import type { AppMode, StartupAttachFailure } from "@/types/proxy";
 import { PROMPT_APP_IDS } from "@/lib/query/prompts";
@@ -113,7 +108,6 @@ import {
   useDisableCurrentOmoSlim,
 } from "@/lib/query/omo";
 import { invalidatePiProviderCaches, usePiCurrentState } from "@/lib/query/pi";
-import OpenClawHealthBanner from "@/components/openclaw/OpenClawHealthBanner";
 import {
   APP_IDS,
   DEFAULT_VISIBLE_APPS,
@@ -197,6 +191,34 @@ const LazyHermesMemorySaveButton = lazy(() =>
   import("@/components/hermes/HermesMemoryPanel").then((module) => ({
     default: module.HermesMemorySaveButton,
   })),
+);
+const LazyWindowControls = lazy(() =>
+  import("@/components/shell/WindowControls").then((module) => ({
+    default: module.WindowControls,
+  })),
+);
+const LazyProfileSwitcher = lazy(() =>
+  import("@/components/profiles/ProfileSwitcher").then((module) => ({
+    default: module.ProfileSwitcher,
+  })),
+);
+const LazyEnvWarningBanner = lazy(() =>
+  import("@/components/env/EnvWarningBanner").then((module) => ({
+    default: module.EnvWarningBanner,
+  })),
+);
+const LazySwitchModePanel = lazy(() =>
+  import("@/components/providers/mode/SwitchModePanel").then((module) => ({
+    default: module.SwitchModePanel,
+  })),
+);
+const LazyDesktopAccessBar = lazy(() =>
+  import("@/components/providers/mode/DesktopAccessBar").then((module) => ({
+    default: module.DesktopAccessBar,
+  })),
+);
+const LazyOpenClawHealthBanner = lazy(
+  () => import("@/components/openclaw/OpenClawHealthBanner"),
 );
 
 function PageLoader() {
@@ -1250,7 +1272,9 @@ function App() {
           {currentView === "providers" &&
             activeApp !== "mcode" &&
             (settingsData?.showProfileSwitcher ?? false) && (
-              <ProfileSwitcher activeApp={activeApp} />
+              <Suspense fallback={null}>
+                <LazyProfileSwitcher activeApp={activeApp} />
+              </Suspense>
             )}
           {activeApp === "hermes" && (
             <Button
@@ -1359,7 +1383,7 @@ function App() {
         (failure) => failure.appType === proxyAppId,
       );
       return (
-        <SwitchModePanel
+        <LazySwitchModePanel
           key={proxyAppId}
           app={proxyAppId}
           providers={providers}
@@ -1392,7 +1416,7 @@ function App() {
       >
         <div className="space-y-4">
           {activeApp === "claude-desktop" && (
-            <DesktopAccessBar
+            <LazyDesktopAccessBar
               current={providers[currentProviderId]}
               onOpenRoutingSettings={() => openSettings("routing")}
             />
@@ -1496,7 +1520,7 @@ function App() {
         {renderAppPageHeader()}
         {renderAppSegments()}
         {isOpenClawView && openclawHealthWarnings.length > 0 && (
-          <OpenClawHealthBanner warnings={openclawHealthWarnings} />
+          <LazyOpenClawHealthBanner warnings={openclawHealthWarnings} />
         )}
         {body}
       </>
@@ -1611,7 +1635,13 @@ function App() {
 
   return (
     <WindowControlsContext.Provider
-      value={useAppWindowControls ? <WindowControls /> : null}
+      value={
+        useAppWindowControls ? (
+          <Suspense fallback={null}>
+            <LazyWindowControls />
+          </Suspense>
+        ) : null
+      }
     >
       <div className="flex h-screen overflow-hidden bg-app text-fg-1 selection:bg-action/25">
         <Sidebar
@@ -1636,28 +1666,30 @@ function App() {
           className="relative isolate flex min-w-0 flex-1 flex-col overflow-hidden bg-app"
         >
           {showEnvBanner && envConflicts.length > 0 && (
-            <EnvWarningBanner
-              conflicts={envConflicts}
-              onDismiss={() => {
-                setShowEnvBanner(false);
-                sessionStorage.setItem("env_banner_dismissed", "true");
-              }}
-              onDeleted={async () => {
-                try {
-                  const allConflicts = await checkAllEnvConflicts();
-                  const flatConflicts = Object.values(allConflicts).flat();
-                  setEnvConflicts(flatConflicts);
-                  if (flatConflicts.length === 0) {
-                    setShowEnvBanner(false);
+            <Suspense fallback={null}>
+              <LazyEnvWarningBanner
+                conflicts={envConflicts}
+                onDismiss={() => {
+                  setShowEnvBanner(false);
+                  sessionStorage.setItem("env_banner_dismissed", "true");
+                }}
+                onDeleted={async () => {
+                  try {
+                    const allConflicts = await checkAllEnvConflicts();
+                    const flatConflicts = Object.values(allConflicts).flat();
+                    setEnvConflicts(flatConflicts);
+                    if (flatConflicts.length === 0) {
+                      setShowEnvBanner(false);
+                    }
+                  } catch (error) {
+                    console.error(
+                      "[App] Failed to re-check conflicts after deletion:",
+                      error,
+                    );
                   }
-                } catch (error) {
-                  console.error(
-                    "[App] Failed to re-check conflicts after deletion:",
-                    error,
-                  );
-                }
-              }}
-            />
+                }}
+              />
+            </Suspense>
           )}
           <div
             key={
