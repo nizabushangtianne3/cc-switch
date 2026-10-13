@@ -924,19 +924,18 @@ impl RequestForwarder {
             }
 
             // PRE-SEND 优化器：普通路径只共享请求体；Bedrock 需要写入时再复制。
-            let provider_body =
-                if self.optimizer_config.enabled && is_bedrock_provider(provider) {
-                    let mut b = (*body).clone();
-                    if self.optimizer_config.thinking_optimizer {
-                        super::thinking_optimizer::optimize(&mut b, &self.optimizer_config);
-                    }
-                    if self.optimizer_config.cache_injection {
-                        super::cache_injector::inject(&mut b, &self.optimizer_config);
-                    }
-                    Arc::new(b)
-                } else {
-                    Arc::clone(&body)
-                };
+            let provider_body = if self.optimizer_config.enabled && is_bedrock_provider(provider) {
+                let mut b = (*body).clone();
+                if self.optimizer_config.thinking_optimizer {
+                    super::thinking_optimizer::optimize(&mut b, &self.optimizer_config);
+                }
+                if self.optimizer_config.cache_injection {
+                    super::cache_injector::inject(&mut b, &self.optimizer_config);
+                }
+                Arc::new(b)
+            } else {
+                Arc::clone(&body)
+            };
 
             attempted_providers += 1;
 
