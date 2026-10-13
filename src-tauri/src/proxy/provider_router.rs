@@ -107,7 +107,7 @@ impl ProviderRouter {
                 .collect();
 
             for provider_id in ordered_ids {
-                let Some(provider) = all_providers.get(&provider_id).cloned() else {
+                let Some(provider) = all_providers.remove(&provider_id) else {
                     continue;
                 };
                 if !provider_supports_failover(app_type, &provider) {
@@ -190,7 +190,7 @@ impl ProviderRouter {
                 provider_id,
                 app_type,
                 success,
-                error_msg.clone(),
+                error_msg,
                 failure_threshold,
             )
             .await?;
