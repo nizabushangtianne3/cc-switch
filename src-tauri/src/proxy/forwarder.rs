@@ -823,7 +823,7 @@ impl RequestForwarder {
         app_type: &AppType,
         method: http::Method,
         endpoint: &str,
-        body: Value,
+        body: &Value,
         headers: axum::http::HeaderMap,
         extensions: Extensions,
         providers: &[Provider],
@@ -870,7 +870,7 @@ impl RequestForwarder {
         app_type: &AppType,
         method: http::Method,
         endpoint: &str,
-        body: Value,
+        body: &Value,
         headers: axum::http::HeaderMap,
         extensions: Extensions,
         providers: &[Provider],
@@ -895,7 +895,7 @@ impl RequestForwarder {
         let mut last_error = None;
         let mut last_provider = None;
         let mut attempted_providers = 0usize;
-        let body = Arc::new(body);
+        let body = Arc::new(body.clone());
 
         // 单 Provider 场景下跳过熔断器检查（故障转移关闭时）；Stack 模型的请求不碰熔断器。
         let bypass_circuit_breaker = providers.len() == 1 || !self.routing_state_enabled();
@@ -6555,7 +6555,7 @@ mod tests {
                 &AppType::Codex,
                 http::Method::POST,
                 "/v1/responses",
-                body.clone(),
+                &body,
                 HeaderMap::new(),
                 Extensions::new(),
                 &[copilot, healthy],
@@ -7190,7 +7190,7 @@ mod tests {
                     &AppType::Codex,
                     http::Method::POST,
                     endpoint,
-                    body,
+                    &body,
                     chatgpt_headers(),
                     Extensions::new(),
                     &[provider],
@@ -7348,7 +7348,7 @@ mod tests {
                     &AppType::Claude,
                     http::Method::POST,
                     "/v1/messages",
-                    json!({
+                    &json!({
                         "model": "stacked-model",
                         "max_tokens": 16,
                         "messages": [{ "role": "user", "content": "hi" }]
@@ -7517,7 +7517,7 @@ mod tests {
                     &AppType::Codex,
                     http::Method::POST,
                     "/responses",
-                    history_with_foreign_reasoning(),
+                    &history_with_foreign_reasoning(),
                     chatgpt_headers(),
                     Extensions::new(),
                     &[provider],
@@ -7580,7 +7580,7 @@ mod tests {
                     &AppType::Codex,
                     http::Method::POST,
                     "/responses",
-                    request,
+                    &request,
                     chatgpt_headers(),
                     Extensions::new(),
                     &[provider(&upstream, "openai_responses")],
@@ -7801,7 +7801,7 @@ mod tests {
                     &AppType::Codex,
                     http::Method::POST,
                     "/responses",
-                    request,
+                    &request,
                     chatgpt_headers(),
                     Extensions::new(),
                     &[provider(upstream, "openai_responses")],
@@ -7945,7 +7945,7 @@ mod tests {
                     &AppType::Codex,
                     http::Method::POST,
                     "/responses",
-                    sub_agent_request(Vec::new()),
+                    &sub_agent_request(Vec::new()),
                     chatgpt_headers(),
                     Extensions::new(),
                     &[provider(&upstream, "openai_responses")],
@@ -8067,7 +8067,7 @@ mod tests {
                     &AppType::Claude,
                     http::Method::POST,
                     "/v1/messages",
-                    body,
+                    &body,
                     headers,
                     Extensions::new(),
                     &providers,

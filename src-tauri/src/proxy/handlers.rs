@@ -344,7 +344,7 @@ async fn handle_messages_for_app(
             &app_type,
             method,
             endpoint,
-            if needs_transform { body.clone() } else { body },
+            &body,
             headers,
             extensions,
             ctx.get_providers(),
@@ -940,7 +940,7 @@ pub async fn handle_chat_completions(
             &AppType::Codex,
             method,
             &endpoint,
-            body,
+            &body,
             headers,
             extensions,
             ctx.get_providers(),
@@ -1055,7 +1055,7 @@ async fn handle_responses_for_app(
         .unwrap_or(false);
     let codex_tool_context = transform_codex_chat::build_codex_tool_context_from_request(&body);
     let compaction_request = codex_tool_context.is_compaction_request();
-    // Captured before `body` is moved into the forwarder: the flat-name →
+    // Captured before `body` is handed to the forwarder: the flat-name →
     // {namespace, name} map used to restore the native Responses upstream's
     // function-call names (see the namespace-restore dispatch below).
     let namespace_restore_map = transform_codex_responses_namespace::namespace_restore_map(&body);
@@ -1066,7 +1066,7 @@ async fn handle_responses_for_app(
             &app_type,
             method,
             &endpoint,
-            body,
+            &body,
             headers,
             extensions,
             ctx.get_providers(),
@@ -1299,7 +1299,7 @@ async fn handle_codex_standalone_passthrough(
             &AppType::Codex,
             method,
             &endpoint,
-            body,
+            &body,
             headers,
             extensions,
             ctx.get_providers(),
@@ -1397,7 +1397,7 @@ async fn handle_responses_compact_for_app(
             &app_type,
             method,
             &endpoint,
-            body,
+            &body,
             headers,
             extensions,
             ctx.get_providers(),
@@ -2484,7 +2484,7 @@ pub async fn handle_gemini(
             &AppType::Gemini,
             method,
             endpoint,
-            body,
+            &body,
             headers,
             extensions,
             ctx.get_providers(),
