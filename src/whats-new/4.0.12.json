@@ -1,0 +1,12 @@
+{
+  "version": "4.0.12",
+  "items": [
+    {
+      "type": "fix",
+      "zh": "修复单 Key 供应商用量归属和数据库升级顺序",
+      "zh-TW": "修復單 Key 供應商用量歸屬和資料庫升級順序",
+      "en": "Fixed single-key usage attribution and database upgrade ordering",
+      "ja": "シングルキーの使用量帰属とデータベース移行順序を修正"
+    }
+  ]
+}

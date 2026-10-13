@@ -5,6 +5,13 @@ All notable changes to CC Switch will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.12] - 2026-10-13
+
+### Fixed
+
+- **Single-key usage attribution:** Provider forms persist one API key into `meta.apiKeys` with its selected strategy, so newly added single-key providers can participate in key-level usage attribution. Existing single-key providers must be saved again or re-added.
+- **Database migration ordering:** The v20 → v21 migration adds `api_key_id` before creating its index, and rebuilds daily rollups with the new key dimension. This prevents startup failures on databases created before schema 21. Old rows keep `api_key_id = ''`; no usage is inferred or backfilled.
+
 ## [4.0.11] - 2026-10-12
 
 ### Fixed
