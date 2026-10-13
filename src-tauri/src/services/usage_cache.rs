@@ -14,7 +14,7 @@ use crate::services::subscription::SubscriptionQuota;
 pub struct UsageCache {
     subscription: RwLock<HashMap<AppType, SubscriptionQuota>>,
     codex_oauth: RwLock<HashMap<String, SubscriptionQuota>>,
-    script: RwLock<HashMap<(AppType, String), UsageResult>>,
+    script: RwLock<HashMap<AppType, HashMap<String, UsageResult>>>,
 }
 
 impl UsageCache {
@@ -48,7 +48,7 @@ impl UsageCache {
 
     pub fn put_script(&self, app_type: AppType, provider_id: String, result: UsageResult) {
         if let Ok(mut w) = self.script.write() {
-            w.insert((app_type, provider_id), result);
+            w.entry(app_type).or_default().insert(provider_id, result);
         }
     }
 
@@ -74,18 +74,29 @@ impl UsageCache {
         self.script
             .read()
             .ok()
-            .and_then(|r| r.get(&(app_type.clone(), provider_id.to_string())).map(f))
+            .and_then(|r| {
+                r.get(app_type)
+                    .and_then(|providers| providers.get(provider_id))
+                    .map(f)
+            })
     }
 
     pub fn invalidate_script(&self, app_type: &AppType, provider_id: &str) {
         // 热路径会对每个禁用脚本的 provider 在托盘重建时调用一次：先走读锁
         // `contains_key` 快速放行"本来就不在缓存里"的常见情况，避免无谓的写锁升级。
-        let key = (app_type.clone(), provider_id.to_string());
-        if !self.script.read().is_ok_and(|r| r.contains_key(&key)) {
+        if !self.script.read().is_ok_and(|r| {
+            r.get(app_type)
+                .is_some_and(|providers| providers.contains_key(provider_id))
+        }) {
             return;
         }
         if let Ok(mut w) = self.script.write() {
-            w.remove(&key);
+            if let Some(providers) = w.get_mut(app_type) {
+                providers.remove(provider_id);
+                if providers.is_empty() {
+                    w.remove(app_type);
+                }
+            }
         }
     }
 
