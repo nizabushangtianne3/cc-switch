@@ -818,7 +818,7 @@ impl RequestForwarder {
         body: Value,
         headers: axum::http::HeaderMap,
         extensions: Extensions,
-        providers: Vec<Provider>,
+        providers: &[Provider],
     ) -> Result<ForwardResult, ForwardError> {
         if !self.routing_state_enabled() {
             return self
@@ -865,7 +865,7 @@ impl RequestForwarder {
         body: Value,
         headers: axum::http::HeaderMap,
         extensions: Extensions,
-        providers: Vec<Provider>,
+        providers: &[Provider],
     ) -> Result<ForwardResult, ForwardError> {
         // 获取适配器
         let adapter = get_adapter(app_type).ok_or_else(|| ForwardError {
@@ -6550,7 +6550,7 @@ mod tests {
                 body.clone(),
                 HeaderMap::new(),
                 Extensions::new(),
-                vec![copilot, healthy],
+                &[copilot, healthy],
             )
             .await;
 
@@ -7185,7 +7185,7 @@ mod tests {
                     body,
                     chatgpt_headers(),
                     Extensions::new(),
-                    vec![provider],
+                    &[provider],
                 )
                 .await
                 .map_err(|error| error.error)
@@ -7347,7 +7347,7 @@ mod tests {
                     }),
                     headers,
                     Extensions::new(),
-                    vec![provider],
+                    &[provider],
                 )
                 .await
                 .map_err(|error| error.error)
@@ -7512,7 +7512,7 @@ mod tests {
                     history_with_foreign_reasoning(),
                     chatgpt_headers(),
                     Extensions::new(),
-                    vec![provider],
+                    &[provider],
                 )
                 .await
         }
@@ -7575,7 +7575,7 @@ mod tests {
                     request,
                     chatgpt_headers(),
                     Extensions::new(),
-                    vec![provider(&upstream, "openai_responses")],
+                    &[provider(&upstream, "openai_responses")],
                 )
                 .await
                 .map_err(|error| error.error)
@@ -7796,7 +7796,7 @@ mod tests {
                     request,
                     chatgpt_headers(),
                     Extensions::new(),
-                    vec![provider(upstream, "openai_responses")],
+                    &[provider(upstream, "openai_responses")],
                 )
                 .await
         }
@@ -7940,7 +7940,7 @@ mod tests {
                     sub_agent_request(Vec::new()),
                     chatgpt_headers(),
                     Extensions::new(),
-                    vec![provider(&upstream, "openai_responses")],
+                    &[provider(&upstream, "openai_responses")],
                 )
                 .await
                 .map_err(|error| error.error)
@@ -8062,7 +8062,7 @@ mod tests {
                     body,
                     headers,
                     Extensions::new(),
-                    providers,
+                    &providers,
                 )
                 .await
         }

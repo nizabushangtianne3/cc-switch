@@ -116,15 +116,14 @@ impl RequestContext {
 
         // 提取 Session ID
         let session_result = extract_session_id(headers, body, app_type_str);
-        let session_id = session_result.session_id.clone();
-
         log::debug!(
             "[{}] Session ID: {} (from {:?}, client_provided: {})",
             tag,
-            session_id,
+            session_result.session_id,
             session_result.source,
             session_result.client_provided
         );
+        let session_id = session_result.session_id;
 
         let is_stack = stack.is_some();
         let (provider, providers, current_provider_id, request_model) = match stack {
@@ -299,8 +298,8 @@ impl RequestContext {
     /// 获取 Provider 列表（用于故障转移）
     ///
     /// 返回在创建上下文时已选择的 providers，避免重复调用 select_providers()
-    pub fn get_providers(&self) -> Vec<Provider> {
-        self.providers.clone()
+    pub fn get_providers(&self) -> &[Provider] {
+        &self.providers
     }
 
     /// 计算请求延迟（毫秒）
