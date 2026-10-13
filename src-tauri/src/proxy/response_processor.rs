@@ -632,7 +632,7 @@ fn spawn_log_usage(
         log_usage_internal(
             &state,
             &provider_id,
-            &app_type_str,
+            app_type_str,
             &model,
             &request_model,
             &outbound_model,
