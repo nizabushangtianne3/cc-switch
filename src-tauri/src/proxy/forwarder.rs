@@ -726,11 +726,19 @@ impl RequestForwarder {
             .await;
 
         {
-            let mut current_providers = self.current_providers.write().await;
-            current_providers.insert(
-                app_type_str.to_string(),
-                (provider.id.clone(), provider.name.clone()),
-            );
+            let unchanged = {
+                let current_providers = self.current_providers.read().await;
+                current_providers
+                    .get(app_type_str)
+                    .is_some_and(|(id, name)| id == &provider.id && name == &provider.name)
+            };
+            if !unchanged {
+                let mut current_providers = self.current_providers.write().await;
+                current_providers.insert(
+                    app_type_str.to_string(),
+                    (provider.id.clone(), provider.name.clone()),
+                );
+            }
         }
 
         {
