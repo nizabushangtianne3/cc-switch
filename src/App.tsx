@@ -90,6 +90,8 @@ import {
 } from "@/components/apps/useToolManagement";
 import { proxyApi } from "@/lib/api/proxy";
 import type { AppMode, StartupAttachFailure } from "@/types/proxy";
+import { SwitchModePanel } from "@/components/providers/mode/SwitchModePanel";
+import { DesktopAccessBar } from "@/components/providers/mode/DesktopAccessBar";
 import { PROMPT_APP_IDS } from "@/lib/query/prompts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -205,16 +207,6 @@ const LazyProfileSwitcher = lazy(() =>
 const LazyEnvWarningBanner = lazy(() =>
   import("@/components/env/EnvWarningBanner").then((module) => ({
     default: module.EnvWarningBanner,
-  })),
-);
-const LazySwitchModePanel = lazy(() =>
-  import("@/components/providers/mode/SwitchModePanel").then((module) => ({
-    default: module.SwitchModePanel,
-  })),
-);
-const LazyDesktopAccessBar = lazy(() =>
-  import("@/components/providers/mode/DesktopAccessBar").then((module) => ({
-    default: module.DesktopAccessBar,
   })),
 );
 const LazyOpenClawHealthBanner = lazy(
@@ -1383,7 +1375,7 @@ function App() {
         (failure) => failure.appType === proxyAppId,
       );
       return (
-        <LazySwitchModePanel
+        <SwitchModePanel
           key={proxyAppId}
           app={proxyAppId}
           providers={providers}
@@ -1416,7 +1408,7 @@ function App() {
       >
         <div className="space-y-4">
           {activeApp === "claude-desktop" && (
-            <LazyDesktopAccessBar
+            <DesktopAccessBar
               current={providers[currentProviderId]}
               onOpenRoutingSettings={() => openSettings("routing")}
             />
