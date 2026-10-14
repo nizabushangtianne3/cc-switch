@@ -105,3 +105,53 @@ export function PerformanceCells({
     </>
   );
 }
+
+/** 「成功率」「速度」两列的表头，Key 统计表没有首字列。 */
+export function SuccessSpeedHeaders() {
+  const { t } = useTranslation();
+  return (
+    <>
+      <th className={usageTable.th}>{t("usage.successRate")}</th>
+      <th className={usageTable.th}>
+        <span className="inline-flex items-center gap-0.5">
+          {t("usage.speed")}
+          <HelpTip title={t("usage.speedSumHelpTitle")} align="end">
+            {t("usage.speedSumHelp")}
+          </HelpTip>
+        </span>
+      </th>
+    </>
+  );
+}
+
+/** 「成功率」「速度」两列的单元格；精确速度缺失时用会话日志估算值，带 ≈。 */
+export function SuccessSpeedCells({
+  stat,
+}: {
+  stat: SpeedTotals & { successRate: number };
+}) {
+  const exactSpeed = getStatsSpeed(stat);
+  const estimatedSpeed =
+    exactSpeed == null ? getStatsEstimatedSpeed(stat) : null;
+  const speed = exactSpeed ?? estimatedSpeed;
+  return (
+    <>
+      <td className={usageTable.td}>
+        {stat.successRate.toFixed(stat.successRate >= 99.95 ? 0 : 1)}%
+      </td>
+      <td className={cn(usageTable.td, speed == null && usageTable.muted)}>
+        {speed == null ? (
+          "—"
+        ) : (
+          <>
+            {estimatedSpeed != null && "≈"}
+            {speed}
+            <span className="ms-0.5 text-badge font-normal text-fg-3">
+              tok/s
+            </span>
+          </>
+        )}
+      </td>
+    </>
+  );
+}
