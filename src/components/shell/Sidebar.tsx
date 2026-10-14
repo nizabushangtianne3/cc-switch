@@ -1,4 +1,4 @@
-import { useRef, type ComponentType } from "react";
+import { useCallback, useMemo, useRef, type ComponentType } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { getVersion } from "@tauri-apps/api/app";
@@ -209,7 +209,10 @@ function MainDirectory({
   const { t } = useTranslation();
   const { hasUpdate } = useUpdate();
   const { appStatus, todayCost, authNeedsAttention } = useSidebarStatus();
-  const apps = APP_IDS.filter((app) => visibleApps[app]);
+  const apps = useMemo(
+    () => APP_IDS.filter((app) => visibleApps[app]),
+    [visibleApps],
+  );
   const onAppPage = isAppPage(view);
 
   const todayLabel =
@@ -217,33 +220,40 @@ function MainDirectory({
       ? t("nav.todayCost", { cost: fmtUsd(todayCost, 2) })
       : undefined;
 
-  const globals: {
-    page: GlobalPage;
-    label: string;
-    icon: IconComponent;
-    trailing?: string;
-    alert?: string;
-  }[] = [
-    { page: "mcp", label: "MCP", icon: Server },
-    { page: "skills", label: "Skills", icon: SkillsIcon },
-    { page: "prompts", label: t("nav.prompts"), icon: BookOpen },
-    { page: "sessions", label: t("nav.sessions"), icon: History },
+  const globals = useMemo<
     {
-      page: "auth",
-      label: t("nav.auth"),
-      icon: KeyRound,
-      alert: authNeedsAttention ? t("nav.authNeedsReauth") : undefined,
-    },
-    {
-      page: "usage",
-      label: t("nav.usage"),
-      icon: ChartColumn,
-      trailing: todayLabel,
-    },
-  ];
+      page: GlobalPage;
+      label: string;
+      icon: IconComponent;
+      trailing?: string;
+      alert?: string;
+    }[]
+  >(() => {
+    return [
+      { page: "mcp", label: "MCP", icon: Server },
+      { page: "skills", label: "Skills", icon: SkillsIcon },
+      { page: "prompts", label: t("nav.prompts"), icon: BookOpen },
+      { page: "sessions", label: t("nav.sessions"), icon: History },
+      {
+        page: "auth",
+        label: t("nav.auth"),
+        icon: KeyRound,
+        alert: authNeedsAttention ? t("nav.authNeedsReauth") : undefined,
+      },
+      {
+        page: "usage",
+        label: t("nav.usage"),
+        icon: ChartColumn,
+        trailing: todayLabel,
+      },
+    ];
+  }, [t, authNeedsAttention, todayLabel]);
 
-  const isGlobalSelected = (page: GlobalPage) =>
-    view === page || (page === "skills" && view === "skillsDiscovery");
+  const isGlobalSelected = useCallback(
+    (page: GlobalPage) =>
+      view === page || (page === "skills" && view === "skillsDiscovery"),
+    [view],
+  );
 
   return (
     <>
