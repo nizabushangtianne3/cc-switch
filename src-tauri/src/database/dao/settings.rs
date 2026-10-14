@@ -302,25 +302,6 @@ impl Database {
 
     // --- 整流器配置 ---
 
-    /// 一次性读取代理请求热路径需要的三组运行时配置。
-    ///
-    /// 这三个值分别存在 `settings` 表里；合并读取避免每个代理请求重复加锁三次。
-    pub fn get_proxy_runtime_configs(
-        &self,
-    ) -> Result<
-        (
-            crate::proxy::types::RectifierConfig,
-            crate::proxy::types::OptimizerConfig,
-            crate::proxy::types::CopilotOptimizerConfig,
-        ),
-        AppError,
-    > {
-        {
-            let conn = lock_conn!(self.conn);
-            proxy_runtime_configs_from_conn(&conn)
-        }
-    }
-
     /// 获取整流器配置
     ///
     /// 返回整流器配置，如果不存在则返回默认值（全部开启）
