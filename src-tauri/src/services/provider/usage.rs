@@ -129,14 +129,16 @@ pub async fn query_usage(
     provider_id: &str,
 ) -> Result<UsageResult, AppError> {
     let (script_code, timeout, api_key, base_url, access_token, user_id, template_type) = {
-        let providers = state.db.get_all_providers(app_type.as_str())?;
-        let provider = providers.get(provider_id).ok_or_else(|| {
-            AppError::localized(
-                "provider.not_found",
-                format!("供应商不存在: {provider_id}"),
-                format!("Provider not found: {provider_id}"),
-            )
-        })?;
+        let provider = state
+            .db
+            .get_provider_by_id(provider_id, app_type.as_str())?
+            .ok_or_else(|| {
+                AppError::localized(
+                    "provider.not_found",
+                    format!("供应商不存在: {provider_id}"),
+                    format!("Provider not found: {provider_id}"),
+                )
+            })?;
 
         let usage_script = provider
             .meta
@@ -202,18 +204,21 @@ pub async fn test_usage_script(
     user_id: Option<&str>,
     template_type: Option<&str>,
 ) -> Result<UsageResult, AppError> {
-    let providers = state.db.get_all_providers(app_type.as_str())?;
-    let provider = providers.get(provider_id).ok_or_else(|| {
-        AppError::localized(
-            "provider.not_found",
-            format!("供应商不存在: {provider_id}"),
-            format!("Provider not found: {provider_id}"),
-        )
-    })?;
+    let provider = state
+        .db
+        .get_provider_by_id(provider_id, app_type.as_str())?
+        .ok_or_else(|| {
+            AppError::localized(
+                "provider.not_found",
+                format!("供应商不存在: {provider_id}"),
+                format!("Provider not found: {provider_id}"),
+            )
+        })?;
 
     // Resolve like the real query so testing matches what a saved script does:
     // explicit values win, empty ones fall back to the provider config.
-    let (api_key, base_url) = resolve_script_credentials(&app_type, provider, api_key, base_url);
+    let (api_key, base_url) =
+        resolve_script_credentials(&app_type, &provider, api_key, base_url);
 
     execute_and_format_usage_result(
         script_code,
