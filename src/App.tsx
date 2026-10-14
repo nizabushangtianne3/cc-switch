@@ -419,40 +419,46 @@ function App() {
     activeApp,
     isProxyRunning && isCurrentAppTakeoverActive,
   );
-  const handleEnablePiProvider = async (provider: Provider) => {
-    try {
-      await providersApi.switch(provider.id, "pi");
-      await invalidatePiProviderCaches(queryClient);
-      await providersApi.updateTrayMenu().catch((error) => {
-        console.error(
-          "Failed to update tray menu after enabling Pi provider",
-          error,
+  const handleEnablePiProvider = useCallback(
+    async (provider: Provider) => {
+      try {
+        await providersApi.switch(provider.id, "pi");
+        await invalidatePiProviderCaches(queryClient);
+        await providersApi.updateTrayMenu().catch((error) => {
+          console.error(
+            "Failed to update tray menu after enabling Pi provider",
+            error,
+          );
+        });
+        toast.success(
+          t("pi.provider.enabled", {
+            defaultValue: "已在 Pi 中启用",
+          }),
+          { closeButton: true },
         );
-      });
-      toast.success(
-        t("pi.provider.enabled", {
-          defaultValue: "已在 Pi 中启用",
-        }),
-        { closeButton: true },
-      );
-    } catch (error) {
-      const detail = extractErrorMessage(error);
-      toast.error(
-        t("pi.provider.enableFailed", {
-          defaultValue: "无法在 Pi 中启用此供应商",
-        }),
-        {
-          description:
-            translatePiProviderMutationError(detail, t) || detail || undefined,
-          closeButton: true,
-        },
-      );
-    }
-  };
+      } catch (error) {
+        const detail = extractErrorMessage(error);
+        toast.error(
+          t("pi.provider.enableFailed", {
+            defaultValue: "无法在 Pi 中启用此供应商",
+          }),
+          {
+            description:
+              translatePiProviderMutationError(detail, t) ||
+              detail ||
+              undefined,
+            closeButton: true,
+          },
+        );
+      }
+    },
+    [queryClient, t],
+  );
 
   const disableOmoMutation = useDisableCurrentOmo();
-  const handleDisableOmo = () => {
-    disableOmoMutation.mutate(undefined, {
+  const disableOmo = disableOmoMutation.mutate;
+  const handleDisableOmo = useCallback(() => {
+    disableOmo(undefined, {
       onSuccess: () => {
         toast.success(t("omo.disabled", { defaultValue: "OMO 已停用" }));
       },
@@ -465,11 +471,12 @@ function App() {
         );
       },
     });
-  };
+  }, [disableOmo, t]);
 
   const disableOmoSlimMutation = useDisableCurrentOmoSlim();
-  const handleDisableOmoSlim = () => {
-    disableOmoSlimMutation.mutate(undefined, {
+  const disableOmoSlim = disableOmoSlimMutation.mutate;
+  const handleDisableOmoSlim = useCallback(() => {
+    disableOmoSlim(undefined, {
       onSuccess: () => {
         toast.success(t("omo.disabled", { defaultValue: "OMO 已停用" }));
       },
@@ -482,7 +489,7 @@ function App() {
         );
       },
     });
-  };
+  }, [disableOmoSlim, t]);
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
@@ -849,18 +856,21 @@ function App() {
     setLaunchDashboardOpen(true),
   );
 
-  const handleOpenWebsite = async (url: string) => {
-    try {
-      await settingsApi.openExternal(url);
-    } catch (error) {
-      const detail =
-        extractErrorMessage(error) ||
-        t("notifications.openLinkFailed", {
-          defaultValue: "链接打开失败",
-        });
-      toast.error(detail);
-    }
-  };
+  const handleOpenWebsite = useCallback(
+    async (url: string) => {
+      try {
+        await settingsApi.openExternal(url);
+      } catch (error) {
+        const detail =
+          extractErrorMessage(error) ||
+          t("notifications.openLinkFailed", {
+            defaultValue: "链接打开失败",
+          });
+        toast.error(detail);
+      }
+    },
+    [t],
+  );
 
   const handleEditProvider = async ({
     provider,
@@ -1369,6 +1379,36 @@ function App() {
     onSearchOpenChange: setProviderSearchOpen,
   };
 
+  const handleProviderSwitch = useCallback(
+    (provider: Provider) => {
+      if (activeApp === "pi") {
+        void handleEnablePiProvider(provider);
+        return;
+      }
+      void switchProvider(provider);
+    },
+    [activeApp, handleEnablePiProvider, switchProvider],
+  );
+
+  const handleRemoveFromConfig = useCallback(
+    (provider: Provider) =>
+      setConfirmAction({ provider, action: "remove" }),
+    [],
+  );
+
+  const handleSetAsDefault = useCallback(
+    (provider: Provider, modelId?: string) => {
+      if (activeApp === "openclaw") {
+        void setAsDefaultModel(provider, modelId);
+        return;
+      }
+      if (activeApp === "hermes") {
+        void switchProvider(provider);
+      }
+    },
+    [activeApp, setAsDefaultModel, switchProvider],
+  );
+
   const renderProviderList = () => {
     if (proxyAppId) {
       const startupFailure = startupFailures.find(
@@ -1419,18 +1459,14 @@ function App() {
             currentProviderId={currentProviderId}
             appId={activeApp}
             isLoading={isLoading}
-            onSwitch={(provider) =>
-              void (activeApp === "pi"
-                ? handleEnablePiProvider(provider)
-                : switchProvider(provider))
-            }
+            onSwitch={handleProviderSwitch}
             onRemoveFromConfig={
               activeApp === "opencode" ||
               activeApp === "openclaw" ||
               activeApp === "hermes" ||
               activeApp === "pi" ||
               activeApp === "mcode"
-                ? (provider) => setConfirmAction({ provider, action: "remove" })
+                ? handleRemoveFromConfig
                 : undefined
             }
             onDisableOmo={
@@ -1440,12 +1476,9 @@ function App() {
               activeApp === "opencode" ? handleDisableOmoSlim : undefined
             }
             onSetAsDefault={
-              activeApp === "openclaw"
-                ? (provider, modelId) =>
-                    void setAsDefaultModel(provider, modelId)
-                : activeApp === "hermes"
-                  ? (provider) => void switchProvider(provider)
-                  : undefined
+              activeApp === "openclaw" || activeApp === "hermes"
+                ? handleSetAsDefault
+                : undefined
             }
           />
         </div>
