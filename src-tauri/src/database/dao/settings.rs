@@ -263,7 +263,7 @@ impl Database {
             let mut stmt = conn
                 .prepare("SELECT key, value FROM settings WHERE key IN (?1, ?2, ?3)")
                 .map_err(|e| AppError::Database(e.to_string()))?;
-            let rows = stmt
+            let mut rows = stmt
                 .query(params![RECTIFIER_KEY, OPTIMIZER_KEY, COPILOT_KEY])
                 .map_err(|e| AppError::Database(e.to_string()))?;
 

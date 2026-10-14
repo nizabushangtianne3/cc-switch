@@ -2657,7 +2657,7 @@ impl RequestForwarder {
         // ============================================================
         // 构建有序 HeaderMap — 内联替换，保持客户端原始顺序
         // ============================================================
-        let mut ordered_headers = http::HeaderMap::with_capacity(headers.len(), headers.len());
+        let mut ordered_headers = http::HeaderMap::with_capacity(headers.len());
         let mut saw_auth = false;
         let mut saw_accept_encoding = false;
         let mut saw_accept = false;

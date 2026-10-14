@@ -490,7 +490,7 @@ fn sse_data_starts_output(event_name: Option<&str>, data: &str) -> bool {
         .and_then(Value::as_str);
     !matches!(
         event_type,
-        "response.created" | "response.in_progress" | "ping" | "keepalive"
+        Some("response.created") | Some("response.in_progress") | Some("ping") | Some("keepalive")
     )
 }
 
