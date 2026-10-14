@@ -1192,8 +1192,7 @@ function App() {
   };
 
   const handleHideActiveApp = async () => {
-    const visibleCount = Object.values(visibleApps).filter(Boolean).length;
-    if (visibleCount <= 1) return;
+    if (visibleAppCount <= 1) return;
     try {
       const current = await settingsApi.get();
       await settingsApi.save({
