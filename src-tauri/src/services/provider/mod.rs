@@ -6762,7 +6762,7 @@ impl ProviderService {
         )?;
         let owner_provider = match current_id.as_deref() {
             Some(id) => state.db.get_provider_by_id(id, AppType::Codex.as_str())?,
-            None => codex_direct::Owner::None,
+            None => None,
         };
         let owner = owner_provider
             .as_ref()
