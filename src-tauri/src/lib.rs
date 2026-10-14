@@ -1734,6 +1734,7 @@ pub fn run() {
             commands::auth_cancel_login,
             commands::auth_list_accounts,
             commands::auth_get_status,
+            commands::auth_get_statuses,
             commands::auth_remove_account,
             commands::auth_set_default_account,
             commands::auth_logout,

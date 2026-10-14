@@ -17,6 +17,8 @@ type LoginRequest = {
   generation: number;
 };
 
+const AUTH_STATUSES_QUERY_KEY = ["managed-auth-status"] as const;
+
 export function useManagedAuth(
   authProvider: ManagedAuthProvider,
   githubDomain?: string,
@@ -76,14 +78,14 @@ export function useManagedAuth(
         );
         if (!cancelled) {
           await queryClient.invalidateQueries({
-            queryKey: ["managed-auth-status", authProvider],
+            queryKey: AUTH_STATUSES_QUERY_KEY,
           });
         }
         return cancelled;
       } catch (e) {
         console.debug("[ManagedAuth] Failed to cancel device flow:", e);
         await queryClient.invalidateQueries({
-          queryKey: ["managed-auth-status", authProvider],
+          queryKey: AUTH_STATUSES_QUERY_KEY,
         });
         return false;
       }
@@ -169,7 +171,9 @@ export function useManagedAuth(
             const completionGeneration = flowGenerationRef.current;
             setPollingState("success");
             await refetchStatus();
-            await queryClient.invalidateQueries({ queryKey });
+            await queryClient.invalidateQueries({
+              queryKey: AUTH_STATUSES_QUERY_KEY,
+            });
             if (completionGeneration !== flowGenerationRef.current) return;
             setPollingState("idle");
             setDeviceCode(null);
@@ -229,7 +233,9 @@ export function useManagedAuth(
         default_account_id: null,
         accounts: [],
       });
-      await queryClient.invalidateQueries({ queryKey });
+      await queryClient.invalidateQueries({
+        queryKey: AUTH_STATUSES_QUERY_KEY,
+      });
     },
     onError: async (e) => {
       console.error("[ManagedAuth] Failed to logout:", e);
@@ -258,7 +264,9 @@ export function useManagedAuth(
         }),
       );
       await refetchStatus();
-      await queryClient.invalidateQueries({ queryKey });
+      await queryClient.invalidateQueries({
+        queryKey: AUTH_STATUSES_QUERY_KEY,
+      });
     },
     onError: async (e) => {
       console.error("[ManagedAuth] Failed to remove account:", e);
@@ -280,7 +288,9 @@ export function useManagedAuth(
       authApi.authSetDefaultAccount(authProvider, accountId),
     onSuccess: async () => {
       await refetchStatus();
-      await queryClient.invalidateQueries({ queryKey });
+      await queryClient.invalidateQueries({
+        queryKey: AUTH_STATUSES_QUERY_KEY,
+      });
     },
     onError: (e) => {
       console.error("[ManagedAuth] Failed to set default account:", e);

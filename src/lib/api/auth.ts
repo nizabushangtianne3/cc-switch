@@ -89,6 +89,12 @@ export async function authGetStatus(
   });
 }
 
+export async function authGetStatuses(): Promise<
+  Record<ManagedAuthProvider, ManagedAuthStatus>
+> {
+  return invoke("auth_get_statuses");
+}
+
 export async function authRemoveAccount(
   authProvider: ManagedAuthProvider,
   accountId: string,
@@ -123,6 +129,7 @@ export const authApi = {
   authCancelLogin,
   authListAccounts,
   authGetStatus,
+  authGetStatuses,
   authRemoveAccount,
   authSetDefaultAccount,
   authLogout,

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use tauri::State;
 
 use crate::app_config::AppType;
@@ -105,6 +107,78 @@ fn map_device_code_response(
         expires_in: response.expires_in,
         interval: response.interval,
     }
+}
+
+async fn copilot_auth_status(
+    copilot_state: &State<'_, CopilotAuthState>,
+) -> Result<ManagedAuthStatus, String> {
+    let auth_manager = copilot_state.0.read().await;
+    let status = auth_manager.get_status().await;
+    let default_account_id = status.default_account_id.clone();
+    let accounts = status
+        .accounts
+        .into_iter()
+        .map(|account| {
+            map_account(
+                AUTH_PROVIDER_GITHUB_COPILOT,
+                account,
+                default_account_id.as_deref(),
+            )
+        })
+        .collect();
+    Ok(ManagedAuthStatus {
+        provider: AUTH_PROVIDER_GITHUB_COPILOT.to_string(),
+        authenticated: status.authenticated,
+        default_account_id,
+        migration_error: status.migration_error,
+        accounts,
+    })
+}
+
+async fn codex_auth_status(
+    codex_state: &State<'_, CodexOAuthState>,
+) -> Result<ManagedAuthStatus, String> {
+    let auth_manager = &codex_state.0;
+    let status = auth_manager.get_status().await;
+    let default_account_id = status.default_account_id.clone();
+    let accounts = status
+        .accounts
+        .into_iter()
+        .map(|account| {
+            map_account(
+                AUTH_PROVIDER_CODEX_OAUTH,
+                account,
+                default_account_id.as_deref(),
+            )
+        })
+        .collect();
+    Ok(ManagedAuthStatus {
+        provider: AUTH_PROVIDER_CODEX_OAUTH.to_string(),
+        authenticated: status.authenticated,
+        default_account_id,
+        migration_error: None,
+        accounts,
+    })
+}
+
+async fn xai_auth_status(
+    xai_state: &State<'_, XaiOAuthState>,
+) -> Result<ManagedAuthStatus, String> {
+    let auth_manager = xai_state.0.read().await;
+    let status = auth_manager.get_status().await;
+    let default_account_id = status.default_account_id.clone();
+    let accounts = status
+        .accounts
+        .into_iter()
+        .map(|account| map_xai_account(account, default_account_id.as_deref()))
+        .collect();
+    Ok(ManagedAuthStatus {
+        provider: AUTH_PROVIDER_XAI_OAUTH.to_string(),
+        authenticated: status.authenticated,
+        default_account_id,
+        migration_error: None,
+        accounts,
+    })
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -282,60 +356,31 @@ pub async fn auth_get_status(
 ) -> Result<ManagedAuthStatus, String> {
     let auth_provider = ensure_auth_provider(&auth_provider)?;
     match auth_provider {
-        AUTH_PROVIDER_GITHUB_COPILOT => {
-            let auth_manager = copilot_state.0.read().await;
-            let status = auth_manager.get_status().await;
-            let default_account_id = status.default_account_id.clone();
-            Ok(ManagedAuthStatus {
-                provider: auth_provider.to_string(),
-                authenticated: status.authenticated,
-                default_account_id: default_account_id.clone(),
-                migration_error: status.migration_error,
-                accounts: status
-                    .accounts
-                    .into_iter()
-                    .map(|account| {
-                        map_account(auth_provider, account, default_account_id.as_deref())
-                    })
-                    .collect(),
-            })
-        }
-        AUTH_PROVIDER_CODEX_OAUTH => {
-            let auth_manager = &codex_state.0;
-            let status = auth_manager.get_status().await;
-            let default_account_id = status.default_account_id.clone();
-            Ok(ManagedAuthStatus {
-                provider: auth_provider.to_string(),
-                authenticated: status.authenticated,
-                default_account_id: default_account_id.clone(),
-                migration_error: None,
-                accounts: status
-                    .accounts
-                    .into_iter()
-                    .map(|account| {
-                        map_account(auth_provider, account, default_account_id.as_deref())
-                    })
-                    .collect(),
-            })
-        }
-        AUTH_PROVIDER_XAI_OAUTH => {
-            let auth_manager = xai_state.0.read().await;
-            let status = auth_manager.get_status().await;
-            let default_account_id = status.default_account_id.clone();
-            Ok(ManagedAuthStatus {
-                provider: auth_provider.to_string(),
-                authenticated: status.authenticated,
-                default_account_id: default_account_id.clone(),
-                migration_error: None,
-                accounts: status
-                    .accounts
-                    .into_iter()
-                    .map(|account| map_xai_account(account, default_account_id.as_deref()))
-                    .collect(),
-            })
-        }
+        AUTH_PROVIDER_GITHUB_COPILOT => copilot_auth_status(&copilot_state).await,
+        AUTH_PROVIDER_CODEX_OAUTH => codex_auth_status(&codex_state).await,
+        AUTH_PROVIDER_XAI_OAUTH => xai_auth_status(&xai_state).await,
         _ => unreachable!(),
     }
+}
+
+/// Load all managed auth statuses with one IPC call; the three managers are independent.
+#[tauri::command]
+pub async fn auth_get_statuses(
+    copilot_state: State<'_, CopilotAuthState>,
+    codex_state: State<'_, CodexOAuthState>,
+    xai_state: State<'_, XaiOAuthState>,
+) -> Result<HashMap<&'static str, ManagedAuthStatus>, String> {
+    let (copilot, codex, xai) = tokio::join!(
+        copilot_auth_status(&copilot_state),
+        codex_auth_status(&codex_state),
+        xai_auth_status(&xai_state),
+    );
+
+    Ok(HashMap::from([
+        (AUTH_PROVIDER_GITHUB_COPILOT, copilot?),
+        (AUTH_PROVIDER_CODEX_OAUTH, codex?),
+        (AUTH_PROVIDER_XAI_OAUTH, xai?),
+    ]))
 }
 
 #[tauri::command(rename_all = "camelCase")]
