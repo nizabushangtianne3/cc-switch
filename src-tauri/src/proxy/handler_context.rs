@@ -109,10 +109,9 @@ impl RequestContext {
             .await
             .map_err(|e| ProxyError::DatabaseError(e.to_string()))?;
 
-        // 从数据库读取整流器配置
-        let rectifier_config = state.db.get_rectifier_config().unwrap_or_default();
-        let optimizer_config = state.db.get_optimizer_config().unwrap_or_default();
-        let copilot_optimizer_config = state.db.get_copilot_optimizer_config().unwrap_or_default();
+        // 代理热路径的三组运行时配置合并读取，减少重复加锁。
+        let (rectifier_config, optimizer_config, copilot_optimizer_config) =
+            state.db.get_proxy_runtime_configs().unwrap_or_default();
 
         // 提取 Session ID
         let session_result = extract_session_id(headers, body, app_type_str);
@@ -140,10 +139,13 @@ impl RequestContext {
                     target.upstream_model,
                     session_id
                 );
+                let provider = target.provider;
+                let providers = vec![provider.clone()];
+                let provider_id = provider.id;
                 (
-                    target.provider.clone(),
-                    vec![target.provider.clone()],
-                    target.provider.id,
+                    provider,
+                    providers,
+                    provider_id,
                     target.original_model,
                 )
             }
@@ -175,7 +177,11 @@ impl RequestContext {
                     // 注意：只在这里调用一次，结果传递给 forwarder，避免重复消耗 HalfOpen 名额
                     state
                         .provider_router
-                        .select_providers_with_current(app_type_str, current_provider)
+                        .select_providers_with_current(
+                            app_type_str,
+                            current_provider,
+                            app_config.auto_failover_enabled,
+                        )
                         .await
                         .map_err(|e| match e {
                             crate::error::AppError::AllProvidersCircuitOpen => {

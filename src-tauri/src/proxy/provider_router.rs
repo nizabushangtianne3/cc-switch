@@ -59,8 +59,19 @@ impl ProviderRouter {
                 .ok()
                 .flatten()
         });
-        self.select_providers_with_current(app_type, current_provider)
-            .await
+        let auto_failover_enabled = match self.db.get_proxy_config_for_app(app_type).await {
+            Ok(config) => config.auto_failover_enabled,
+            Err(e) => {
+                log::error!("[{app_type}] 读取 proxy_config 失败: {e}，默认禁用故障转移");
+                false
+            }
+        };
+        self.select_providers_with_current(
+            app_type,
+            current_provider,
+            auto_failover_enabled,
+        )
+        .await
     }
 
     /// 同 [`Self::select_providers`]，正在用的那家由调用方给出：处理请求时上下文已经读过
@@ -70,19 +81,11 @@ impl ProviderRouter {
         &self,
         app_type: &str,
         current_provider: Option<Provider>,
+        auto_failover_enabled: bool,
     ) -> Result<Vec<Provider>, AppError> {
         let mut result = Vec::new();
         let mut total_providers = 0usize;
         let mut circuit_open_count = 0usize;
-
-        // 检查该应用的自动故障转移开关是否开启（从 proxy_config 表读取）
-        let auto_failover_enabled = match self.db.get_proxy_config_for_app(app_type).await {
-            Ok(config) => config.auto_failover_enabled,
-            Err(e) => {
-                log::error!("[{app_type}] 读取 proxy_config 失败: {e}，默认禁用故障转移");
-                false
-            }
-        };
 
         if auto_failover_enabled
             && current_provider
@@ -99,15 +102,8 @@ impl ProviderRouter {
             let mut all_providers = self.db.get_all_providers(app_type)?;
 
             // 使用 DAO 返回的排序结果，确保和前端展示一致
-            let ordered_ids: Vec<String> = self
-                .db
-                .get_failover_queue(app_type)?
-                .into_iter()
-                .map(|item| item.provider_id)
-                .collect();
-
-            for provider_id in ordered_ids {
-                let Some(provider) = all_providers.swap_remove(&provider_id) else {
+            for item in self.db.get_failover_queue(app_type)? {
+                let Some(provider) = all_providers.swap_remove(&item.provider_id) else {
                     continue;
                 };
                 if !provider_supports_failover(app_type, &provider) {

@@ -238,6 +238,66 @@ impl Database {
 
     // --- 整流器配置 ---
 
+    /// 一次性读取代理请求热路径需要的三组运行时配置。
+    ///
+    /// 这三个值分别存在 `settings` 表里；合并读取避免每个代理请求重复加锁三次。
+    pub fn get_proxy_runtime_configs(
+        &self,
+    ) -> Result<
+        (
+            crate::proxy::types::RectifierConfig,
+            crate::proxy::types::OptimizerConfig,
+            crate::proxy::types::CopilotOptimizerConfig,
+        ),
+        AppError,
+    > {
+        const RECTIFIER_KEY: &str = "rectifier_config";
+        const OPTIMIZER_KEY: &str = "optimizer_config";
+        const COPILOT_KEY: &str = "copilot_optimizer_config";
+
+        let mut rectifier_json: Option<String> = None;
+        let mut optimizer_json: Option<String> = None;
+        let mut copilot_json: Option<String> = None;
+        {
+            let conn = lock_conn!(self.conn);
+            let mut stmt = conn
+                .prepare("SELECT key, value FROM settings WHERE key IN (?1, ?2, ?3)")
+                .map_err(|e| AppError::Database(e.to_string()))?;
+            let rows = stmt
+                .query(params![RECTIFIER_KEY, OPTIMIZER_KEY, COPILOT_KEY])
+                .map_err(|e| AppError::Database(e.to_string()))?;
+
+            while let Some(row) = rows.next().map_err(|e| AppError::Database(e.to_string()))? {
+                let key: String = row.get(0).map_err(|e| AppError::Database(e.to_string()))?;
+                let value: String = row.get(1).map_err(|e| AppError::Database(e.to_string()))?;
+                match key.as_str() {
+                    RECTIFIER_KEY => rectifier_json = Some(value),
+                    OPTIMIZER_KEY => optimizer_json = Some(value),
+                    COPILOT_KEY => copilot_json = Some(value),
+                    _ => {}
+                }
+            }
+        }
+
+        let rectifier_config = match rectifier_json {
+            Some(json) => serde_json::from_str(&json)
+                .map_err(|e| AppError::Database(format!("解析整流器配置失败: {e}")))?,
+            None => crate::proxy::types::RectifierConfig::default(),
+        };
+        let optimizer_config = match optimizer_json {
+            Some(json) => serde_json::from_str(&json)
+                .map_err(|e| AppError::Database(format!("解析优化器配置失败: {e}")))?,
+            None => crate::proxy::types::OptimizerConfig::default(),
+        };
+        let copilot_optimizer_config = match copilot_json {
+            Some(json) => serde_json::from_str(&json)
+                .map_err(|e| AppError::Database(format!("解析 Copilot 优化器配置失败: {e}")))?,
+            None => crate::proxy::types::CopilotOptimizerConfig::default(),
+        };
+
+        Ok((rectifier_config, optimizer_config, copilot_optimizer_config))
+    }
+
     /// 获取整流器配置
     ///
     /// 返回整流器配置，如果不存在则返回默认值（全部开启）
