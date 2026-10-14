@@ -279,22 +279,21 @@ function ProviderListComponent({
   }, [isSearchOpen]);
 
   // 每家可被搜到的文字：名称、备注、官网、请求地址（请求地址要解析配置，只随列表变化重算）
-  const searchIndex = useMemo(
-    () =>
-      sortedProviders.map((provider) => ({
-        provider,
-        text: [
-          provider.name,
-          provider.notes,
-          provider.websiteUrl,
-          extractProviderBaseUrl(provider.settingsConfig),
-        ]
-          .filter(Boolean)
-          .join("\n")
-          .toLowerCase(),
-      })),
-    [sortedProviders],
-  );
+  const searchIndex = useMemo(() => {
+    if (!isSearchOpen) return [];
+    return sortedProviders.map((provider) => ({
+      provider,
+      text: [
+        provider.name,
+        provider.notes,
+        provider.websiteUrl,
+        extractProviderBaseUrl(provider.settingsConfig),
+      ]
+        .filter(Boolean)
+        .join("\n")
+        .toLowerCase(),
+    }));
+  }, [isSearchOpen, sortedProviders]);
 
   // 关掉面板就不再过滤：搜索词留着，下次打开还在，但列表不会悄悄少几家
   const filteredProviders = useMemo(() => {
