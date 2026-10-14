@@ -142,12 +142,7 @@ impl RequestContext {
                 let provider = Arc::new(target.provider);
                 let providers = vec![Arc::clone(&provider)];
                 let provider_id = provider.id.clone();
-                (
-                    provider,
-                    providers,
-                    provider_id,
-                    target.original_model,
-                )
+                (provider, providers, provider_id, target.original_model)
             }
             None => {
                 let current_provider = crate::mode::current::provider_in_use(&state.db, &app_type)

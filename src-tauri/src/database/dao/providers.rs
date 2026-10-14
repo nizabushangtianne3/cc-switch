@@ -165,13 +165,14 @@ impl Database {
             return Ok(providers);
         }
 
-        let mut endpoint_stmt = conn.prepare(
-            "SELECT provider_id, url, added_at
+        let mut endpoint_stmt = conn
+            .prepare(
+                "SELECT provider_id, url, added_at
              FROM provider_endpoints
              WHERE app_type = ?1
              ORDER BY added_at ASC, url ASC",
-        )
-        .map_err(|e| AppError::Database(e.to_string()))?;
+            )
+            .map_err(|e| AppError::Database(e.to_string()))?;
 
         let endpoint_iter = endpoint_stmt
             .query_map(params![app_type], |row| {

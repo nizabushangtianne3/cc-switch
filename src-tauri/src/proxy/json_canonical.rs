@@ -1,8 +1,8 @@
 //! Stable JSON helpers for cache-sensitive request bodies.
 
-use std::fmt::Write as _;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use std::fmt::Write as _;
 
 pub(crate) fn canonicalize_value(value: Value) -> Value {
     match value {

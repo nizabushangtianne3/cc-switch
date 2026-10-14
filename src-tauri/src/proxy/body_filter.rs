@@ -112,9 +112,7 @@ fn filter_recursive_with_whitelist(
         }
         Value::Array(arr) => Value::Array(
             arr.into_iter()
-                .map(|v| {
-                    filter_recursive_with_whitelist(v, parent_key, removed_keys, whitelist)
-                })
+                .map(|v| filter_recursive_with_whitelist(v, parent_key, removed_keys, whitelist))
                 .collect(),
         ),
         other => other,

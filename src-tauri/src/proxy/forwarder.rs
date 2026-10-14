@@ -619,14 +619,7 @@ impl RequestForwarder {
         let threshold = self.circuit_failure_threshold;
         tokio::spawn(async move {
             if let Err(e) = router
-                .record_result_with_threshold(
-                    &provider_id,
-                    &app_type,
-                    false,
-                    true,
-                    None,
-                    threshold,
-                )
+                .record_result_with_threshold(&provider_id, &app_type, false, true, None, threshold)
                 .await
             {
                 log::warn!(

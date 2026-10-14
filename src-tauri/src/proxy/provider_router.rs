@@ -66,12 +66,8 @@ impl ProviderRouter {
                 false
             }
         };
-        self.select_providers_with_current(
-            app_type,
-            current_provider,
-            auto_failover_enabled,
-        )
-        .await
+        self.select_providers_with_current(app_type, current_provider, auto_failover_enabled)
+            .await
     }
 
     /// 同 [`Self::select_providers`]，正在用的那家由调用方给出：处理请求时上下文已经读过
@@ -190,7 +186,6 @@ impl ProviderRouter {
         error_msg: Option<String>,
         failure_threshold: u32,
     ) -> Result<(), AppError> {
-
         // 2. 更新熔断器状态
         let circuit_key = format!("{app_type}:{provider_id}");
         let breaker = self.get_or_create_circuit_breaker(&circuit_key).await;
