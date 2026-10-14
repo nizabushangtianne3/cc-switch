@@ -110,7 +110,10 @@ export function AppsPage() {
     {},
   );
   // 「诊断安装冲突」（和升级后的自动补诊）有结果的行自动展开，否则点了诊断看起来没反应
-  const diagnosedTools = Object.keys(tools.toolDiagnostics) as ToolName[];
+  const diagnosedTools = useMemo(
+    () => Object.keys(tools.toolDiagnostics) as ToolName[],
+    [tools.toolDiagnostics],
+  );
   useEffect(() => {
     if (diagnosedTools.length === 0) return;
     setExpanded((prev) => {
