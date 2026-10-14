@@ -159,7 +159,6 @@ impl Database {
             provider.id = id.clone();
             providers.insert(id, provider);
         }
-        drop(provider_iter);
         drop(stmt);
 
         if providers.is_empty() {
@@ -201,7 +200,6 @@ impl Database {
                     },
                 );
         }
-        drop(endpoint_iter);
         drop(endpoint_stmt);
 
         for (id, provider) in providers.iter_mut() {
