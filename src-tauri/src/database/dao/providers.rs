@@ -384,6 +384,22 @@ impl Database {
         }
     }
 
+    /// 判断指定 app 下是否存在某个 provider；比加载完整行轻量得多。
+    pub fn provider_exists(&self, app_type: &str, provider_id: &str) -> Result<bool, AppError> {
+        let conn = lock_conn!(self.conn);
+        let exists: bool = conn
+            .query_row(
+                "SELECT EXISTS(
+                    SELECT 1 FROM providers
+                    WHERE app_type = ?1 AND id = ?2
+                 )",
+                params![app_type, provider_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        Ok(exists)
+    }
+
     pub fn save_provider(&self, app_type: &str, provider: &Provider) -> Result<(), AppError> {
         let mut conn = lock_conn!(self.conn);
         let tx = conn

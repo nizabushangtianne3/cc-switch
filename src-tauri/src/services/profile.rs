@@ -368,8 +368,7 @@ impl ProfileService {
 
             // 1. 供应商
             if let Some(Some(target_pid)) = payload.providers.get(app) {
-                let providers = state.db.get_all_providers(app_str)?;
-                if !providers.contains_key(target_pid) {
+                if !state.db.provider_exists(app_str, target_pid)? {
                     warnings.push(format!(
                         "[{app_str}] provider '{target_pid}' no longer exists, skipped"
                     ));
