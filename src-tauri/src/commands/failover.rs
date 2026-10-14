@@ -76,23 +76,26 @@ pub async fn get_failover_queue(
     app_type: String,
 ) -> Result<Vec<FailoverQueueItem>, String> {
     require_failover_app(&app_type)?;
-    let queue = state
-        .db
-        .get_failover_queue(&app_type)
-        .map_err(|e| e.to_string())?;
     if app_type != "codex" {
-        return Ok(queue);
+        return state
+            .db
+            .get_failover_queue(&app_type)
+            .map_err(|e| e.to_string());
     }
     let providers = state
         .db
-        .get_all_providers(&app_type)
+        .get_failover_queue_providers(&app_type)
         .map_err(|e| e.to_string())?;
-    Ok(queue
+    Ok(providers
         .into_iter()
-        .filter(|item| {
-            providers.get(&item.provider_id).is_some_and(|provider| {
-                crate::proxy::provider_router::provider_supports_failover(&app_type, provider)
-            })
+        .filter(|provider| {
+            crate::proxy::provider_router::provider_supports_failover(&app_type, provider)
+        })
+        .map(|provider| FailoverQueueItem {
+            provider_id: provider.id,
+            provider_name: provider.name,
+            sort_index: provider.sort_index,
+            provider_notes: provider.notes,
         })
         .collect())
 }
