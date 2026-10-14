@@ -836,6 +836,31 @@ impl RequestForwarder {
         extensions: Extensions,
         providers: &[Provider],
     ) -> Result<ForwardResult, ForwardError> {
+        self.forward_with_retry_arc(
+            app_type,
+            method,
+            endpoint,
+            Arc::new(body.clone()),
+            headers,
+            extensions,
+            providers,
+        )
+        .await
+    }
+
+    /// `forward_with_retry` 的所有权版本：调用方已有请求体时直接共享，避免复制。
+    #[allow(clippy::too_many_arguments)]
+    pub async fn forward_with_retry_arc(
+        &self,
+        app_type: &AppType,
+        method: http::Method,
+        endpoint: &str,
+        body: impl Into<Arc<Value>>,
+        headers: axum::http::HeaderMap,
+        extensions: Extensions,
+        providers: &[Provider],
+    ) -> Result<ForwardResult, ForwardError> {
+        let body = body.into();
         if !self.routing_state_enabled() {
             return self
                 .forward_with_retry_inner(
@@ -878,7 +903,7 @@ impl RequestForwarder {
         app_type: &AppType,
         method: http::Method,
         endpoint: &str,
-        body: &Value,
+        body: Arc<Value>,
         headers: axum::http::HeaderMap,
         extensions: Extensions,
         providers: &[Provider],
@@ -903,8 +928,6 @@ impl RequestForwarder {
         let mut last_error = None;
         let mut last_provider = None;
         let mut attempted_providers = 0usize;
-        let body = Arc::new(body.clone());
-
         // 单 Provider 场景下跳过熔断器检查（故障转移关闭时）；Stack 模型的请求不碰熔断器。
         let bypass_circuit_breaker = providers.len() == 1 || !self.routing_state_enabled();
 

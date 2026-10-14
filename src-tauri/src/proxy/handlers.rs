@@ -53,6 +53,7 @@ use bytes::Bytes;
 use futures::StreamExt;
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
+use std::sync::Arc;
 
 // ============================================================================
 // 健康检查和状态查询（简单端点）
@@ -336,15 +337,16 @@ async fn handle_messages_for_app(
         ))
     })?;
     let needs_transform = adapter.needs_transform(&ctx.provider);
+    let body = Arc::new(body);
 
     // 转发请求
     let forwarder = ctx.create_forwarder(&state);
     let mut result = match forwarder
-        .forward_with_retry(
+        .forward_with_retry_arc(
             &app_type,
             method,
             endpoint,
-            &body,
+            Arc::clone(&body),
             headers,
             extensions,
             ctx.get_providers(),
@@ -378,7 +380,7 @@ async fn handle_messages_for_app(
             response,
             &ctx,
             &state,
-            &body,
+            body.as_ref(),
             is_stream,
             &api_format,
             connection_guard,
@@ -936,11 +938,11 @@ pub async fn handle_chat_completions(
 
     let forwarder = ctx.create_forwarder(&state);
     let mut result = match forwarder
-        .forward_with_retry(
+        .forward_with_retry_arc(
             &AppType::Codex,
             method,
             &endpoint,
-            &body,
+            body,
             headers,
             extensions,
             ctx.get_providers(),
@@ -1062,11 +1064,11 @@ async fn handle_responses_for_app(
 
     let forwarder = ctx.create_forwarder(&state);
     let mut result = match forwarder
-        .forward_with_retry(
+        .forward_with_retry_arc(
             &app_type,
             method,
             &endpoint,
-            &body,
+            body,
             headers,
             extensions,
             ctx.get_providers(),
@@ -1295,11 +1297,11 @@ async fn handle_codex_standalone_passthrough(
 
     let forwarder = ctx.create_forwarder(&state);
     let mut result = match forwarder
-        .forward_with_retry(
+        .forward_with_retry_arc(
             &AppType::Codex,
             method,
             &endpoint,
-            &body,
+            body,
             headers,
             extensions,
             ctx.get_providers(),
@@ -1393,11 +1395,11 @@ async fn handle_responses_compact_for_app(
 
     let forwarder = ctx.create_forwarder(&state);
     let mut result = match forwarder
-        .forward_with_retry(
+        .forward_with_retry_arc(
             &app_type,
             method,
             &endpoint,
-            &body,
+            body,
             headers,
             extensions,
             ctx.get_providers(),
@@ -2480,11 +2482,11 @@ pub async fn handle_gemini(
 
     let forwarder = ctx.create_forwarder(&state);
     let mut result = match forwarder
-        .forward_with_retry(
+        .forward_with_retry_arc(
             &AppType::Gemini,
             method,
             endpoint,
-            &body,
+            body,
             headers,
             extensions,
             ctx.get_providers(),
