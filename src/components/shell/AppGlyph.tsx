@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { Monitor, Terminal } from "lucide-react";
 import type { AppId } from "@/lib/api";
 import { ProviderIcon } from "@/components/ProviderIcon";
@@ -46,7 +47,7 @@ interface AppGlyphProps {
 }
 
 /** 应用图标 + 角标（装饰性，名称由旁边的文字或按钮的 aria-label 提供）。 */
-export function AppGlyph({
+export const AppGlyph = memo(function AppGlyph({
   app,
   size = 16,
   badgeClassName,
@@ -80,4 +81,4 @@ export function AppGlyph({
       )}
     </span>
   );
-}
+});
