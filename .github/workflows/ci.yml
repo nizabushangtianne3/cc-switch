@@ -247,6 +247,9 @@ jobs:
           TMP: ${{ runner.temp }}
         shell: pwsh
         run: |
+          # JSON output filters diagnostics down to artifacts; do a normal compile
+          # first so compiler errors stay readable instead of vanishing into the pipe.
+          cargo test --lib --manifest-path src-tauri/Cargo.toml --no-run
           $testBinary = cargo test --lib --manifest-path src-tauri/Cargo.toml --no-run --message-format=json |
             ForEach-Object {
               if ($_ -match '"reason":"compiler-artifact"') {
