@@ -83,10 +83,10 @@ pub fn reapply_current_codex_official_live(state: &AppState) -> Result<bool, App
     let Some(provider) = provider else {
         return Ok(false);
     };
-    if !codex_direct::is_official(provider) {
+    if !codex_direct::is_official(&provider) {
         return Ok(false);
     }
-    live::sync_live_for_provider_respecting_mode(state, &AppType::Codex, provider, None)?;
+    live::sync_live_for_provider_respecting_mode(state, &AppType::Codex, &provider, None)?;
     Ok(true)
 }
 
@@ -6534,9 +6534,7 @@ impl ProviderService {
         }
 
         // OMO Slim providers are switched through their own exclusive path.
-        if matches!(app_type, AppType::OpenCode)
-            && provider.category.as_deref() == Some("omo-slim")
-        {
+        if matches!(app_type, AppType::OpenCode) && provider.category.as_deref() == Some("omo-slim") {
             return Self::switch_normal(state, app_type, id, &provider);
         }
 
@@ -6736,7 +6734,7 @@ impl ProviderService {
             Some(id) => state.db.get_provider_by_id(id, AppType::Claude.as_str())?,
             None => None,
         };
-        claude_direct::switch_to(state.db.as_ref(), prev, provider)?;
+        claude_direct::switch_to(state.db.as_ref(), prev.as_ref(), provider)?;
 
         // MCP 在 ~/.claude.json，和 settings.json 无关；重投影是幂等维护，失败只记警告
         // （切换已经提交，下次同步会自愈）。
@@ -6765,6 +6763,7 @@ impl ProviderService {
             Some(id) => state
                 .db
                 .get_provider_by_id(id, AppType::Codex.as_str())?
+                .as_ref()
                 .map_or(codex_direct::Owner::None, codex_direct::Owner::Provider),
             None => codex_direct::Owner::None,
         };
@@ -6794,20 +6793,19 @@ impl ProviderService {
 
     /// Grok Build 直连切换：`models.default` 和模型表换成目标的，按写入记录删掉上一家
     /// 的表；文件、指针和写入记录在同一个操作里提交。不回填、不补回 MCP。
-    fn switch_grok_direct(
-        state: &AppState,
-        provider: &Provider,
-    ) -> Result<SwitchResult, AppError> {
+    fn switch_grok_direct(state: &AppState, provider: &Provider) -> Result<SwitchResult, AppError> {
         let current_id = crate::mode::current::provider_for(
             &state.db,
             &AppType::GrokBuild,
             crate::mode::current::Purpose::Direct,
         )?;
         let live_owner = match current_id.as_deref() {
-            Some(id) => state.db.get_provider_by_id(id, AppType::GrokBuild.as_str())?,
+            Some(id) => state
+                .db
+                .get_provider_by_id(id, AppType::GrokBuild.as_str())?,
             None => None,
         };
-        grok_direct::switch_to(state.db.as_ref(), live_owner, provider)?;
+        grok_direct::switch_to(state.db.as_ref(), live_owner.as_ref(), provider)?;
         Ok(SwitchResult::default())
     }
 

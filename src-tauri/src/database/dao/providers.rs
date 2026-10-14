@@ -276,8 +276,7 @@ impl Database {
             .map_err(|e| AppError::Database(e.to_string()))?;
         let mut providers = Vec::new();
         for provider_res in provider_iter {
-            let (id, mut provider) =
-                provider_res.map_err(|e| AppError::Database(e.to_string()))?;
+            let (id, mut provider) = provider_res.map_err(|e| AppError::Database(e.to_string()))?;
             provider.id = id;
             providers.push(provider);
         }

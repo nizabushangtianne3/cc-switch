@@ -813,7 +813,7 @@ pub(crate) fn sync_current_provider_for_app_respecting_mode(
         return Ok(None);
     };
 
-    sync_live_for_provider_respecting_mode(state, app_type, provider, None).map(Some)
+    sync_live_for_provider_respecting_mode(state, app_type, &provider, None).map(Some)
 }
 
 /// Sync current provider to live configuration
