@@ -232,6 +232,13 @@ interface SyncStatusUpdatedPayload {
 
 type OpenClawConfigTab = "env" | "tools" | "agents";
 
+const usageAppOf = (app: AppId): AppTypeFilter | null => {
+  const type = app === "claude-desktop" ? "claude" : app;
+  return (KNOWN_APP_TYPES as ReadonlyArray<string>).includes(type)
+    ? (type as AppTypeFilter)
+    : null;
+};
+
 const getInitialApp = (): AppId => {
   const saved = localStorage.getItem(APP_STORAGE_KEY) as AppId | null;
   if (saved && APP_IDS.includes(saved)) {
@@ -316,6 +323,10 @@ function App() {
       ...settingsData?.visibleApps,
     }),
     [settingsData?.visibleApps],
+  );
+  const visibleAppCount = useMemo(
+    () => Object.values(visibleApps).filter(Boolean).length,
+    [visibleApps],
   );
 
   const getFirstVisibleApp = (): AppId => {
@@ -1200,13 +1211,6 @@ function App() {
 
   // ─── 应用页 ─────────────────────────────────────────────────────────────
 
-  // 应用页 ⋯ →「查看此应用的用量」：带上这个应用的筛选（Claude Desktop 的流量并在 Claude 里）
-  const usageAppOf = (app: AppId): AppTypeFilter | null => {
-    const type = app === "claude-desktop" ? "claude" : app;
-    return (KNOWN_APP_TYPES as ReadonlyArray<string>).includes(type)
-      ? (type as AppTypeFilter)
-      : null;
-  };
   const activeUsageApp = usageAppOf(activeApp);
 
   const appMenu = (
@@ -1247,7 +1251,7 @@ function App() {
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
-          disabled={Object.values(visibleApps).filter(Boolean).length <= 1}
+          disabled={visibleAppCount <= 1}
           onSelect={() => void handleHideActiveApp()}
         >
           {t("appPage.hideFromSidebar")}
