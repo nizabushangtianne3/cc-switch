@@ -106,7 +106,7 @@ export const SwitchModePanel = memo(function SwitchModePanel({
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const appName = APP_DISPLAY_NAME[app];
-  const modes = modesFor(app);
+  const modes = useMemo(() => modesFor(app), [app]);
 
   const { data: modeView } = useAppMode(app);
   const active: AppMode =
@@ -334,13 +334,18 @@ export const SwitchModePanel = memo(function SwitchModePanel({
 
   // 状态行：只在看生效的那格时显示；路由只写目标，不写本机地址和端口
   const routeTarget = failoverOn ? t("mode.status.byQueue") : nameOf(routeId);
-  const otherMembers = (stack?.members ?? []).filter(
-    (member) => member.providerId !== routeId,
-  );
-  const otherModels = otherMembers.reduce(
-    (sum, member) => sum + member.modelIds.length,
-    0,
-  );
+  const { otherMembers, otherModels } = useMemo(() => {
+    const members = (stack?.members ?? []).filter(
+      (member) => member.providerId !== routeId,
+    );
+    return {
+      otherMembers: members,
+      otherModels: members.reduce(
+        (sum, member) => sum + member.modelIds.length,
+        0,
+      ),
+    };
+  }, [stack?.members, routeId]);
   const status =
     view !== active
       ? undefined
