@@ -399,6 +399,30 @@ impl Database {
         Ok(exists)
     }
 
+    /// Resolve the effective current provider in one query.
+    ///
+    /// A valid locally stored pointer wins; otherwise the row marked
+    /// `is_current` is used. This keeps cloud-sync repair on one database
+    /// lock instead of separate existence and fallback queries.
+    pub fn resolve_current_provider(
+        &self,
+        app_type: &str,
+        preferred_provider_id: Option<&str>,
+    ) -> Result<Option<String>, AppError> {
+        let conn = lock_conn!(self.conn);
+        let preferred = preferred_provider_id.filter(|id| !id.is_empty());
+        conn.query_row(
+            "SELECT id FROM providers
+             WHERE app_type = ?1 AND (id = ?2 OR is_current = 1)
+             ORDER BY CASE WHEN id = ?2 THEN 0 ELSE 1 END
+             LIMIT 1",
+            params![app_type, preferred],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| AppError::Database(e.to_string()))
+    }
+
     pub fn save_provider(&self, app_type: &str, provider: &Provider) -> Result<(), AppError> {
         let mut conn = lock_conn!(self.conn);
         let tx = conn

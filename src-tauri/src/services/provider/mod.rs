@@ -318,6 +318,46 @@ mod tests {
 
     #[test]
     #[serial]
+    fn effective_current_provider_prefers_a_valid_local_pointer() {
+        with_test_home(|state, _home| {
+            crate::settings::reload_settings().expect("reload settings");
+
+            let db_current = Provider::with_id(
+                "db-current".to_string(),
+                "Database Current".to_string(),
+                json!({}),
+                None,
+            );
+            let local_current = Provider::with_id(
+                "local-current".to_string(),
+                "Local Current".to_string(),
+                json!({}),
+                None,
+            );
+            state.db.save_provider("claude", &db_current).unwrap();
+            state.db.set_current_provider("claude", "db-current").unwrap();
+            state.db.save_provider("claude", &local_current).unwrap();
+
+            crate::settings::set_current_provider(&AppType::Claude, Some("local-current"));
+            let effective = crate::settings::get_effective_current_provider(
+                &state.db,
+                &AppType::Claude,
+            )
+            .unwrap();
+            assert_eq!(effective.as_deref(), Some("local-current"));
+
+            crate::settings::set_current_provider(&AppType::Claude, Some("missing"));
+            let fallback = crate::settings::get_effective_current_provider(
+                &state.db,
+                &AppType::Claude,
+            )
+            .unwrap();
+            assert_eq!(fallback.as_deref(), Some("db-current"));
+        });
+    }
+
+    #[test]
+    #[serial]
     fn codex_editor_view_preserves_draft_and_stored_copilot_metadata() {
         with_test_home(|state, _home| {
             crate::settings::reload_settings().expect("reload settings");

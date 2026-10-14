@@ -1124,25 +1124,18 @@ pub fn get_effective_current_provider(
     db: &crate::database::Database,
     app_type: &AppType,
 ) -> Result<Option<String>, AppError> {
-    // 1. 从本地 settings 读取
-    if let Some(local_id) = get_current_provider(app_type) {
-        // 2. 验证该 ID 在数据库中存在
-        if db.provider_exists(app_type.as_str(), &local_id)? {
-            // 存在，直接返回
-            return Ok(Some(local_id));
-        }
-
-        // 3. 不存在，清理本地 settings
+    let local_id = get_current_provider(app_type);
+    let effective = db.resolve_current_provider(app_type.as_str(), local_id.as_deref())?;
+    if local_id.is_some() && effective.as_deref() != local_id.as_deref() {
         log::warn!(
             "本地 settings 中的供应商 {} ({}) 在数据库中不存在，将清理并 fallback 到数据库",
-            local_id,
+            local_id.unwrap_or_default(),
             app_type.as_str()
         );
         let _ = set_current_provider(app_type, None);
     }
 
-    // Fallback 到数据库的 is_current
-    db.get_current_provider(app_type.as_str())
+    Ok(effective)
 }
 
 // ===== Skill 同步方式管理函数 =====
