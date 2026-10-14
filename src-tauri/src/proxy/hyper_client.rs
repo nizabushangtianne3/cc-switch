@@ -261,17 +261,15 @@ impl ProxyResponse {
 pub async fn send_request(
     uri: http::Uri,
     log_display: &str,
-    method: http::Method,
+    method: &http::Method,
     headers: http::HeaderMap,
-    original_extensions: http::Extensions,
+    original_extensions: &http::Extensions,
     body: Vec<u8>,
     timeout: std::time::Duration,
     proxy_url: Option<&str>,
 ) -> Result<ProxyResponse, ProxyError> {
     // Extract our own OriginalHeaderCases if available
-    let original_cases = original_extensions
-        .get::<SharedOriginalHeaderCases>()
-        .cloned();
+    let original_cases = original_extensions.get::<SharedOriginalHeaderCases>();
     let has_cases = original_cases
         .as_ref()
         .map(|c| !c.cases.is_empty())
@@ -292,7 +290,7 @@ pub async fn send_request(
         // Primary path: use raw write + hyper handshake for exact header casing
         let result = tokio::time::timeout(
             timeout,
-            send_raw_request(&uri, &method, &headers, original_cases, &body, proxy_url),
+            send_raw_request(&uri, method, &headers, original_cases, &body, proxy_url),
         )
         .await
         .map_err(|_| ProxyError::Timeout(format!("请求超时: {}s", timeout.as_secs())))?;
@@ -312,13 +310,13 @@ pub async fn send_request(
 
     // Fallback: hyper-util Client (title-case headers, no proxy support)
     let mut req = http::Request::builder()
-        .method(method)
+        .method(method.clone())
         .uri(&uri)
         .body(http_body_util::Full::new(Bytes::from(body)))
         .map_err(|e| ProxyError::ForwardFailed(format!("Failed to build request: {e}")))?;
 
     *req.headers_mut() = headers;
-    *req.extensions_mut() = original_extensions;
+    *req.extensions_mut() = original_extensions.clone();
 
     let client = global_hyper_client();
     let resp = tokio::time::timeout(timeout, client.request(req))

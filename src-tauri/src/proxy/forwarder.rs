@@ -3041,9 +3041,9 @@ impl RequestForwarder {
             super::hyper_client::send_request(
                 uri,
                 &target_for_log,
-                method.clone(),
+                method,
                 ordered_headers,
-                extensions.clone(),
+                &extensions,
                 body_bytes,
                 timeout,
                 upstream_proxy_url.as_deref(),
