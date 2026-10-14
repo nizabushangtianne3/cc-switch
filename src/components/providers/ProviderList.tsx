@@ -386,6 +386,12 @@ function ProviderListComponent({
     onSetAsDefault,
   ]);
 
+  const sectionItemIds = useMemo(
+    () =>
+      sections.map((section) => section.items.map((item) => item.provider.id)),
+    [sections],
+  );
+
   const piStateError =
     appId === "pi" && isPiCurrentStateError
       ? extractErrorMessage(piCurrentStateError)
@@ -547,7 +553,7 @@ function ProviderListComponent({
           collisionDetection={closestCenter}
           onDragEnd={handleDragEnd}
         >
-          {sections.map((section) => (
+          {sections.map((section, sectionIndex) => (
             <section key={section.key} className="space-y-2">
               {section.title && (
                 <div className="flex items-center gap-1 pt-1 text-caption font-semibold text-fg-2">
@@ -567,7 +573,7 @@ function ProviderListComponent({
                 </div>
               ) : (
                 <SortableContext
-                  items={section.items.map((item) => item.provider.id)}
+                  items={sectionItemIds[sectionIndex]}
                   strategy={verticalListSortingStrategy}
                 >
                   <div className="space-y-2">
