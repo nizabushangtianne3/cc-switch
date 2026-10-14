@@ -235,32 +235,36 @@ impl Database {
                     })
                 },
             );
-            (config, super::settings::proxy_runtime_configs_from_conn(&conn))
+            (
+                config,
+                super::settings::proxy_runtime_configs_from_conn(&conn),
+            )
         };
 
         let (config, runtime_configs) = result;
-        if let Err(rusqlite::Error::QueryReturnedNoRows) = config {
-            self.init_proxy_config_rows().await?;
-            return Ok((
-                AppProxyConfig {
-                    app_type: app_type.to_string(),
-                    enabled: false,
-                    auto_failover_enabled: false,
-                    max_retries: 3,
-                    streaming_first_byte_timeout: 60,
-                    streaming_idle_timeout: 120,
-                    non_streaming_timeout: 600,
-                    circuit_failure_threshold: 4,
-                    circuit_success_threshold: 2,
-                    circuit_timeout_seconds: 60,
-                    circuit_error_rate_threshold: 0.6,
-                    circuit_min_requests: 10,
-                },
-                runtime_configs.unwrap_or_default(),
-            ));
+        match config {
+            Err(rusqlite::Error::QueryReturnedNoRows) => {
+                self.init_proxy_config_rows().await?;
+                Ok((
+                    AppProxyConfig {
+                        app_type: app_type.to_string(),
+                        enabled: false,
+                        auto_failover_enabled: false,
+                        max_retries: 3,
+                        streaming_first_byte_timeout: 60,
+                        streaming_idle_timeout: 120,
+                        non_streaming_timeout: 600,
+                        circuit_failure_threshold: 4,
+                        circuit_success_threshold: 2,
+                        circuit_timeout_seconds: 60,
+                        circuit_error_rate_threshold: 0.6,
+                        circuit_min_requests: 10,
+                    },
+                    runtime_configs.unwrap_or_default(),
+                ))
+            }
+            config => Ok((config?, runtime_configs.unwrap_or_default())),
         }
-
-        Ok((config?, runtime_configs.unwrap_or_default()))
     }
 
     /// 更新应用级代理配置
