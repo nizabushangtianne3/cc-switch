@@ -29,18 +29,35 @@ pub struct ProviderState {
 
 /// 获取所有供应商
 #[tauri::command]
-pub fn get_providers(
-    state: State<'_, AppState>,
+pub async fn get_providers(
+    app_handle: tauri::AppHandle,
     app: String,
 ) -> Result<IndexMap<String, Provider>, String> {
     let app_type = AppType::from_str(&app).map_err(|e| e.to_string())?;
-    ProviderService::list(state.inner(), app_type).map_err(|e| e.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app_handle
+            .try_state::<AppState>()
+            .ok_or_else(|| "应用状态不可用".to_string())?;
+        ProviderService::list(state.inner(), app_type).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("供应商列表读取任务执行失败: {e}"))?
 }
 
 #[tauri::command]
-pub fn get_current_provider(state: State<'_, AppState>, app: String) -> Result<String, String> {
+pub async fn get_current_provider(
+    app_handle: tauri::AppHandle,
+    app: String,
+) -> Result<String, String> {
     let app_type = AppType::from_str(&app).map_err(|e| e.to_string())?;
-    ProviderService::current(state.inner(), app_type).map_err(|e| e.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app_handle
+            .try_state::<AppState>()
+            .ok_or_else(|| "应用状态不可用".to_string())?;
+        ProviderService::current(state.inner(), app_type).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("当前供应商读取任务执行失败: {e}"))?
 }
 
 /// Load the provider list and effective current pointer with one IPC call.
