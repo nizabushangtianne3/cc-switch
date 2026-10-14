@@ -4,7 +4,71 @@
 
 use crate::database::{lock_conn, Database};
 use crate::error::AppError;
+use rusqlite::Connection;
 use rusqlite::params;
+
+pub(crate) fn proxy_runtime_configs_from_conn(
+    conn: &Connection,
+) -> Result<
+    (
+        crate::proxy::types::RectifierConfig,
+        crate::proxy::types::OptimizerConfig,
+        crate::proxy::types::CopilotOptimizerConfig,
+    ),
+    AppError,
+> {
+    const RECTIFIER_KEY: &str = "rectifier_config";
+    const OPTIMIZER_KEY: &str = "optimizer_config";
+    const COPILOT_KEY: &str = "copilot_optimizer_config";
+
+    let mut rectifier_json: Option<String> = None;
+    let mut optimizer_json: Option<String> = None;
+    let mut copilot_json: Option<String> = None;
+    let mut stmt = conn
+        .prepare("SELECT key, value FROM settings WHERE key IN (?1, ?2, ?3)")
+        .map_err(|e| AppError::Database(e.to_string()))?;
+    let mut rows = stmt
+        .query(params![RECTIFIER_KEY, OPTIMIZER_KEY, COPILOT_KEY])
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+    while let Some(row) = rows.next().map_err(|e| AppError::Database(e.to_string()))? {
+        let key: String = row.get(0).map_err(|e| AppError::Database(e.to_string()))?;
+        let value: String = row.get(1).map_err(|e| AppError::Database(e.to_string()))?;
+        match key.as_str() {
+            RECTIFIER_KEY => rectifier_json = Some(value),
+            OPTIMIZER_KEY => optimizer_json = Some(value),
+            COPILOT_KEY => copilot_json = Some(value),
+            _ => {}
+        }
+    }
+
+    let rectifier_config = rectifier_json
+        .map(|json| {
+            serde_json::from_str(&json).unwrap_or_else(|e| {
+                log::warn!("解析整流器配置失败，使用默认配置: {e}");
+                crate::proxy::types::RectifierConfig::default()
+            })
+        })
+        .unwrap_or_default();
+    let optimizer_config = optimizer_json
+        .map(|json| {
+            serde_json::from_str(&json).unwrap_or_else(|e| {
+                log::warn!("解析优化器配置失败，使用默认配置: {e}");
+                crate::proxy::types::OptimizerConfig::default()
+            })
+        })
+        .unwrap_or_default();
+    let copilot_optimizer_config = copilot_json
+        .map(|json| {
+            serde_json::from_str(&json).unwrap_or_else(|e| {
+                log::warn!("解析 Copilot 优化器配置失败，使用默认配置: {e}");
+                crate::proxy::types::CopilotOptimizerConfig::default()
+            })
+        })
+        .unwrap_or_default();
+
+    Ok((rectifier_config, optimizer_config, copilot_optimizer_config))
+}
 
 impl Database {
     const LEGACY_COMMON_CONFIG_MIGRATED_KEY: &'static str = "common_config_legacy_migrated_v1";
@@ -251,60 +315,10 @@ impl Database {
         ),
         AppError,
     > {
-        const RECTIFIER_KEY: &str = "rectifier_config";
-        const OPTIMIZER_KEY: &str = "optimizer_config";
-        const COPILOT_KEY: &str = "copilot_optimizer_config";
-
-        let mut rectifier_json: Option<String> = None;
-        let mut optimizer_json: Option<String> = None;
-        let mut copilot_json: Option<String> = None;
         {
             let conn = lock_conn!(self.conn);
-            let mut stmt = conn
-                .prepare("SELECT key, value FROM settings WHERE key IN (?1, ?2, ?3)")
-                .map_err(|e| AppError::Database(e.to_string()))?;
-            let mut rows = stmt
-                .query(params![RECTIFIER_KEY, OPTIMIZER_KEY, COPILOT_KEY])
-                .map_err(|e| AppError::Database(e.to_string()))?;
-
-            while let Some(row) = rows.next().map_err(|e| AppError::Database(e.to_string()))? {
-                let key: String = row.get(0).map_err(|e| AppError::Database(e.to_string()))?;
-                let value: String = row.get(1).map_err(|e| AppError::Database(e.to_string()))?;
-                match key.as_str() {
-                    RECTIFIER_KEY => rectifier_json = Some(value),
-                    OPTIMIZER_KEY => optimizer_json = Some(value),
-                    COPILOT_KEY => copilot_json = Some(value),
-                    _ => {}
-                }
-            }
+            proxy_runtime_configs_from_conn(&conn)
         }
-
-        let rectifier_config = rectifier_json
-            .map(|json| {
-                serde_json::from_str(&json).unwrap_or_else(|e| {
-                    log::warn!("解析整流器配置失败，使用默认配置: {e}");
-                    crate::proxy::types::RectifierConfig::default()
-                })
-            })
-            .unwrap_or_default();
-        let optimizer_config = optimizer_json
-            .map(|json| {
-                serde_json::from_str(&json).unwrap_or_else(|e| {
-                    log::warn!("解析优化器配置失败，使用默认配置: {e}");
-                    crate::proxy::types::OptimizerConfig::default()
-                })
-            })
-            .unwrap_or_default();
-        let copilot_optimizer_config = copilot_json
-            .map(|json| {
-                serde_json::from_str(&json).unwrap_or_else(|e| {
-                    log::warn!("解析 Copilot 优化器配置失败，使用默认配置: {e}");
-                    crate::proxy::types::CopilotOptimizerConfig::default()
-                })
-            })
-            .unwrap_or_default();
-
-        Ok((rectifier_config, optimizer_config, copilot_optimizer_config))
     }
 
     /// 获取整流器配置

@@ -196,6 +196,73 @@ impl Database {
         }
     }
 
+    /// 一次锁内读取代理请求热路径的全部配置。
+    pub async fn get_proxy_request_configs(
+        &self,
+        app_type: &str,
+    ) -> Result<
+        (
+            AppProxyConfig,
+            RectifierConfig,
+            OptimizerConfig,
+            CopilotOptimizerConfig,
+        ),
+        AppError,
+    > {
+        let result = {
+            let conn = lock_conn!(self.conn);
+            let config = conn.query_row(
+                "SELECT app_type, enabled, auto_failover_enabled,
+                        max_retries, streaming_first_byte_timeout, streaming_idle_timeout, non_streaming_timeout,
+                        circuit_failure_threshold, circuit_success_threshold, circuit_timeout_seconds,
+                        circuit_error_rate_threshold, circuit_min_requests
+                 FROM proxy_config WHERE app_type = ?1",
+                [app_type],
+                |row| {
+                    Ok(AppProxyConfig {
+                        app_type: row.get(0)?,
+                        enabled: row.get::<_, i32>(1)? != 0,
+                        auto_failover_enabled: row.get::<_, i32>(2)? != 0,
+                        max_retries: row.get::<_, i32>(3)? as u32,
+                        streaming_first_byte_timeout: row.get::<_, i32>(4)? as u32,
+                        streaming_idle_timeout: row.get::<_, i32>(5)? as u32,
+                        non_streaming_timeout: row.get::<_, i32>(6)? as u32,
+                        circuit_failure_threshold: row.get::<_, i32>(7)? as u32,
+                        circuit_success_threshold: row.get::<_, i32>(8)? as u32,
+                        circuit_timeout_seconds: row.get::<_, i32>(9)? as u32,
+                        circuit_error_rate_threshold: row.get(10)?,
+                        circuit_min_requests: row.get::<_, i32>(11)? as u32,
+                    })
+                },
+            );
+            (config, super::settings::proxy_runtime_configs_from_conn(&conn))
+        };
+
+        let (config, runtime_configs) = result;
+        if let Err(rusqlite::Error::QueryReturnedNoRows) = config {
+            self.init_proxy_config_rows().await?;
+            return Ok((
+                AppProxyConfig {
+                    app_type: app_type.to_string(),
+                    enabled: false,
+                    auto_failover_enabled: false,
+                    max_retries: 3,
+                    streaming_first_byte_timeout: 60,
+                    streaming_idle_timeout: 120,
+                    non_streaming_timeout: 600,
+                    circuit_failure_threshold: 4,
+                    circuit_success_threshold: 2,
+                    circuit_timeout_seconds: 60,
+                    circuit_error_rate_threshold: 0.6,
+                    circuit_min_requests: 10,
+                },
+                runtime_configs.unwrap_or_default(),
+            ));
+        }
+
+        Ok((config?, runtime_configs.unwrap_or_default()))
+    }
+
     /// 更新应用级代理配置
     pub async fn update_proxy_config_for_app(
         &self,
