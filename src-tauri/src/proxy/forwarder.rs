@@ -8286,7 +8286,10 @@ mod tests {
 
             let result = send(&fwd, vec![provider("p1", &up)], plain_body()).await;
 
-            assert_eq!(result.ok().map(|r| r.provider.id), Some("p1".into()));
+            assert_eq!(
+                result.ok().map(|r| r.provider.id.clone()),
+                Some("p1".into())
+            );
             assert_eq!(
                 books(&fwd).await,
                 Books {
@@ -8316,7 +8319,10 @@ mod tests {
             )
             .await;
 
-            assert_eq!(result.ok().map(|r| r.provider.id), Some("p2".into()));
+            assert_eq!(
+                result.ok().map(|r| r.provider.id.clone()),
+                Some("p2".into())
+            );
             assert_eq!(
                 books(&fwd).await,
                 Books {
@@ -8627,7 +8633,10 @@ mod tests {
             )
             .await;
 
-            assert_eq!(result.ok().map(|r| r.provider.id), Some("p2".into()));
+            assert_eq!(
+                result.ok().map(|r| r.provider.id.clone()),
+                Some("p2".into())
+            );
             assert_eq!(
                 books(&fwd).await,
                 Books {
@@ -8761,7 +8770,10 @@ mod tests {
             .await;
 
             // 第一个 Key 被限流后，同一家换第二个 Key 就成功了，不该惊动下一家。
-            assert_eq!(result.ok().map(|r| r.provider.id), Some("p1".into()));
+            assert_eq!(
+                result.ok().map(|r| r.provider.id.clone()),
+                Some("p1".into())
+            );
             assert_eq!(
                 keys_seen(&up1.seen.lock().await),
                 vec!["sk-a".to_string(), "sk-b".to_string()]
@@ -8799,7 +8811,10 @@ mod tests {
             )
             .await;
 
-            assert_eq!(result.ok().map(|r| r.provider.id), Some("p2".into()));
+            assert_eq!(
+                result.ok().map(|r| r.provider.id.clone()),
+                Some("p2".into())
+            );
             // 池内两个 Key 都试过之后才换供应商。
             assert_eq!(
                 keys_seen(&up1.seen.lock().await),
