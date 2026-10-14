@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Loader2 } from "lucide-react";
 import type { AppId } from "@/lib/api";
@@ -120,15 +120,22 @@ function EnterBody({
   const appName = APP_DISPLAY_NAME[app];
   const target = state.target;
   const viaDirect = active !== "direct";
-  const eligible = providers.filter((p) => eligibleIds.includes(p.id));
+  const eligibleIdSet = useMemo(() => new Set(eligibleIds), [eligibleIds]);
+  const eligible = useMemo(
+    () => providers.filter((p) => eligibleIdSet.has(p.id)),
+    [providers, eligibleIdSet],
+  );
   const initialPick =
-    defaultPick && eligibleIds.includes(defaultPick)
+    defaultPick && eligibleIdSet.has(defaultPick)
       ? defaultPick
       : (eligible[0]?.id ?? "");
   const [pick, setPick] = useState(initialPick);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const pickedProvider = eligible.find((p) => p.id === pick);
+  const pickedProvider = useMemo(
+    () => eligible.find((p) => p.id === pick),
+    [eligible, pick],
+  );
   // 官方账号只能做聚合的默认、不能做成员（Codex）：选了别家，它的模型就进不了聚合
   const officialLeftOut =
     target === "stack" &&
