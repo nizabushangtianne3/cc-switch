@@ -97,7 +97,7 @@ function planLine(
   return null;
 }
 
-const UsageFooter: React.FC<UsageFooterProps> = ({
+function UsageFooterComponent({
   provider,
   providerId,
   appId,
@@ -105,7 +105,7 @@ const UsageFooter: React.FC<UsageFooterProps> = ({
   isCurrent,
   isInConfig = false,
   inline = false,
-}) => {
+}) {
   const { t } = useTranslation();
   const display = useQuotaDisplay();
   const isTokenPlan =
@@ -245,6 +245,7 @@ const UsageFooter: React.FC<UsageFooterProps> = ({
       onRefresh={refresh}
     />
   );
-};
+}
 
+const UsageFooter = React.memo(UsageFooterComponent);
 export default UsageFooter;

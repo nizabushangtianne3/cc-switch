@@ -18,12 +18,12 @@ interface CodexOauthQuotaFooterProps {
  * 复用 SubscriptionQuotaView 的全部渲染逻辑（5 状态 × inline/expanded）。
  * 数据源切换为 cc-switch 自管的 OAuth token 而非 Codex CLI 凭据。
  */
-const CodexOauthQuotaFooter: React.FC<CodexOauthQuotaFooterProps> = ({
+function CodexOauthQuotaFooterComponent({
   meta,
   inline = false,
   isCurrent = false,
   autoQueryInterval = 5,
-}) => {
+}) {
   const display = useQuotaDisplay();
   const {
     data: quota,
@@ -45,6 +45,6 @@ const CodexOauthQuotaFooter: React.FC<CodexOauthQuotaFooterProps> = ({
       display={display}
     />
   );
-};
+}
 
-export default CodexOauthQuotaFooter;
+export default React.memo(CodexOauthQuotaFooter);

@@ -15,11 +15,11 @@ interface CopilotQuotaFooterProps {
   isCurrent?: boolean;
 }
 
-const CopilotQuotaFooter: React.FC<CopilotQuotaFooterProps> = ({
+function CopilotQuotaFooterComponent({
   meta,
   inline = false,
   isCurrent = false,
-}) => {
+}) {
   const { t } = useTranslation();
   const display = useQuotaDisplay();
   const accountId = resolveManagedAccountId(
@@ -77,6 +77,6 @@ const CopilotQuotaFooter: React.FC<CopilotQuotaFooterProps> = ({
       onRefresh={refetch}
     />
   );
-};
+}
 
-export default CopilotQuotaFooter;
+export default React.memo(CopilotQuotaFooter);
