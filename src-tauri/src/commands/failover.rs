@@ -36,6 +36,9 @@ fn load_supported_failover_queue(
     db: &crate::database::Database,
     app_type: &str,
 ) -> Result<Vec<FailoverQueueItem>, String> {
+    if app_type != "codex" {
+        return db.get_failover_queue(app_type).map_err(|e| e.to_string());
+    }
     Ok(db
         .get_failover_queue_providers(app_type)
         .map_err(|e| e.to_string())?
