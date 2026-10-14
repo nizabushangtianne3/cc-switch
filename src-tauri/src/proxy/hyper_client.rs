@@ -272,8 +272,7 @@ pub async fn send_request(
     let original_cases = original_extensions.get::<SharedOriginalHeaderCases>();
     let has_cases = original_cases
         .as_ref()
-        .map(|c| !c.cases.is_empty())
-        .unwrap_or(false);
+        .is_some_and(|cases| !cases.cases.is_empty());
     log::debug!(
         "[HyperClient] Sending request: target={}, header_count={}, \
          has_host={}, has_original_cases={has_cases}, proxy={:?}",
@@ -283,10 +282,7 @@ pub async fn send_request(
         proxy_url.map(super::http_client::mask_url),
     );
 
-    if let Some(original_cases) = original_cases
-        .as_ref()
-        .filter(|cases| !cases.cases.is_empty())
-    {
+    if let Some(original_cases) = original_cases.filter(|cases| !cases.cases.is_empty()) {
         // Primary path: use raw write + hyper handshake for exact header casing
         let result = tokio::time::timeout(
             timeout,
