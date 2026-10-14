@@ -594,6 +594,18 @@ impl Database {
                 }
                 version = Self::get_user_version(conn)?;
             }
+
+            // 新库会在建表时创建索引；这里再次执行，让已升级到当前版本的旧库
+            // 也能补上 endpoint 查询索引。
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_provider_endpoints_lookup
+                 ON provider_endpoints(app_type, provider_id, added_at, url)",
+                [],
+            )
+            .map_err(|e| {
+                AppError::Database(format!("创建 provider_endpoints 索引失败: {e}"))
+            })?;
+
             Ok(())
         })();
 
