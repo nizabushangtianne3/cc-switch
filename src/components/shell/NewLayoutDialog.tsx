@@ -20,17 +20,15 @@ import type { Settings } from "@/types";
 
 const RELEASES_URL = "https://github.com/nizabushangtianne3/cc-switch/releases";
 
-/** 任一应用的数据库里已经有供应商（找到一家就停） */
+/** 并行探测各应用数据库；任一应用已有供应商即通过 */
 async function hasAnyProvider(): Promise<boolean> {
-  for (const app of APP_IDS) {
-    try {
-      const providers = await providersApi.getAll(app);
-      if (Object.keys(providers).length > 0) return true;
-    } catch {
-      // 某个应用读失败不影响其他应用
-    }
-  }
-  return false;
+  const results = await Promise.allSettled(
+    APP_IDS.map((app) => providersApi.getAll(app)),
+  );
+  return results.some(
+    (result) =>
+      result.status === "fulfilled" && Object.keys(result.value).length > 0,
+  );
 }
 
 /**
