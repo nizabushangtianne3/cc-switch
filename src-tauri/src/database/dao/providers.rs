@@ -17,6 +17,85 @@ type OmoProviderRow = (
     String,
 );
 
+fn provider_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<(String, Provider)> {
+    let id: String = row.get(0)?;
+    let name: String = row.get(1)?;
+    let settings_config_str: String = row.get(2)?;
+    let website_url: Option<String> = row.get(3)?;
+    let category: Option<String> = row.get(4)?;
+    let created_at: Option<i64> = row.get(5)?;
+    let sort_index: Option<usize> = row.get(6)?;
+    let notes: Option<String> = row.get(7)?;
+    let icon: Option<String> = row.get(8)?;
+    let icon_color: Option<String> = row.get(9)?;
+    let meta_str: String = row.get(10)?;
+    let in_failover_queue: bool = row.get(11)?;
+
+    let settings_config =
+        serde_json::from_str(&settings_config_str).unwrap_or(serde_json::Value::Null);
+    let meta: ProviderMeta = serde_json::from_str(&meta_str).unwrap_or_default();
+
+    Ok((
+        id,
+        Provider {
+            id: String::new(),
+            name,
+            settings_config,
+            website_url,
+            category,
+            created_at,
+            sort_index,
+            notes,
+            meta: Some(meta),
+            icon,
+            icon_color,
+            in_failover_queue,
+        },
+    ))
+}
+
+fn load_custom_endpoints(
+    conn: &rusqlite::Connection,
+    app_type: &str,
+) -> Result<HashMap<String, HashMap<String, CustomEndpoint>>, AppError> {
+    let mut endpoint_stmt = conn
+        .prepare(
+            "SELECT provider_id, url, added_at
+             FROM provider_endpoints
+             WHERE app_type = ?1
+             ORDER BY added_at ASC, url ASC",
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+    let endpoint_iter = endpoint_stmt
+        .query_map(params![app_type], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<i64>>(2)?,
+            ))
+        })
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+    let mut endpoints_by_provider: HashMap<String, HashMap<String, CustomEndpoint>> =
+        HashMap::new();
+    for endpoint_res in endpoint_iter {
+        let (provider_id, url, added_at) =
+            endpoint_res.map_err(|e| AppError::Database(e.to_string()))?;
+        endpoints_by_provider
+            .entry(provider_id)
+            .or_default()
+            .insert(
+                url.clone(),
+                CustomEndpoint {
+                    url,
+                    added_at: added_at.unwrap_or(0),
+                    last_used: None,
+                },
+            );
+    }
+    Ok(endpoints_by_provider)
+}
+
 impl Database {
     /// Detach Codex providers bound to these deleted local accounts, atomically.
     /// Only this device's account IDs are passed in: provider rows sync across
@@ -116,42 +195,7 @@ impl Database {
         ).map_err(|e| AppError::Database(e.to_string()))?;
 
         let provider_iter = stmt
-            .query_map(params![app_type], |row| {
-                let id: String = row.get(0)?;
-                let name: String = row.get(1)?;
-                let settings_config_str: String = row.get(2)?;
-                let website_url: Option<String> = row.get(3)?;
-                let category: Option<String> = row.get(4)?;
-                let created_at: Option<i64> = row.get(5)?;
-                let sort_index: Option<usize> = row.get(6)?;
-                let notes: Option<String> = row.get(7)?;
-                let icon: Option<String> = row.get(8)?;
-                let icon_color: Option<String> = row.get(9)?;
-                let meta_str: String = row.get(10)?;
-                let in_failover_queue: bool = row.get(11)?;
-
-                let settings_config =
-                    serde_json::from_str(&settings_config_str).unwrap_or(serde_json::Value::Null);
-                let meta: ProviderMeta = serde_json::from_str(&meta_str).unwrap_or_default();
-
-                Ok((
-                    id,
-                    Provider {
-                        id: "".to_string(), // Placeholder, set below
-                        name,
-                        settings_config,
-                        website_url,
-                        category,
-                        created_at,
-                        sort_index,
-                        notes,
-                        meta: Some(meta),
-                        icon,
-                        icon_color,
-                        in_failover_queue,
-                    },
-                ))
-            })
+            .query_map(params![app_type], provider_from_row)
             .map_err(|e| AppError::Database(e.to_string()))?;
 
         let mut providers = IndexMap::new();
@@ -166,47 +210,53 @@ impl Database {
             return Ok(providers);
         }
 
-        let mut endpoint_stmt = conn
-            .prepare(
-                "SELECT provider_id, url, added_at
-             FROM provider_endpoints
-             WHERE app_type = ?1
-             ORDER BY added_at ASC, url ASC",
-            )
-            .map_err(|e| AppError::Database(e.to_string()))?;
-
-        let endpoint_iter = endpoint_stmt
-            .query_map(params![app_type], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, Option<i64>>(2)?,
-                ))
-            })
-            .map_err(|e| AppError::Database(e.to_string()))?;
-
-        let mut endpoints_by_provider: HashMap<String, HashMap<String, CustomEndpoint>> =
-            HashMap::new();
-        for endpoint_res in endpoint_iter {
-            let (provider_id, url, added_at) =
-                endpoint_res.map_err(|e| AppError::Database(e.to_string()))?;
-            endpoints_by_provider
-                .entry(provider_id)
-                .or_default()
-                .insert(
-                    url.clone(),
-                    crate::settings::CustomEndpoint {
-                        url,
-                        added_at: added_at.unwrap_or(0),
-                        last_used: None,
-                    },
-                );
-        }
-        drop(endpoint_stmt);
+        let mut endpoints_by_provider = load_custom_endpoints(&conn, app_type)?;
 
         for (id, provider) in providers.iter_mut() {
             if let Some(meta) = &mut provider.meta {
                 meta.custom_endpoints = endpoints_by_provider.remove(id).unwrap_or_default();
+            }
+        }
+
+        Ok(providers)
+    }
+
+    /// 读取故障转移队列中的完整 Provider，顺序与前端队列一致。
+    pub fn get_failover_queue_providers(
+        &self,
+        app_type: &str,
+    ) -> Result<Vec<Provider>, AppError> {
+        let conn = lock_conn!(self.conn);
+        let mut stmt = conn.prepare(
+            "SELECT id, name, settings_config, website_url, category, created_at, sort_index, notes, icon, icon_color, meta, in_failover_queue
+             FROM providers
+             WHERE app_type = ?1 AND in_failover_queue = 1
+             ORDER BY COALESCE(sort_index, 999999), id ASC",
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+        let provider_iter = stmt
+            .query_map(params![app_type], provider_from_row)
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        let mut providers = Vec::new();
+        for provider_res in provider_iter {
+            let (id, mut provider) =
+                provider_res.map_err(|e| AppError::Database(e.to_string()))?;
+            provider.id = id;
+            providers.push(provider);
+        }
+
+        if providers.is_empty() {
+            return Ok(providers);
+        }
+
+        let endpoints_by_provider = load_custom_endpoints(&conn, app_type)?;
+        for provider in &mut providers {
+            if let Some(meta) = &mut provider.meta {
+                meta.custom_endpoints = endpoints_by_provider
+                    .get(&provider.id)
+                    .cloned()
+                    .unwrap_or_default();
             }
         }
 

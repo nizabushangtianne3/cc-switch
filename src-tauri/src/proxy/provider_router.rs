@@ -95,13 +95,7 @@ impl ProviderRouter {
             result.push(current_provider.expect("checked above"));
         } else if auto_failover_enabled {
             // 故障转移开启：仅按队列顺序依次尝试（P1 → P2 → ...）
-            let mut all_providers = self.db.get_all_providers(app_type)?;
-
-            // 使用 DAO 返回的排序结果，确保和前端展示一致
-            for item in self.db.get_failover_queue(app_type)? {
-                let Some(provider) = all_providers.swap_remove(&item.provider_id) else {
-                    continue;
-                };
+            for provider in self.db.get_failover_queue_providers(app_type)? {
                 if !provider_supports_failover(app_type, &provider) {
                     continue;
                 }
