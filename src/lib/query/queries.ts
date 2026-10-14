@@ -51,6 +51,9 @@ export const providersQueryOptions = (appId: AppId) => ({
   queryKey: ["providers", appId] as const,
   // 列表很小：没人订阅时也一直留在缓存里，过了默认的 5 分钟再切过去也不画骨架
   gcTime: Infinity,
+  // 写路径会主动失效，代理运行时另有 10 秒轮询；短窗口内切页/聚焦不必重复读库。
+  staleTime: 15_000,
+  refetchOnWindowFocus: false,
   queryFn: async (): Promise<ProvidersQueryData> => {
     const state = await providersApi.getState(appId);
     return {
