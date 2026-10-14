@@ -56,8 +56,8 @@ pub fn provider_for(
     purpose: Purpose,
 ) -> Result<Option<String>, AppError> {
     if purpose == Purpose::InUse {
-        if let Some(route) = proxy_route_row(db, app)? {
-            return Ok(Some(route.id));
+        if let Some(route) = proxy_route_id(db, app)? {
+            return Ok(Some(route));
         }
     }
     crate::settings::get_effective_current_provider(db, app)
@@ -73,7 +73,7 @@ pub fn provider_in_use(db: &Database, app: &AppType) -> Result<Option<Provider>,
 
 /// 代理模式下代理路由那一行；不在代理模式、或者路由那家在库里不存在（按直连处理）时
 /// 为 `None`。
-fn proxy_route_row(db: &Database, app: &AppType) -> Result<Option<Provider>, AppError> {
+fn proxy_route_id(db: &Database, app: &AppType) -> Result<Option<String>, AppError> {
     let mode = mode_state(app);
     if !mode.is_proxy() {
         return Ok(None);
@@ -81,14 +81,20 @@ fn proxy_route_row(db: &Database, app: &AppType) -> Result<Option<Provider>, App
     let Some(route) = mode.proxy_route else {
         return Ok(None);
     };
-    let row = db.get_provider_by_id(&route, app.as_str())?;
-    if row.is_none() {
+    if !db.provider_exists(app.as_str(), &route)? {
         log::warn!(
             "{} 的代理路由 {route} 在数据库中不存在，按直连指针处理",
             app.as_str()
         );
+        return Ok(None);
     }
-    Ok(row)
+    Ok(Some(route))
+}
+
+fn proxy_route_row(db: &Database, app: &AppType) -> Result<Option<Provider>, AppError> {
+    proxy_route_id(db, app)?
+        .map(|id| db.get_provider_by_id(&id, app.as_str()))
+        .transpose()
 }
 
 /// 直连指针指向的那一行。
