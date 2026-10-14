@@ -6510,25 +6510,25 @@ impl ProviderService {
         }
 
         // Check if provider exists
-        let providers = state.db.get_all_providers(app_type.as_str())?;
-        let _provider = providers
-            .get(id)
+        let provider = state
+            .db
+            .get_provider_by_id(id, app_type.as_str())?
             .ok_or_else(|| AppError::Message(format!("供应商 {id} 不存在")))?;
 
         // OMO providers are switched through their own exclusive path.
-        if matches!(app_type, AppType::OpenCode) && _provider.category.as_deref() == Some("omo") {
-            return Self::switch_normal(state, app_type, id, &providers);
+        if matches!(app_type, AppType::OpenCode) && provider.category.as_deref() == Some("omo") {
+            return Self::switch_normal(state, app_type, id, &provider);
         }
 
         // OMO Slim providers are switched through their own exclusive path.
         if matches!(app_type, AppType::OpenCode)
-            && _provider.category.as_deref() == Some("omo-slim")
+            && provider.category.as_deref() == Some("omo-slim")
         {
-            return Self::switch_normal(state, app_type, id, &providers);
+            return Self::switch_normal(state, app_type, id, &provider);
         }
 
         if matches!(app_type, AppType::ClaudeDesktop) {
-            return Self::switch_normal(state, app_type, id, &providers);
+            return Self::switch_normal(state, app_type, id, &provider);
         }
 
         // 切换和进入 / 退出代理都会改客户端文件和指针。按应用串行，拿到锁、补完上一次
@@ -6539,8 +6539,8 @@ impl ProviderService {
         if crate::mode::current::is_proxy(&app_type) {
             // 代理模式：只换代理路由，直连指针不变。契约没变时客户端文件不读也不写；
             // 变了在同一个操作里先改写客户端，再发布路由。
-            if _provider.category.as_deref() == Some("official")
-                && !official_provider_supports_proxy_takeover(&app_type, _provider)
+            if provider.category.as_deref() == Some("official")
+                && !official_provider_supports_proxy_takeover(&app_type, &provider)
             {
                 return Err(AppError::localized(
                     "switch.official_blocked_by_proxy",
@@ -6558,7 +6558,7 @@ impl ProviderService {
                 id
             );
             futures::executor::block_on(crate::mode::controller::switch_route_locked(
-                state, &app_type, _provider,
+                state, &app_type, &provider,
             ))
             .map_err(|e| AppError::Message(format!("切换路由失败: {e}")))?;
             // MCP 不随路由变：客户端文件没按直连重写。
@@ -6566,7 +6566,7 @@ impl ProviderService {
         }
 
         // Normal mode: full switch with Live config write
-        Self::switch_normal(state, app_type, id, &providers)
+        Self::switch_normal(state, app_type, id, &provider)
     }
 
     /// Normal switch flow (non-proxy mode)
@@ -6574,12 +6574,8 @@ impl ProviderService {
         state: &AppState,
         app_type: AppType,
         id: &str,
-        providers: &indexmap::IndexMap<String, Provider>,
+        provider: &Provider,
     ) -> Result<SwitchResult, AppError> {
-        let provider = providers
-            .get(id)
-            .ok_or_else(|| AppError::Message(format!("供应商 {id} 不存在")))?;
-
         if app_type.is_additive_mode() {
             log::info!("[SWITCH] {} 写入 {id}（累加式应用）", app_type.as_str());
         } else {
@@ -6598,17 +6594,17 @@ impl ProviderService {
         }
 
         if matches!(app_type, AppType::Claude) {
-            return Self::switch_claude_direct(state, provider, providers);
+            return Self::switch_claude_direct(state, provider);
         }
         if matches!(app_type, AppType::Codex) {
-            return Self::switch_codex_direct(state, provider, providers);
+            return Self::switch_codex_direct(state, provider);
         }
         if matches!(app_type, AppType::Gemini) {
             gemini_direct::switch_to(state.db.as_ref(), provider)?;
             return Ok(SwitchResult::default());
         }
         if matches!(app_type, AppType::GrokBuild) {
-            return Self::switch_grok_direct(state, provider, providers);
+            return Self::switch_grok_direct(state, provider);
         }
 
         // OMO ↔ OMO Slim are mutually exclusive; activating one removes the other's config file.
@@ -6717,16 +6713,16 @@ impl ProviderService {
     fn switch_claude_direct(
         state: &AppState,
         provider: &Provider,
-        providers: &IndexMap<String, Provider>,
     ) -> Result<SwitchResult, AppError> {
         let current_id = crate::mode::current::provider_for(
             &state.db,
             &AppType::Claude,
             crate::mode::current::Purpose::Direct,
         )?;
-        let prev = current_id
-            .as_deref()
-            .and_then(|current_id| providers.get(current_id));
+        let prev = match current_id.as_deref() {
+            Some(id) => state.db.get_provider_by_id(id, AppType::Claude.as_str())?,
+            None => None,
+        };
         claude_direct::switch_to(state.db.as_ref(), prev, provider)?;
 
         // MCP 在 ~/.claude.json，和 settings.json 无关；重投影是幂等维护，失败只记警告
@@ -6746,17 +6742,19 @@ impl ProviderService {
     fn switch_codex_direct(
         state: &AppState,
         provider: &Provider,
-        providers: &IndexMap<String, Provider>,
     ) -> Result<SwitchResult, AppError> {
         let current_id = crate::mode::current::provider_for(
             &state.db,
             &AppType::Codex,
             crate::mode::current::Purpose::Direct,
         )?;
-        let owner = current_id
-            .as_deref()
-            .and_then(|current_id| providers.get(current_id))
-            .map_or(codex_direct::Owner::None, codex_direct::Owner::Provider);
+        let owner = match current_id.as_deref() {
+            Some(id) => state
+                .db
+                .get_provider_by_id(id, AppType::Codex.as_str())?
+                .map_or(codex_direct::Owner::None, codex_direct::Owner::Provider),
+            None => codex_direct::Owner::None,
+        };
         codex_direct::write_direct(
             state.db.as_ref(),
             &state.codex_oauth_manager,
@@ -6786,16 +6784,16 @@ impl ProviderService {
     fn switch_grok_direct(
         state: &AppState,
         provider: &Provider,
-        providers: &IndexMap<String, Provider>,
     ) -> Result<SwitchResult, AppError> {
         let current_id = crate::mode::current::provider_for(
             &state.db,
             &AppType::GrokBuild,
             crate::mode::current::Purpose::Direct,
         )?;
-        let live_owner = current_id
-            .as_deref()
-            .and_then(|current_id| providers.get(current_id));
+        let live_owner = match current_id.as_deref() {
+            Some(id) => state.db.get_provider_by_id(id, AppType::GrokBuild.as_str())?,
+            None => None,
+        };
         grok_direct::switch_to(state.db.as_ref(), live_owner, provider)?;
         Ok(SwitchResult::default())
     }
