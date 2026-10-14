@@ -159,6 +159,7 @@ impl Database {
             provider.id = id.clone();
             providers.insert(id, provider);
         }
+        drop(provider_iter);
         drop(stmt);
 
         let mut endpoint_stmt = conn.prepare(
@@ -196,6 +197,7 @@ impl Database {
                     },
                 );
         }
+        drop(endpoint_iter);
         drop(endpoint_stmt);
 
         for (id, provider) in providers.iter_mut() {
