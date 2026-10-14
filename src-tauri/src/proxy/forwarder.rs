@@ -2649,7 +2649,7 @@ impl RequestForwarder {
         } else if codex_impersonate_claude_code || codex_anthropic_one_m {
             // Codex→Anthropic: emulation injects the claude-code marker; a [1m]
             // model injects the context-1m marker.
-            let mut betas: Vec<&str> = Vec::new();
+            let mut betas: Vec<&str> = Vec::with_capacity(2);
             if codex_impersonate_claude_code {
                 betas.push("claude-code-20250219");
             }
@@ -2664,7 +2664,7 @@ impl RequestForwarder {
         // ============================================================
         // 构建有序 HeaderMap — 内联替换，保持客户端原始顺序
         // ============================================================
-        let mut ordered_headers = http::HeaderMap::new();
+        let mut ordered_headers = http::HeaderMap::with_capacity(headers.len(), headers.len());
         let mut saw_auth = false;
         let mut saw_accept_encoding = false;
         let mut saw_accept = false;
