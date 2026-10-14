@@ -145,11 +145,12 @@ export function useSettings(): UseSettingsResult {
       if (enabled === undefined || enabled === prevEnabled) return false;
       try {
         if (enabled) {
-          const currentId = await providersApi.getCurrent("claude");
+          const providerState = await providersApi.getState("claude");
+          const currentId = providerState.currentProviderId;
           let isOfficial = false;
           if (currentId) {
-            const allProviders = await providersApi.getAll("claude");
-            isOfficial = allProviders[currentId]?.category === "official";
+            isOfficial =
+              providerState.providers[currentId]?.category === "official";
           }
           await settingsApi.applyClaudePluginConfig({ official: isOfficial });
         } else {
