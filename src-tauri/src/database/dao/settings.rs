@@ -25,7 +25,7 @@ pub(crate) fn proxy_runtime_configs_from_conn(
     let mut optimizer_json: Option<String> = None;
     let mut copilot_json: Option<String> = None;
     let mut stmt = conn
-        .prepare("SELECT key, value FROM settings WHERE key IN (?1, ?2, ?3)")
+        .prepare_cached("SELECT key, value FROM settings WHERE key IN (?1, ?2, ?3)")
         .map_err(|e| AppError::Database(e.to_string()))?;
     let mut rows = stmt
         .query(params![RECTIFIER_KEY, OPTIMIZER_KEY, COPILOT_KEY])
@@ -81,7 +81,7 @@ impl Database {
     pub fn get_setting(&self, key: &str) -> Result<Option<String>, AppError> {
         let conn = lock_conn!(self.conn);
         let mut stmt = conn
-            .prepare("SELECT value FROM settings WHERE key = ?1")
+            .prepare_cached("SELECT value FROM settings WHERE key = ?1")
             .map_err(|e| AppError::Database(e.to_string()))?;
 
         let mut rows = stmt

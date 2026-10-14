@@ -95,8 +95,11 @@ impl Database {
     pub async fn get_pricing_model_source(&self, app_type: &str) -> Result<String, AppError> {
         let result = {
             let conn = lock_conn!(self.conn);
-            conn.query_row(
+            let mut stmt = conn.prepare_cached(
                 "SELECT pricing_model_source FROM proxy_config WHERE app_type = ?1",
+            )
+            .map_err(|e| AppError::Database(e.to_string()))?;
+            stmt.query_row(
                 [app_type],
                 |row| row.get(0),
             )
@@ -145,12 +148,15 @@ impl Database {
         let app_type_owned = app_type.to_string();
         let result = {
             let conn = lock_conn!(self.conn);
-            conn.query_row(
+            let mut stmt = conn.prepare_cached(
                 "SELECT app_type, enabled, auto_failover_enabled,
                         max_retries, streaming_first_byte_timeout, streaming_idle_timeout, non_streaming_timeout,
                         circuit_failure_threshold, circuit_success_threshold, circuit_timeout_seconds,
                         circuit_error_rate_threshold, circuit_min_requests
                  FROM proxy_config WHERE app_type = ?1",
+            )
+            .map_err(|e| AppError::Database(e.to_string()))?;
+            stmt.query_row(
                 [app_type],
                 |row| {
                     Ok(AppProxyConfig {
@@ -211,12 +217,15 @@ impl Database {
     > {
         let result = {
             let conn = lock_conn!(self.conn);
-            let config = conn.query_row(
+            let mut stmt = conn.prepare_cached(
                 "SELECT app_type, enabled, auto_failover_enabled,
                         max_retries, streaming_first_byte_timeout, streaming_idle_timeout, non_streaming_timeout,
                         circuit_failure_threshold, circuit_success_threshold, circuit_timeout_seconds,
                         circuit_error_rate_threshold, circuit_min_requests
                  FROM proxy_config WHERE app_type = ?1",
+            )
+            .map_err(|e| AppError::Database(e.to_string()))?;
+            let config = stmt.query_row(
                 [app_type],
                 |row| {
                     Ok(AppProxyConfig {
