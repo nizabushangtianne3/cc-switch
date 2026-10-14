@@ -245,6 +245,8 @@ impl Database {
         match config {
             Err(rusqlite::Error::QueryReturnedNoRows) => {
                 self.init_proxy_config_rows().await?;
+                let (rectifier_config, optimizer_config, copilot_optimizer_config) =
+                    runtime_configs.unwrap_or_default();
                 Ok((
                     AppProxyConfig {
                         app_type: app_type.to_string(),
@@ -260,10 +262,21 @@ impl Database {
                         circuit_error_rate_threshold: 0.6,
                         circuit_min_requests: 10,
                     },
-                    runtime_configs.unwrap_or_default(),
+                    rectifier_config,
+                    optimizer_config,
+                    copilot_optimizer_config,
                 ))
             }
-            config => Ok((config?, runtime_configs.unwrap_or_default())),
+            config => {
+                let (rectifier_config, optimizer_config, copilot_optimizer_config) =
+                    runtime_configs.unwrap_or_default();
+                Ok((
+                    config?,
+                    rectifier_config,
+                    optimizer_config,
+                    copilot_optimizer_config,
+                ))
+            }
         }
     }
 
