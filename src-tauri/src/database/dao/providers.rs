@@ -767,6 +767,21 @@ impl Database {
         tx.commit().map_err(|e| AppError::Database(e.to_string()))
     }
 
+    pub fn clear_omo_provider_current_by_category(
+        &self,
+        app_type: &str,
+        category: &str,
+    ) -> Result<(), AppError> {
+        let conn = lock_conn!(self.conn);
+        conn.execute(
+            "UPDATE providers SET is_current = 0
+             WHERE app_type = ?1 AND category = ?2",
+            params![app_type, category],
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+        Ok(())
+    }
+
     pub fn get_current_omo_provider(
         &self,
         app_type: &str,

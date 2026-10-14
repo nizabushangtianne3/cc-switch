@@ -20,18 +20,10 @@ pub async fn get_current_omo_provider_id(state: State<'_, AppState>) -> Result<S
 
 #[tauri::command]
 pub async fn disable_current_omo(state: State<'_, AppState>) -> Result<(), String> {
-    let providers = state
+    state
         .db
-        .get_all_providers("opencode")
+        .clear_omo_provider_current_by_category("opencode", "omo")
         .map_err(|e| e.to_string())?;
-    for (id, p) in &providers {
-        if p.category.as_deref() == Some("omo") {
-            state
-                .db
-                .clear_omo_provider_current("opencode", id, "omo")
-                .map_err(|e| e.to_string())?;
-        }
-    }
     OmoService::delete_config_file(&STANDARD).map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -56,18 +48,10 @@ pub async fn get_current_omo_slim_provider_id(
 
 #[tauri::command]
 pub async fn disable_current_omo_slim(state: State<'_, AppState>) -> Result<(), String> {
-    let providers = state
+    state
         .db
-        .get_all_providers("opencode")
+        .clear_omo_provider_current_by_category("opencode", "omo-slim")
         .map_err(|e| e.to_string())?;
-    for (id, p) in &providers {
-        if p.category.as_deref() == Some("omo-slim") {
-            state
-                .db
-                .clear_omo_provider_current("opencode", id, "omo-slim")
-                .map_err(|e| e.to_string())?;
-        }
-    }
     OmoService::delete_config_file(&SLIM).map_err(|e| e.to_string())?;
     Ok(())
 }
