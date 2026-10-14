@@ -344,9 +344,13 @@ export function SwitchModePanel({
     await modeActions.enter(target, pick, providers[pick]?.name);
   };
 
-  const eligibleIds = providerList
-    .filter((provider) => !blockedFromRouting(app, provider))
-    .map((provider) => provider.id);
+  const eligibleIds = useMemo(
+    () =>
+      providerList
+        .filter((provider) => !blockedFromRouting(app, provider))
+        .map((provider) => provider.id),
+    [app, providerList],
+  );
 
   const startService = async () => {
     try {
