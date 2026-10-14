@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, type ComponentType } from "react";
+import { memo, useCallback, useMemo, useRef, type ComponentType } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { getVersion } from "@tauri-apps/api/app";
@@ -62,7 +62,7 @@ type DirectoryProps = SidebarProps & { collapsed: boolean };
  * 展开 / 收起时宽度一步到位，边缘的滑动由盖板的 transform 动画画出（见 useSidebarCollapsed），文字不换行、被裁掉而不是挤成两行。
  * 收起时各行只剩图标，名字由 HoverTip 从右侧报；展开时文字可见，不再挂提示。
  */
-export function Sidebar(props: SidebarProps) {
+export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   const { t } = useTranslation();
   const navRef = useRef<HTMLElement>(null);
   const { collapsed, toggle } = useSidebarCollapsed(navRef);
@@ -92,7 +92,7 @@ export function Sidebar(props: SidebarProps) {
       )}
     </nav>
   );
-}
+});
 
 function SidebarTopBar({
   collapsed,

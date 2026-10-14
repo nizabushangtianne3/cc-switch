@@ -299,6 +299,13 @@ function App() {
     (app: AppId, view: AppMode) => setProviderModeView({ app, view }),
     [],
   );
+  const handleSelectSettingsSection = useCallback(
+    (section: SettingsSection) => {
+      setAppConfigScrollTarget(undefined);
+      setSettingsSection(section);
+    },
+    [],
+  );
   // 托盘里点了直连下需要路由的那家：打开应用页后弹「需要路由」对话框
   const [trayNeedsRoute, setTrayNeedsRoute] = useState<{
     app: AppId;
@@ -753,64 +760,75 @@ function App() {
 
   // 添加 / 编辑 / 用量脚本面板只盖住内容区，侧栏还能点。离开当前页就把它们关掉：
   // 面板的 appId 跟着 activeApp 走，开着切应用会把 A 应用的供应商保存进 B 应用
-  const closeProviderPanels = () => {
+  const closeProviderPanels: () => void = useCallback(() => {
     setIsAddOpen(false);
     setEditingProvider(null);
     setUsageProvider(null);
-  };
+  }, []);
 
   // 整页编辑器里有未保存的修改：先确认，确认放弃后再执行这次导航
   const [pendingLeave, setPendingLeave] = useState<(() => void) | null>(null);
-  const confirmLeave = (proceed: () => void) => {
-    if (!hasUnsavedChanges()) return false;
-    setPendingLeave(() => proceed);
-    return true;
-  };
+  const confirmLeave: (proceed: () => void) => boolean = useCallback(
+    (proceed: () => void) => {
+      if (!hasUnsavedChanges()) return false;
+      setPendingLeave(() => proceed);
+      return true;
+    },
+    [],
+  );
 
-  const openSettings = (
-    section: SettingsSection = "general",
+  const openSettings: (
+    section?: SettingsSection,
     appConfigTarget?: AppId,
-  ) => {
-    if (managementBusyRef.current) return;
-    if (confirmLeave(() => openSettings(section, appConfigTarget))) return;
-    closeProviderPanels();
-    if (currentViewRef.current !== "settings") {
-      settingsReturnViewRef.current = currentViewRef.current;
-    }
-    setSettingsSection(section);
-    setAppConfigScrollTarget(appConfigTarget);
-    setCurrentView("settings");
-  };
+  ) => void = useCallback(
+    (section: SettingsSection = "general", appConfigTarget?: AppId) => {
+      if (managementBusyRef.current) return;
+      if (confirmLeave(() => openSettings(section, appConfigTarget))) return;
+      closeProviderPanels();
+      if (currentViewRef.current !== "settings") {
+        settingsReturnViewRef.current = currentViewRef.current;
+      }
+      setSettingsSection(section);
+      setAppConfigScrollTarget(appConfigTarget);
+      setCurrentView("settings");
+    },
+    [],
+  );
 
-  const exitSettings = () => {
+  const exitSettings: () => void = useCallback(() => {
     setCurrentView(settingsReturnViewRef.current);
-  };
+  }, []);
 
-  const selectApp = (app: AppId) => {
+  const selectApp: (app: AppId) => void = useCallback((app: AppId) => {
     if (managementBusyRef.current) return;
     if (confirmLeave(() => selectApp(app))) return;
     closeProviderPanels();
     setActiveApp(app);
     localStorage.setItem(APP_STORAGE_KEY, app);
     setCurrentView("providers");
-  };
+  }, []);
 
-  const openPage = (page: GlobalPage | "settings") => {
-    if (page === "settings") {
-      openSettings("general");
-      return;
-    }
-    if (managementBusyRef.current) return;
-    if (confirmLeave(() => openPage(page))) return;
-    closeProviderPanels();
-    if (page === "prompts" && currentViewRef.current !== "prompts") {
-      // 提示词页默认选中侧栏里最后选的那个应用
-      setPromptsApp(
-        PROMPT_APP_IDS.includes(sharedFeatureApp) ? sharedFeatureApp : "claude",
-      );
-    }
-    setCurrentView(page);
-  };
+  const openPage: (page: GlobalPage | "settings") => void = useCallback(
+    (page: GlobalPage | "settings") => {
+      if (page === "settings") {
+        openSettings("general");
+        return;
+      }
+      if (managementBusyRef.current) return;
+      if (confirmLeave(() => openPage(page))) return;
+      closeProviderPanels();
+      if (page === "prompts" && currentViewRef.current !== "prompts") {
+        // 提示词页默认选中侧栏里最后选的那个应用
+        setPromptsApp(
+          PROMPT_APP_IDS.includes(sharedFeatureApp)
+            ? sharedFeatureApp
+            : "claude",
+        );
+      }
+      setCurrentView(page);
+    },
+    [openSettings, sharedFeatureApp],
+  );
   useTrayAppPageSeen(currentView === "providers" ? activeApp : null);
 
   useTrayNavigation((navigation) => {
@@ -835,15 +853,18 @@ function App() {
   });
 
   // 侧栏、⌘K 进用量统计看全部应用；只有应用页 ⋯ 进来时带应用筛选
-  const openPageFromNav = (page: GlobalPage | "settings") => {
-    // 「设置」上的绿点说的是 CC Switch 有新版本，点进去直接到「关于」里的更新按钮
-    if (page === "settings" && hasUpdate) {
-      openSettings("about");
-      return;
-    }
-    if (page === "usage") setUsageAppFilter("all");
-    openPage(page);
-  };
+  const openPageFromNav: (page: GlobalPage | "settings") => void = useCallback(
+    (page: GlobalPage | "settings") => {
+      // 「设置」上的绿点说的是 CC Switch 有新版本，点进去直接到「关于」里的更新按钮
+      if (page === "settings" && hasUpdate) {
+        openSettings("about");
+        return;
+      }
+      if (page === "usage") setUsageAppFilter("all");
+      openPage(page);
+    },
+    [hasUpdate, openSettings, openPage],
+  );
 
   const openSettingsRef = useRef(openSettings);
   openSettingsRef.current = openSettings;
@@ -1706,10 +1727,7 @@ function App() {
           settingsSection={settingsSection}
           onSelectApp={selectApp}
           onSelectPage={openPageFromNav}
-          onSelectSettingsSection={(section) => {
-            setAppConfigScrollTarget(undefined);
-            setSettingsSection(section);
-          }}
+          onSelectSettingsSection={handleSelectSettingsSection}
           onExitSettings={exitSettings}
           appsUpdateAvailable={
             checkToolUpdatesOnStartup && toolUpdatesAvailable

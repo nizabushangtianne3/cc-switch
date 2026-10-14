@@ -54,16 +54,15 @@ export function useSidebarStatus() {
   });
 
   const serviceRunning = proxyStatus?.running ?? false;
-  const modeByApp = useMemo(
-    () =>
-      new Map(
-        PROXY_APP_IDS.map((app, index) => [
-          app,
-          modeQueries[index]?.data?.mode ?? "direct",
-        ]),
-      ),
-    [modeQueries],
-  );
+  const modeKey = PROXY_APP_IDS.map(
+    (_, index) => modeQueries[index]?.data?.mode ?? "direct",
+  ).join(",");
+  const modeByApp = useMemo(() => {
+    const modes = modeKey.split(",") as AppMode[];
+    return new Map(
+      PROXY_APP_IDS.map((app, index) => [app, modes[index] ?? "direct"]),
+    );
+  }, [modeKey]);
 
   const desktopMapping = useMemo(() => {
     const current =
