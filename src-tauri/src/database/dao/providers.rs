@@ -744,6 +744,29 @@ impl Database {
         Ok(())
     }
 
+    /// 批量更新排序，避免完整读写每个 Provider 的 settings/meta。
+    pub fn update_provider_sort_order(
+        &self,
+        app_type: &str,
+        updates: &[(String, usize)],
+    ) -> Result<(), AppError> {
+        let mut conn = lock_conn!(self.conn);
+        let tx = conn
+            .transaction()
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        for (provider_id, sort_index) in updates {
+            tx.execute(
+                "UPDATE providers SET sort_index = ?1
+                 WHERE id = ?2 AND app_type = ?3",
+                params![sort_index, provider_id, app_type],
+            )
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        }
+
+        tx.commit().map_err(|e| AppError::Database(e.to_string()))
+    }
+
     pub fn get_current_omo_provider(
         &self,
         app_type: &str,

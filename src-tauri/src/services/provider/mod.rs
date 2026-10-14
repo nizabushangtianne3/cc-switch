@@ -7522,14 +7522,13 @@ impl ProviderService {
         app_type: AppType,
         updates: Vec<ProviderSortUpdate>,
     ) -> Result<bool, AppError> {
-        let mut providers = state.db.get_all_providers(app_type.as_str())?;
-
-        for update in updates {
-            if let Some(provider) = providers.get_mut(&update.id) {
-                provider.sort_index = Some(update.sort_index);
-                state.db.save_provider(app_type.as_str(), provider)?;
-            }
-        }
+        let sort_updates: Vec<(String, usize)> = updates
+            .into_iter()
+            .map(|update| (update.id, update.sort_index))
+            .collect();
+        state
+            .db
+            .update_provider_sort_order(app_type.as_str(), &sort_updates)?;
 
         Ok(true)
     }
