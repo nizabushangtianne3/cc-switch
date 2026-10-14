@@ -279,21 +279,30 @@ impl Database {
             }
         }
 
-        let rectifier_config = match rectifier_json {
-            Some(json) => serde_json::from_str(&json)
-                .map_err(|e| AppError::Database(format!("解析整流器配置失败: {e}")))?,
-            None => crate::proxy::types::RectifierConfig::default(),
-        };
-        let optimizer_config = match optimizer_json {
-            Some(json) => serde_json::from_str(&json)
-                .map_err(|e| AppError::Database(format!("解析优化器配置失败: {e}")))?,
-            None => crate::proxy::types::OptimizerConfig::default(),
-        };
-        let copilot_optimizer_config = match copilot_json {
-            Some(json) => serde_json::from_str(&json)
-                .map_err(|e| AppError::Database(format!("解析 Copilot 优化器配置失败: {e}")))?,
-            None => crate::proxy::types::CopilotOptimizerConfig::default(),
-        };
+        let rectifier_config = rectifier_json
+            .map(|json| {
+                serde_json::from_str(&json).unwrap_or_else(|e| {
+                    log::warn!("解析整流器配置失败，使用默认配置: {e}");
+                    crate::proxy::types::RectifierConfig::default()
+                })
+            })
+            .unwrap_or_default();
+        let optimizer_config = optimizer_json
+            .map(|json| {
+                serde_json::from_str(&json).unwrap_or_else(|e| {
+                    log::warn!("解析优化器配置失败，使用默认配置: {e}");
+                    crate::proxy::types::OptimizerConfig::default()
+                })
+            })
+            .unwrap_or_default();
+        let copilot_optimizer_config = copilot_json
+            .map(|json| {
+                serde_json::from_str(&json).unwrap_or_else(|e| {
+                    log::warn!("解析 Copilot 优化器配置失败，使用默认配置: {e}");
+                    crate::proxy::types::CopilotOptimizerConfig::default()
+                })
+            })
+            .unwrap_or_default();
 
         Ok((rectifier_config, optimizer_config, copilot_optimizer_config))
     }
