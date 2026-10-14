@@ -571,16 +571,18 @@ function App() {
   // 应用项目后刷新相关缓存（providers 由既有 provider-switched 监听承接；
   // proxy 状态由后端直接改 DB，不走 mutation，必须显式刷新）
   useTauriEvent("profile-applied", async () => {
-    await queryClient.invalidateQueries({ queryKey: ["profiles"] });
-    await queryClient.invalidateQueries({ queryKey: ["mcp", "all"] });
-    await queryClient.invalidateQueries({ queryKey: ["skills"] });
-    await queryClient.invalidateQueries({
-      queryKey: proxyKeys.takeoverStatus,
-    });
-    await queryClient.invalidateQueries({ queryKey: proxyKeys.status });
-    await queryClient.invalidateQueries({
-      queryKey: ["providers", "claude-desktop"],
-    });
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["profiles"] }),
+      queryClient.invalidateQueries({ queryKey: ["mcp", "all"] }),
+      queryClient.invalidateQueries({ queryKey: ["skills"] }),
+      queryClient.invalidateQueries({
+        queryKey: proxyKeys.takeoverStatus,
+      }),
+      queryClient.invalidateQueries({ queryKey: proxyKeys.status }),
+      queryClient.invalidateQueries({
+        queryKey: ["providers", "claude-desktop"],
+      }),
+    ]);
   });
 
   useTauriEvent<SyncStatusUpdatedPayload | null | undefined>(
@@ -1193,10 +1195,6 @@ function App() {
 
   const handleImportSuccess = async () => {
     try {
-      await queryClient.invalidateQueries({
-        queryKey: ["providers"],
-        refetchType: "all",
-      });
       await queryClient.refetchQueries({
         queryKey: ["providers"],
         type: "all",
