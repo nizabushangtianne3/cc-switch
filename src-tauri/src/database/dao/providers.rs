@@ -919,10 +919,11 @@ impl Database {
     /// 使用 `EXISTS` 短路查询，比 `COUNT(*)` 在将来表变大时更高效。
     pub fn is_providers_empty(&self) -> Result<bool, AppError> {
         let conn = lock_conn!(self.conn);
-        let exists: bool = conn
-            .query_row("SELECT EXISTS(SELECT 1 FROM providers)", [], |row| {
-                row.get(0)
-            })
+        let mut stmt = conn
+            .prepare_cached("SELECT EXISTS(SELECT 1 FROM providers)")
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        let exists: bool = stmt
+            .query_row([], |row| row.get(0))
             .map_err(|e| AppError::Database(e.to_string()))?;
         Ok(!exists)
     }

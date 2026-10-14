@@ -1398,6 +1398,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_providers,
             commands::get_current_provider,
+            commands::has_any_provider,
             commands::get_provider_state,
             commands::add_provider,
             commands::update_provider,

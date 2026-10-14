@@ -12,7 +12,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { APP_IDS } from "@/config/appConfig";
 import { providersApi, settingsApi } from "@/lib/api";
 import { useSettingsQuery } from "@/lib/query";
 import { markSeen } from "@/lib/whatsNew";
@@ -20,15 +19,13 @@ import type { Settings } from "@/types";
 
 const RELEASES_URL = "https://github.com/nizabushangtianne3/cc-switch/releases";
 
-/** 并行探测各应用数据库；任一应用已有供应商即通过 */
+/** 数据库中任一应用已有供应商，说明是升级安装 */
 async function hasAnyProvider(): Promise<boolean> {
-  const results = await Promise.allSettled(
-    APP_IDS.map((app) => providersApi.getAll(app)),
-  );
-  return results.some(
-    (result) =>
-      result.status === "fulfilled" && Object.keys(result.value).length > 0,
-  );
+  try {
+    return await providersApi.hasAnyProvider();
+  } catch {
+    return false;
+  }
 }
 
 /**

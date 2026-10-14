@@ -88,6 +88,10 @@ export const providersApi = {
     return await invoke("get_provider_state", { app: appId });
   },
 
+  async hasAnyProvider(): Promise<boolean> {
+    return await invoke("has_any_provider");
+  },
+
   async add(
     provider: Provider,
     appId: AppId,
