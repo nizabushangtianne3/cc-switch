@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -126,11 +126,17 @@ export function AppsPage() {
     staleTime: 30_000,
   });
 
-  const visibleApps: VisibleApps = {
-    ...DEFAULT_VISIBLE_APPS,
-    ...settings?.visibleApps,
-  };
-  const visibleCount = Object.values(visibleApps).filter(Boolean).length;
+  const visibleApps = useMemo<VisibleApps>(
+    () => ({
+      ...DEFAULT_VISIBLE_APPS,
+      ...settings?.visibleApps,
+    }),
+    [settings?.visibleApps],
+  );
+  const visibleCount = useMemo(
+    () => Object.values(visibleApps).filter(Boolean).length,
+    [visibleApps],
+  );
 
   const setVisible = (app: AppId, visible: boolean) => {
     if (!settings) return;
