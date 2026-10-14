@@ -26,7 +26,7 @@ export const ProviderIcon = memo(function ProviderIcon({
   className,
   showFallback = true,
   fallbackClassName,
-}) {
+}: ProviderIconProps) {
   // 获取内联 SVG 字符串
   const iconSvg = useMemo(() => {
     if (icon && !isUrlIcon(icon) && hasIcon(icon)) {
@@ -104,7 +104,7 @@ export const ProviderIcon = memo(function ProviderIcon({
   if (showFallback) {
     const initials = name
       .split(" ")
-      .map((word) => word[0])
+      .map((word: string) => word[0])
       .join("")
       .toUpperCase()
       .slice(0, 2);
