@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useState, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type RefObject,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/lib/toast";
@@ -124,8 +130,11 @@ export function SwitchModePanel({
   const setFailover = useSetAutoFailoverEnabled();
   const addToQueue = useAddToFailoverQueue();
   const removeFromQueue = useRemoveFromFailoverQueue();
+  const addQueueItem = addToQueue.mutate;
+  const removeQueueItem = removeFromQueue.mutate;
   const { data: stack } = useProxyStack(app, isStackAppId(app));
   const setStackMember = useSetProxyStackMember();
+  const setStackMemberMutation = setStackMember.mutate;
   const adoptCatalog = useAdoptCodexStackCatalog();
   const modeActions = useModeActions(app);
 
@@ -175,113 +184,148 @@ export function SwitchModePanel({
     [queue],
   );
 
-  const previous = { mode: active, routeProviderId: routeId };
+  const previous = useMemo(
+    () => ({ mode: active, routeProviderId: routeId }),
+    [active, routeId],
+  );
 
-  const exitAndUse = (provider: Provider) =>
-    void modeActions.exitToDirect({
-      previous,
-      directProviderId: directId,
-      useProviderId: provider.id,
-      providerName: provider.name,
-    });
+  const exitAndUse = useCallback(
+    (provider: Provider) =>
+      void modeActions.exitToDirect({
+        previous,
+        directProviderId: directId,
+        useProviderId: provider.id,
+        providerName: provider.name,
+      }),
+    [directId, modeActions.exitToDirect, previous],
+  );
 
-  const queueMove = async (provider: Provider, delta: -1 | 1) => {
-    const items = queue ?? [];
-    const index = items.findIndex((item) => item.providerId === provider.id);
-    const target = index + delta;
-    if (index < 0 || target < 0 || target >= items.length) return;
-    const order = items.map((item) => item.providerId);
-    order.splice(index, 1);
-    order.splice(target, 0, provider.id);
-    // 队列顺序就是供应商的排序：按原来占着的位置重新分配
-    const slots = items
-      .map(
-        (item, i) =>
-          item.sortIndex ?? providers[item.providerId]?.sortIndex ?? i,
-      )
-      .sort((a, b) => a - b);
-    try {
-      await providersApi.updateSortOrder(
-        order.map((id, i) => ({ id, sortIndex: slots[i] })),
-        app,
-      );
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["failoverQueue", app] }),
-        queryClient.invalidateQueries({ queryKey: ["providers", app] }),
-      ]);
-      toast.success(
-        t("mode.queueMoved", { name: provider.name, position: target + 1 }),
-      );
-    } catch (error) {
-      toast.error(extractErrorMessage(error) || t("provider.sortUpdateFailed"));
-    }
-  };
+  const queueMove = useCallback(
+    async (provider: Provider, delta: -1 | 1) => {
+      const items = queue ?? [];
+      const index = items.findIndex((item) => item.providerId === provider.id);
+      const target = index + delta;
+      if (index < 0 || target < 0 || target >= items.length) return;
+      const order = items.map((item) => item.providerId);
+      order.splice(index, 1);
+      order.splice(target, 0, provider.id);
+      // 队列顺序就是供应商的排序：按原来占着的位置重新分配
+      const slots = items
+        .map(
+          (item, i) =>
+            item.sortIndex ?? providers[item.providerId]?.sortIndex ?? i,
+        )
+        .sort((a, b) => a - b);
+      try {
+        await providersApi.updateSortOrder(
+          order.map((id, i) => ({ id, sortIndex: slots[i] })),
+          app,
+        );
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["failoverQueue", app] }),
+          queryClient.invalidateQueries({ queryKey: ["providers", app] }),
+        ]);
+        toast.success(
+          t("mode.queueMoved", { name: provider.name, position: target + 1 }),
+        );
+      } catch (error) {
+        toast.error(
+          extractErrorMessage(error) || t("provider.sortUpdateFailed"),
+        );
+      }
+    },
+    [app, providers, queue, queryClient, t],
+  );
 
-  const rememberDefault = async (provider: Provider) => {
-    try {
-      await proxyApi.setProxyRoute(app, provider.id);
-      await queryClient.invalidateQueries({ queryKey: ["providers", app] });
-      toast.success(
-        t("mode.toast.defaultRemembered", { provider: provider.name }),
-        { closeButton: true },
-      );
-    } catch (error) {
-      toast.error(
-        t("mode.toast.failed", {
-          detail: extractErrorMessage(error) || t("common.unknown"),
-        }),
-      );
-    }
-  };
+  const rememberDefault = useCallback(
+    async (provider: Provider) => {
+      try {
+        await proxyApi.setProxyRoute(app, provider.id);
+        await queryClient.invalidateQueries({ queryKey: ["providers", app] });
+        toast.success(
+          t("mode.toast.defaultRemembered", { provider: provider.name }),
+          { closeButton: true },
+        );
+      } catch (error) {
+        toast.error(
+          t("mode.toast.failed", {
+            detail: extractErrorMessage(error) || t("common.unknown"),
+          }),
+        );
+      }
+    },
+    [app, queryClient, t],
+  );
 
-  const switchMode = {
+  const switchMode = useMemo(() => {
+    const routingReason = (provider: Provider) =>
+      getRoutingReason(app, provider, t) ?? "";
+    return {
+      active,
+      view,
+      directId,
+      routeId,
+      failoverOn,
+      queue: queueIds,
+      stackMembers,
+      serviceRunning,
+      routingReason,
+      actions: {
+        switchDirect: (provider: Provider) => void onSwitch(provider),
+        needsRouteDialog: (provider: Provider) =>
+          setDialog({
+            kind: "needsRoute",
+            providerId: provider.id,
+            reason: routingReason(provider),
+          }),
+        exitAndUse,
+        routeTo: (provider: Provider) => void onSwitch(provider),
+        queueAdd: (provider: Provider) =>
+          addQueueItem({ appType: app, providerId: provider.id }),
+        queueRemove: (provider: Provider) =>
+          removeQueueItem({ appType: app, providerId: provider.id }),
+        queueMove: (provider: Provider, delta: -1 | 1) =>
+          void queueMove(provider, delta),
+        stackAdd: (provider: Provider) => {
+          setStackMemberMutation({
+            appType: app,
+            providerId: provider.id,
+            enabled: true,
+          });
+        },
+        stackRemove: (provider: Provider) => {
+          setStackMemberMutation({
+            appType: app,
+            providerId: provider.id,
+            enabled: false,
+          });
+        },
+        // 聚合生效时换默认当场生效（同切换供应商）；没生效时只记下选择，切换时的确认框预选它
+        stackSetDefault: (provider: Provider) =>
+          active === "stack"
+            ? void onSwitch(provider)
+            : void rememberDefault(provider),
+      },
+    };
+  }, [
     active,
     view,
     directId,
     routeId,
     failoverOn,
-    queue: queueIds,
+    queueIds,
     stackMembers,
     serviceRunning,
-    routingReason: (provider: Provider) =>
-      getRoutingReason(app, provider, t) ?? "",
-    actions: {
-      switchDirect: (provider: Provider) => void onSwitch(provider),
-      needsRouteDialog: (provider: Provider) =>
-        setDialog({
-          kind: "needsRoute",
-          providerId: provider.id,
-          reason: getRoutingReason(app, provider, t) ?? "",
-        }),
-      exitAndUse,
-      routeTo: (provider: Provider) => void onSwitch(provider),
-      queueAdd: (provider: Provider) =>
-        addToQueue.mutate({ appType: app, providerId: provider.id }),
-      queueRemove: (provider: Provider) =>
-        removeFromQueue.mutate({ appType: app, providerId: provider.id }),
-      queueMove: (provider: Provider, delta: -1 | 1) =>
-        void queueMove(provider, delta),
-      stackAdd: (provider: Provider) => {
-        setStackMember.mutate({
-          appType: app,
-          providerId: provider.id,
-          enabled: true,
-        });
-      },
-      stackRemove: (provider: Provider) => {
-        setStackMember.mutate({
-          appType: app,
-          providerId: provider.id,
-          enabled: false,
-        });
-      },
-      // 聚合生效时换默认当场生效（同切换供应商）；没生效时只记下选择，切换时的确认框预选它
-      stackSetDefault: (provider: Provider) =>
-        active === "stack"
-          ? void onSwitch(provider)
-          : void rememberDefault(provider),
-    },
-  };
+    app,
+    t,
+    onSwitch,
+    addQueueItem,
+    removeQueueItem,
+    setStackMemberMutation,
+    queueMove,
+    rememberDefault,
+    exitAndUse,
+  ]);
 
   // 状态行：只在看生效的那格时显示；路由只写目标，不写本机地址和端口
   const routeTarget = failoverOn ? t("mode.status.byQueue") : nameOf(routeId);
