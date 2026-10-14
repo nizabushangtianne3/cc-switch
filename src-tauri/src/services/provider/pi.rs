@@ -152,9 +152,9 @@ pub(super) fn delete(state: &AppState, id: &str) -> Result<(), AppError> {
     let app_type = AppType::Pi;
     let _guard =
         futures::executor::block_on(state.proxy_service.lock_switch_for_app(app_type.as_str()));
-    let Some(_) = state.db.get_provider_by_id(id, app_type.as_str())? else {
+    if !state.db.provider_exists(app_type.as_str(), id)? {
         return Ok(());
-    };
+    }
     // Delete is intentionally keyed by provider ID. Once the user confirms
     // deleting the provider itself, supported field edits do not change that
     // intent; the latest native value is retained only for rollback.
