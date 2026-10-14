@@ -92,9 +92,21 @@ fn proxy_route_id(db: &Database, app: &AppType) -> Result<Option<String>, AppErr
 }
 
 fn proxy_route_row(db: &Database, app: &AppType) -> Result<Option<Provider>, AppError> {
-    proxy_route_id(db, app)?
-        .map(|id| db.get_provider_by_id(&id, app.as_str()))
-        .transpose()
+    let mode = mode_state(app);
+    if !mode.is_proxy() {
+        return Ok(None);
+    }
+    let Some(route) = mode.proxy_route else {
+        return Ok(None);
+    };
+    let row = db.get_provider_by_id(&route, app.as_str())?;
+    if row.is_none() {
+        log::warn!(
+            "{} 的代理路由 {route} 在数据库中不存在，按直连指针处理",
+            app.as_str()
+        );
+    }
+    Ok(row)
 }
 
 /// 直连指针指向的那一行。
