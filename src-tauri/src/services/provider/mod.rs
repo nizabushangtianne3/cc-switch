@@ -5445,13 +5445,11 @@ impl ProviderService {
             for (id, provider) in &mut saved {
                 let mut changed = false;
                 if let Some(config) = native.get(id) {
-                    let name = config
-                        .get("name")
-                        .and_then(Value::as_str)
-                        .unwrap_or(id.as_str());
-                    if provider.name != name {
-                        provider.name = name.into();
-                        changed = true;
+                    if let Some(name) = config.get("name").and_then(Value::as_str) {
+                        if provider.name != name {
+                            provider.name = name.into();
+                            changed = true;
+                        }
                     }
                     if provider.settings_config != *config {
                         provider.settings_config = config.clone();
