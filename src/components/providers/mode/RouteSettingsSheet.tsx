@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronRight } from "lucide-react";
 import type { ProxyAppId } from "@/config/appConfig";
@@ -22,7 +23,7 @@ interface RouteSettingsSheetProps {
 }
 
 /** 路由页签上的「路由设置 ›」：当前应用的超时、重试、熔断；更多在设置 → 本地路由。 */
-export function RouteSettingsSheet({
+export const RouteSettingsSheet = memo(function RouteSettingsSheet({
   app,
   open,
   onOpenChange,
@@ -55,4 +56,4 @@ export function RouteSettingsSheet({
       </SheetContent>
     </Sheet>
   );
-}
+});
