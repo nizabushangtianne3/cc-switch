@@ -82,6 +82,8 @@ export const useProvidersQuery = (
 export const useSettingsQuery = (): UseQueryResult<Settings> => {
   return useQuery({
     queryKey: ["settings"],
+    staleTime: 15_000,
+    refetchOnWindowFocus: false,
     queryFn: async () => settingsApi.get(),
   });
 };
