@@ -476,15 +476,20 @@ fn sse_data_starts_output(event_name: Option<&str>, data: &str) -> bool {
     if data.is_empty() || data == "[DONE]" {
         return false;
     }
-    let event_type = match event_name.map(str::trim).filter(|name| !name.is_empty()) {
-        Some(name) => name.to_string(),
-        None => serde_json::from_str::<Value>(data)
-            .ok()
-            .and_then(|value| value.get("type")?.as_str().map(str::to_string))
-            .unwrap_or_default(),
-    };
+    if let Some(event_type) = event_name.map(str::trim).filter(|name| !name.is_empty()) {
+        return !matches!(
+            event_type,
+            "response.created" | "response.in_progress" | "ping" | "keepalive"
+        );
+    }
+
+    let parsed = serde_json::from_str::<Value>(data).ok();
+    let event_type = parsed
+        .as_ref()
+        .and_then(|value| value.get("type"))
+        .and_then(Value::as_str);
     !matches!(
-        event_type.as_str(),
+        event_type,
         "response.created" | "response.in_progress" | "ping" | "keepalive"
     )
 }
