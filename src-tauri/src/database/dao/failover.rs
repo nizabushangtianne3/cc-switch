@@ -23,7 +23,7 @@ impl Database {
         let conn = lock_conn!(self.conn);
 
         let mut stmt = conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, name, sort_index, notes
                  FROM providers
                  WHERE app_type = ?1 AND in_failover_queue = 1
@@ -108,9 +108,13 @@ impl Database {
     ) -> Result<bool, AppError> {
         let conn = lock_conn!(self.conn);
 
-        let in_queue: bool = conn
-            .query_row(
+        let mut stmt = conn
+            .prepare_cached(
                 "SELECT in_failover_queue FROM providers WHERE id = ?1 AND app_type = ?2",
+            )
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        let in_queue: bool = stmt
+            .query_row(
                 rusqlite::params![provider_id, app_type],
                 |row| row.get(0),
             )

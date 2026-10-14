@@ -237,7 +237,7 @@ impl Database {
     /// 队列路由和队列展示都不消费 `custom_endpoints`，这里保持轻量不查 endpoint 表。
     pub fn get_failover_queue_providers(&self, app_type: &str) -> Result<Vec<Provider>, AppError> {
         let conn = lock_conn!(self.conn);
-        let mut stmt = conn.prepare(
+        let mut stmt = conn.prepare_cached(
             "SELECT id, name, settings_config, website_url, category, created_at, sort_index, notes, icon, icon_color, meta, in_failover_queue
              FROM providers
              WHERE app_type = ?1 AND in_failover_queue = 1
@@ -264,7 +264,7 @@ impl Database {
         app_type: &str,
     ) -> Result<Vec<Provider>, AppError> {
         let conn = lock_conn!(self.conn);
-        let mut stmt = conn.prepare(
+        let mut stmt = conn.prepare_cached(
             "SELECT id, name, settings_config, website_url, category, created_at, sort_index, notes, icon, icon_color, meta, in_failover_queue
              FROM providers
              WHERE app_type = ?1 AND in_failover_queue = 0
