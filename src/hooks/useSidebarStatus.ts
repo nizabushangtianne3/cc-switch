@@ -54,8 +54,16 @@ export function useSidebarStatus() {
   });
 
   const serviceRunning = proxyStatus?.running ?? false;
-  const modes = PROXY_APP_IDS.map((_, index) => modeQueries[index]?.data?.mode);
-  const modeKey = modes.join(",");
+  const modeByApp = useMemo(
+    () =>
+      new Map(
+        PROXY_APP_IDS.map((app, index) => [
+          app,
+          modeQueries[index]?.data?.mode ?? "direct",
+        ]),
+      ),
+    [modeQueries],
+  );
 
   const desktopMapping = useMemo(() => {
     const current =
@@ -75,7 +83,7 @@ export function useSidebarStatus() {
       if (!isProxyAppId(app)) {
         return { mode: "direct", mapping: false, alert: false };
       }
-      const mode = modes[PROXY_APP_IDS.indexOf(app)] ?? "direct";
+      const mode = modeByApp.get(app) ?? "direct";
       return {
         mode,
         mapping: false,
@@ -83,9 +91,7 @@ export function useSidebarStatus() {
           mode !== "direct" && proxyStatus !== undefined && !serviceRunning,
       };
     };
-    // modes 是每次渲染新建的数组，用 modeKey 判断变化
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [desktopMapping, proxyStatus, serviceRunning, modeKey]);
+  }, [desktopMapping, proxyStatus, serviceRunning, modeByApp]);
 
   const todayCost = parseFiniteNumber(todaySummary?.totalCost) ?? 0;
 
