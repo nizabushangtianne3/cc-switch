@@ -846,6 +846,24 @@ impl Database {
         }))
     }
 
+    /// 只读取当前 OMO 供应商 ID；不需要 settings_config 时避免完整反序列化。
+    pub fn get_current_omo_provider_id(
+        &self,
+        app_type: &str,
+        category: &str,
+    ) -> Result<Option<String>, AppError> {
+        let conn = lock_conn!(self.conn);
+        conn.query_row(
+            "SELECT id FROM providers
+             WHERE app_type = ?1 AND category = ?2 AND is_current = 1
+             LIMIT 1",
+            params![app_type, category],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| AppError::Database(e.to_string()))
+    }
+
     /// 判断 providers 表是否为空（全 app_type 一起算）。
     ///
     /// 用于区分"全新安装"和"升级用户"：在启动流程 import/seed 之前调用。

@@ -11,11 +11,11 @@ pub async fn read_omo_local_file() -> Result<OmoLocalFileData, String> {
 
 #[tauri::command]
 pub async fn get_current_omo_provider_id(state: State<'_, AppState>) -> Result<String, String> {
-    let provider = state
+    let provider_id = state
         .db
-        .get_current_omo_provider("opencode", "omo")
+        .get_current_omo_provider_id("opencode", "omo")
         .map_err(|e| e.to_string())?;
-    Ok(provider.map(|p| p.id).unwrap_or_default())
+    Ok(provider_id.unwrap_or_default())
 }
 
 #[tauri::command]
@@ -39,11 +39,11 @@ pub async fn read_omo_slim_local_file() -> Result<OmoLocalFileData, String> {
 pub async fn get_current_omo_slim_provider_id(
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    let provider = state
+    let provider_id = state
         .db
-        .get_current_omo_provider("opencode", "omo-slim")
+        .get_current_omo_provider_id("opencode", "omo-slim")
         .map_err(|e| e.to_string())?;
-    Ok(provider.map(|p| p.id).unwrap_or_default())
+    Ok(provider_id.unwrap_or_default())
 }
 
 #[tauri::command]

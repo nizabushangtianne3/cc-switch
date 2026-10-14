@@ -362,7 +362,7 @@ pub async fn set_common_config_snippet(
     if app_type == "omo"
         && state
             .db
-            .get_current_omo_provider("opencode", "omo")
+            .get_current_omo_provider_id("opencode", "omo")
             .map_err(|e| e.to_string())?
             .is_some()
     {
@@ -375,7 +375,7 @@ pub async fn set_common_config_snippet(
     if app_type == "omo-slim"
         && state
             .db
-            .get_current_omo_provider("opencode", "omo-slim")
+            .get_current_omo_provider_id("opencode", "omo-slim")
             .map_err(|e| e.to_string())?
             .is_some()
     {
