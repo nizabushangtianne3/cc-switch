@@ -1,3 +1,4 @@
+// Key statistics are fork-only; keep the upstream table alignment consistent.
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useApiKeyStats } from "@/lib/query/usage";
