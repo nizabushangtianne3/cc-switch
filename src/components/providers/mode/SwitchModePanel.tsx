@@ -116,6 +116,7 @@ export const SwitchModePanel = memo(function SwitchModePanel({
 
   // 离开页面再回来、或生效的模式变了，一律落在生效的那格（「查看中」不持久化）
   const [view, setView] = useState<AppMode>(active);
+  const [searchSlot, setSearchSlot] = useState<HTMLDivElement | null>(null);
   useEffect(() => {
     setView(active);
   }, [app, active]);
@@ -638,6 +639,7 @@ export const SwitchModePanel = memo(function SwitchModePanel({
         onOpenRouteSettings={
           view === "route" && active === "route" ? openRouteSettings : undefined
         }
+        searchSlotRef={setSearchSlot}
       />
       <div
         ref={scrollRef}
@@ -657,6 +659,7 @@ export const SwitchModePanel = memo(function SwitchModePanel({
           isLoading={isLoading}
           onSwitch={handleSwitch}
           switchMode={switchMode}
+          searchSlot={searchSlot}
         />
       </div>
 
