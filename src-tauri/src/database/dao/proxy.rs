@@ -621,6 +621,11 @@ impl Database {
         let conn = lock_conn!(self.conn);
 
         let now = chrono::Utc::now().to_rfc3339();
+        let (last_success_at, last_failure_at) = if success {
+            (Some(now.clone()), None)
+        } else {
+            (None, Some(now.clone()))
+        };
 
         let mut stmt = conn.prepare_cached(
             "INSERT INTO provider_health
@@ -653,8 +658,8 @@ impl Database {
             app_type,
             success,
             failure_threshold,
-            if success { Some(now.clone()) } else { None::<String> },
-            if success { None::<String> } else { Some(now.clone()) },
+            last_success_at,
+            last_failure_at,
             error_msg,
             &now,
         ])
@@ -935,6 +940,7 @@ impl Database {
 mod tests {
     use crate::database::Database;
     use crate::error::AppError;
+    use crate::provider::Provider;
 
     #[tokio::test]
     async fn test_pricing_model_source_round_trip_and_validation() -> Result<(), AppError> {
@@ -959,6 +965,43 @@ mod tests {
                 ..
             }
         ));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn provider_health_upsert_tracks_failures() -> Result<(), AppError> {
+        let db = Database::memory()?;
+        let provider = Provider::with_id(
+            "provider-a".to_string(),
+            "Provider A".to_string(),
+            serde_json::json!({}),
+            None,
+        );
+        db.save_provider("claude", &provider)?;
+
+        for _ in 0..3 {
+            db.update_provider_health_with_threshold(
+                "provider-a",
+                "claude",
+                false,
+                Some("upstream failed".to_string()),
+                3,
+            )
+            .await?;
+        }
+        let failed = db.get_provider_health("provider-a", "claude").await?;
+        assert!(!failed.is_healthy);
+        assert_eq!(failed.consecutive_failures, 3);
+        assert_eq!(failed.last_error.as_deref(), Some("upstream failed"));
+
+        db.update_provider_health_with_threshold("provider-a", "claude", true, None, 3)
+            .await?;
+        let recovered = db.get_provider_health("provider-a", "claude").await?;
+        assert!(recovered.is_healthy);
+        assert_eq!(recovered.consecutive_failures, 0);
+        assert!(recovered.last_success_at.is_some());
+        assert!(recovered.last_failure_at.is_none());
 
         Ok(())
     }
