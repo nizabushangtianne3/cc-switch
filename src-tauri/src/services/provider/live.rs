@@ -806,8 +806,10 @@ pub(crate) fn sync_current_provider_for_app_respecting_mode(
         None => return Ok(None),
     };
 
-    let providers = state.db.get_all_providers(app_type.as_str())?;
-    let Some(provider) = providers.get(&current_id) else {
+    let provider = state
+        .db
+        .get_provider_by_id(&current_id, app_type.as_str())?;
+    let Some(provider) = provider else {
         return Ok(None);
     };
 

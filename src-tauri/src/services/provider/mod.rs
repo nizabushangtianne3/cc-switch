@@ -77,8 +77,10 @@ pub fn reapply_current_codex_official_live(state: &AppState) -> Result<bool, App
     if current_id.is_empty() {
         return Ok(false);
     }
-    let providers = state.db.get_all_providers(AppType::Codex.as_str())?;
-    let Some(provider) = providers.get(&current_id) else {
+    let provider = state
+        .db
+        .get_provider_by_id(&current_id, AppType::Codex.as_str())?;
+    let Some(provider) = provider else {
         return Ok(false);
     };
     if !codex_direct::is_official(provider) {
