@@ -232,6 +232,8 @@ impl Database {
     }
 
     /// 读取故障转移队列中的完整 Provider，顺序与前端队列一致。
+    ///
+    /// 队列路由和队列展示都不消费 `custom_endpoints`，这里保持轻量不查 endpoint 表。
     pub fn get_failover_queue_providers(&self, app_type: &str) -> Result<Vec<Provider>, AppError> {
         let conn = lock_conn!(self.conn);
         let mut stmt = conn.prepare(
@@ -252,17 +254,32 @@ impl Database {
             providers.push(provider);
         }
 
-        if providers.is_empty() {
-            return Ok(providers);
-        }
+        Ok(providers)
+    }
 
-        let mut endpoints_by_provider = load_custom_endpoints(&conn, app_type, true)?;
-        for provider in &mut providers {
-            if let Some(meta) = &mut provider.meta {
-                meta.custom_endpoints = endpoints_by_provider
-                    .remove(&provider.id)
-                    .unwrap_or_default();
-            }
+    /// 读取不在故障转移队列中的完整 Provider，用于“可加入队列”的候选列表。
+    pub fn get_available_providers_for_failover(
+        &self,
+        app_type: &str,
+    ) -> Result<Vec<Provider>, AppError> {
+        let conn = lock_conn!(self.conn);
+        let mut stmt = conn.prepare(
+            "SELECT id, name, settings_config, website_url, category, created_at, sort_index, notes, icon, icon_color, meta, in_failover_queue
+             FROM providers
+             WHERE app_type = ?1 AND in_failover_queue = 0
+             ORDER BY COALESCE(sort_index, 999999), created_at ASC, id ASC",
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+        let provider_iter = stmt
+            .query_map(params![app_type], provider_from_row)
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        let mut providers = Vec::new();
+        for provider_res in provider_iter {
+            let (id, mut provider) =
+                provider_res.map_err(|e| AppError::Database(e.to_string()))?;
+            provider.id = id;
+            providers.push(provider);
         }
 
         Ok(providers)
