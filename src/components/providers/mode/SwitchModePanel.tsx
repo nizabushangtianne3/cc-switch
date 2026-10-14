@@ -173,8 +173,10 @@ export const SwitchModePanel = memo(function SwitchModePanel({
   }, [needsRouteRequest?.nonce, providers]);
 
   const providerList = useMemo(() => Object.values(providers), [providers]);
-  const nameOf = (id: string | null) =>
-    (id && providers[id]?.name) || t("mode.noProvider");
+  const nameOf = useCallback(
+    (id: string | null) => (id && providers[id]?.name) || t("mode.noProvider"),
+    [providers, t],
+  );
 
   const stackMembers = useMemo(() => {
     const members = new Map<string, number>();
@@ -333,7 +335,6 @@ export const SwitchModePanel = memo(function SwitchModePanel({
   ]);
 
   // 状态行：只在看生效的那格时显示；路由只写目标，不写本机地址和端口
-  const routeTarget = failoverOn ? t("mode.status.byQueue") : nameOf(routeId);
   const { otherMembers, otherModels } = useMemo(() => {
     const members = (stack?.members ?? []).filter(
       (member) => member.providerId !== routeId,
@@ -346,32 +347,51 @@ export const SwitchModePanel = memo(function SwitchModePanel({
       ),
     };
   }, [stack?.members, routeId]);
-  const status =
-    view !== active
-      ? undefined
-      : active === "direct"
-        ? { lead: t("mode.status.directLead"), value: nameOf(directId) }
-        : active === "route"
-          ? {
-              lead: t("mode.status.routeLead"),
-              value: `→ ${routeTarget}`,
-            }
-          : {
-              lead: t("mode.status.stackLead"),
-              value: t("mode.status.stackValue", {
-                name: nameOf(routeId),
-                count: otherMembers.length,
-                models: otherModels,
-              }),
-            };
+  const status = useMemo(() => {
+    if (view !== active) return undefined;
 
-  const handleFailoverChange = (enabled: boolean) => {
-    if (enabled && !settings?.failoverConfirmed) {
-      setConfirmFailover(true);
-      return;
+    if (active === "direct") {
+      return { lead: t("mode.status.directLead"), value: nameOf(directId) };
     }
-    setFailover.mutate({ appType: app, enabled });
-  };
+    if (active === "route") {
+      const routeTarget = failoverOn
+        ? t("mode.status.byQueue")
+        : nameOf(routeId);
+      return {
+        lead: t("mode.status.routeLead"),
+        value: `→ ${routeTarget}`,
+      };
+    }
+    return {
+      lead: t("mode.status.stackLead"),
+      value: t("mode.status.stackValue", {
+        name: nameOf(routeId),
+        count: otherMembers.length,
+        models: otherModels,
+      }),
+    };
+  }, [
+    view,
+    active,
+    failoverOn,
+    routeId,
+    directId,
+    otherMembers.length,
+    otherModels,
+    nameOf,
+    t,
+  ]);
+
+  const handleFailoverChange = useCallback(
+    (enabled: boolean) => {
+      if (enabled && !settings?.failoverConfirmed) {
+        setConfirmFailover(true);
+        return;
+      }
+      setFailover.mutate({ appType: app, enabled });
+    },
+    [app, settings?.failoverConfirmed, setFailover.mutate],
+  );
 
   const confirmFailoverOn = async () => {
     setConfirmFailover(false);
@@ -418,6 +438,18 @@ export const SwitchModePanel = memo(function SwitchModePanel({
       );
     }
   };
+  const openRouteSettings = useCallback(() => setRouteSettingsOpen(true), []);
+  const failoverProps = useMemo(
+    () =>
+      view === "route" && active === "route"
+        ? {
+            enabled: failoverOn,
+            disabled: setFailover.isPending,
+            onChange: handleFailoverChange,
+          }
+        : undefined,
+    [view, active, failoverOn, setFailover.isPending, handleFailoverChange],
+  );
 
   const notices: React.ReactNode[] = [];
   if (active !== "direct" && proxyStatus !== undefined && !serviceRunning) {
@@ -585,19 +617,9 @@ export const SwitchModePanel = memo(function SwitchModePanel({
         view={view}
         onView={setView}
         status={status}
-        failover={
-          view === "route" && active === "route"
-            ? {
-                enabled: failoverOn,
-                disabled: setFailover.isPending,
-                onChange: handleFailoverChange,
-              }
-            : undefined
-        }
+        failover={failoverProps}
         onOpenRouteSettings={
-          view === "route" && active === "route"
-            ? () => setRouteSettingsOpen(true)
-            : undefined
+          view === "route" && active === "route" ? openRouteSettings : undefined
         }
       />
       <div

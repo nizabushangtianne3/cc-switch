@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { useTranslation } from "react-i18next";
 import { Layers, Plug, Route, Settings2, Shuffle } from "lucide-react";
 import type { AppMode } from "@/types/proxy";
@@ -58,7 +59,7 @@ interface ModeTabsProps {
  * 不铺底（否则彩色那格比正在看的更抢眼）。组右边的「?」说明三种模式的区别。
  * 模式 tab 保留文字、不挂提示；右侧的故障转移、路由设置是纯图标 + HoverTip。
  */
-export function ModeTabs({
+export const ModeTabs = memo(function ModeTabs({
   modes,
   active,
   view,
@@ -176,4 +177,4 @@ export function ModeTabs({
       )}
     </div>
   );
-}
+});
