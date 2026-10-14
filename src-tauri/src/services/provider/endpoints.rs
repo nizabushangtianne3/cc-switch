@@ -15,20 +15,9 @@ pub fn get_custom_endpoints(
     app_type: AppType,
     provider_id: &str,
 ) -> Result<Vec<CustomEndpoint>, AppError> {
-    let providers = state.db.get_all_providers(app_type.as_str())?;
-    let Some(provider) = providers.get(provider_id) else {
-        return Ok(vec![]);
-    };
-    let Some(meta) = provider.meta.as_ref() else {
-        return Ok(vec![]);
-    };
-    if meta.custom_endpoints.is_empty() {
-        return Ok(vec![]);
-    }
-
-    let mut result: Vec<_> = meta.custom_endpoints.values().cloned().collect();
-    result.sort_by_key(|ep| std::cmp::Reverse(ep.added_at));
-    Ok(result)
+    state
+        .db
+        .get_custom_endpoints_by_provider(app_type.as_str(), provider_id)
 }
 
 /// Add a custom endpoint to a provider

@@ -304,6 +304,36 @@ impl Database {
         }
     }
 
+    /// 读取单个供应商的自定义 endpoint，避免调用方为 endpoint 加载完整 Provider 表。
+    pub fn get_custom_endpoints_by_provider(
+        &self,
+        app_type: &str,
+        provider_id: &str,
+    ) -> Result<Vec<CustomEndpoint>, AppError> {
+        let conn = lock_conn!(self.conn);
+        let mut stmt = conn
+            .prepare(
+                "SELECT url, added_at
+                 FROM provider_endpoints
+                 WHERE app_type = ?1 AND provider_id = ?2
+                 ORDER BY added_at DESC, url ASC",
+            )
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        let rows = stmt
+            .query_map(params![app_type, provider_id], |row| {
+                Ok(CustomEndpoint {
+                    url: row.get(0)?,
+                    added_at: row.get::<_, Option<i64>>(1)?.unwrap_or(0),
+                    last_used: None,
+                })
+            })
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| AppError::Database(e.to_string()))
+    }
+
     pub fn get_provider_by_id(
         &self,
         id: &str,
