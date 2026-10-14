@@ -10,23 +10,29 @@ const PI_APP: &str = "pi";
 
 pub(super) fn list(state: &AppState) -> Result<IndexMap<String, Provider>, AppError> {
     let _guard = futures::executor::block_on(state.proxy_service.lock_switch_for_app(PI_APP));
-    match crate::pi_config::read_pi_native_providers() {
+    let providers = match crate::pi_config::read_pi_native_providers() {
         Ok(native) => {
-            if let Err(error) = sync_native_locked(state, &native) {
-                log::warn!("Failed to sync Pi providers from native config: {error}");
+            match sync_native_locked(state, &native) {
+                Ok((_, providers)) => providers,
+                Err(error) => {
+                    log::warn!("Failed to sync Pi providers from native config: {error}");
+                    state.db.get_all_providers(PI_APP)?
+                }
             }
         }
         Err(error) => {
             log::warn!("Failed to read Pi providers; showing saved catalog: {error}");
+            state.db.get_all_providers(PI_APP)?
         }
-    }
-    state.db.get_all_providers(PI_APP)
+    };
+    Ok(providers)
 }
 
 pub(super) fn import_from_live(state: &AppState) -> Result<usize, AppError> {
     let _guard = futures::executor::block_on(state.proxy_service.lock_switch_for_app(PI_APP));
     let native = crate::pi_config::read_pi_native_providers()?;
-    sync_native_locked(state, &native)
+    let (changed, _providers) = sync_native_locked(state, &native)?;
+    Ok(changed)
 }
 
 pub(super) fn add(
@@ -221,8 +227,8 @@ pub(super) fn enable(state: &AppState, id: &str) -> Result<SwitchResult, AppErro
 fn sync_native_locked(
     state: &AppState,
     native: &IndexMap<String, Value>,
-) -> Result<usize, AppError> {
-    let saved = state.db.get_all_providers(PI_APP)?;
+) -> Result<(usize, IndexMap<String, Provider>), AppError> {
+    let mut saved = state.db.get_all_providers(PI_APP)?;
     let mut changed = 0;
 
     for (id, config) in native {
@@ -243,10 +249,11 @@ fn sync_native_locked(
         }
 
         state.db.save_provider(PI_APP, &provider)?;
+        saved.insert(id.clone(), provider);
         changed += 1;
     }
 
-    Ok(changed)
+    Ok((changed, saved))
 }
 
 fn merge_native_config(provider: &mut Provider, config: Value) {
