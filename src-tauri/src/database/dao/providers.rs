@@ -57,14 +57,24 @@ fn provider_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<(String, Provi
 fn load_custom_endpoints(
     conn: &rusqlite::Connection,
     app_type: &str,
+    failover_only: bool,
 ) -> Result<HashMap<String, HashMap<String, CustomEndpoint>>, AppError> {
-    let mut endpoint_stmt = conn
-        .prepare(
-            "SELECT provider_id, url, added_at
+    let sql = if failover_only {
+        "SELECT e.provider_id, e.url, e.added_at
+             FROM provider_endpoints AS e
+             JOIN providers AS p
+               ON p.id = e.provider_id AND p.app_type = e.app_type
+             WHERE e.app_type = ?1 AND p.in_failover_queue = 1
+             ORDER BY e.added_at ASC, e.url ASC"
+    } else {
+        "SELECT provider_id, url, added_at
              FROM provider_endpoints
              WHERE app_type = ?1
-             ORDER BY added_at ASC, url ASC",
-        )
+             ORDER BY added_at ASC, url ASC"
+    };
+
+    let mut endpoint_stmt = conn
+        .prepare(sql)
         .map_err(|e| AppError::Database(e.to_string()))?;
     let endpoint_iter = endpoint_stmt
         .query_map(params![app_type], |row| {
@@ -210,7 +220,7 @@ impl Database {
             return Ok(providers);
         }
 
-        let mut endpoints_by_provider = load_custom_endpoints(&conn, app_type)?;
+        let mut endpoints_by_provider = load_custom_endpoints(&conn, app_type, false)?;
 
         for (id, provider) in providers.iter_mut() {
             if let Some(meta) = &mut provider.meta {
@@ -250,7 +260,7 @@ impl Database {
             return Ok(providers);
         }
 
-        let mut endpoints_by_provider = load_custom_endpoints(&conn, app_type)?;
+        let mut endpoints_by_provider = load_custom_endpoints(&conn, app_type, true)?;
         for provider in &mut providers {
             if let Some(meta) = &mut provider.meta {
                 meta.custom_endpoints =
