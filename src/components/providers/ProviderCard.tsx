@@ -79,6 +79,13 @@ const CHIP_CLASS: Record<CardChip["tone"], string> = {
   danger: "bg-danger-soft text-danger-text",
 };
 
+const OFFICIAL_SUBSCRIPTION_APPS = new Set<AppId>([
+  "claude",
+  "codex",
+  "gemini",
+  "grokbuild",
+]);
+
 export function CardChipBadge({ chip }: { chip: CardChip }) {
   return (
     <span
@@ -242,7 +249,7 @@ export function ProviderCard({
     [appId, provider],
   );
   const supportsOfficialSubscription =
-    isOfficial && ["claude", "codex", "gemini", "grokbuild"].includes(appId);
+    isOfficial && OFFICIAL_SUBSCRIPTION_APPS.has(appId);
   const isOfficialSubscriptionUsage =
     provider.meta?.usage_script?.templateType ===
     TEMPLATE_TYPES.OFFICIAL_SUBSCRIPTION;
