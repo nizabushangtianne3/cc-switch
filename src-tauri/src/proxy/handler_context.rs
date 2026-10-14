@@ -185,8 +185,6 @@ impl RequestContext {
                             }
                             _ => ProxyError::DatabaseError(e.to_string()),
                         })?
-                        .into_iter()
-                        .map(Arc::new)
                         .collect::<Vec<_>>()
                 };
 

@@ -52,7 +52,10 @@ impl ProviderRouter {
     /// 返回按优先级排序的可用供应商列表：
     /// - 故障转移关闭时：仅返回当前供应商
     /// - 故障转移开启时：仅使用故障转移队列，按队列顺序依次尝试（P1 → P2 → ...）
-    pub async fn select_providers(&self, app_type: &str) -> Result<Vec<Provider>, AppError> {
+    pub async fn select_providers(
+        &self,
+        app_type: &str,
+    ) -> Result<Vec<Arc<Provider>>, AppError> {
         // 代理模式下路由到代理路由那家，和直连指针无关。
         let current_provider = AppType::from_str(app_type).ok().and_then(|app_enum| {
             crate::mode::current::provider_in_use(&self.db, &app_enum)
@@ -78,7 +81,7 @@ impl ProviderRouter {
         app_type: &str,
         current_provider: Option<Provider>,
         auto_failover_enabled: bool,
-    ) -> Result<Vec<Provider>, AppError> {
+    ) -> Result<Vec<Arc<Provider>>, AppError> {
         let mut result = Vec::new();
         let mut total_providers = 0usize;
         let mut circuit_open_count = 0usize;
@@ -92,7 +95,7 @@ impl ProviderRouter {
             // Keep it as a single route even if an old failover setting remains
             // enabled; retrying would reuse its inbound token for another card.
             total_providers = 1;
-            result.push(current_provider.expect("checked above"));
+            result.push(Arc::new(current_provider.expect("checked above")));
         } else if auto_failover_enabled {
             // 故障转移开启：仅按队列顺序依次尝试（P1 → P2 → ...）
             for provider in self.db.get_failover_queue_providers(app_type)? {
@@ -105,7 +108,7 @@ impl ProviderRouter {
                 let breaker = self.get_or_create_circuit_breaker(&circuit_key).await;
 
                 if breaker.is_available().await {
-                    result.push(provider);
+                    result.push(Arc::new(provider));
                 } else {
                     circuit_open_count += 1;
                 }
@@ -114,7 +117,7 @@ impl ProviderRouter {
             // 故障转移关闭：仅使用当前供应商，跳过熔断器检查
             if let Some(current) = current_provider {
                 total_providers = 1;
-                result.push(current);
+                result.push(Arc::new(current));
             }
         }
 
