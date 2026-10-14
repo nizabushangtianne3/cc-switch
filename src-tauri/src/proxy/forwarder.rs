@@ -382,6 +382,8 @@ pub struct RequestForwarder {
     session_client_provided: bool,
     /// 整流器配置
     rectifier_config: RectifierConfig,
+    /// 请求创建时读取到的熔断失败阈值，记账时复用。
+    circuit_failure_threshold: u32,
     /// 优化器配置
     optimizer_config: OptimizerConfig,
     /// Copilot 优化器配置
@@ -548,6 +550,7 @@ impl RequestForwarder {
             session_id,
             session_client_provided,
             rectifier_config,
+            circuit_failure_threshold: 4,
             optimizer_config,
             copilot_optimizer_config,
             non_streaming_timeout: std::time::Duration::from_secs(non_streaming_timeout),
@@ -562,6 +565,12 @@ impl RequestForwarder {
     /// 标记为 Stack 模型的请求。
     pub fn stack_request(mut self, stack_request: bool) -> Self {
         self.stack_request = stack_request;
+        self
+    }
+
+    /// 使用请求创建时的熔断阈值，避免结果记账再读一次配置。
+    pub fn circuit_failure_threshold(mut self, threshold: u32) -> Self {
+        self.circuit_failure_threshold = threshold;
         self
     }
 
@@ -587,7 +596,14 @@ impl RequestForwarder {
         if used_half_open_permit {
             if let Err(e) = self
                 .router
-                .record_result(provider_id, app_type, true, true, None)
+                .record_result_with_threshold(
+                    provider_id,
+                    app_type,
+                    true,
+                    true,
+                    None,
+                    self.circuit_failure_threshold,
+                )
                 .await
             {
                 log::warn!(
@@ -600,9 +616,17 @@ impl RequestForwarder {
         let router = self.router.clone();
         let provider_id = provider_id.to_string();
         let app_type = app_type.to_string();
+        let threshold = self.circuit_failure_threshold;
         tokio::spawn(async move {
             if let Err(e) = router
-                .record_result(&provider_id, &app_type, false, true, None)
+                .record_result_with_threshold(
+                    &provider_id,
+                    &app_type,
+                    false,
+                    true,
+                    None,
+                    threshold,
+                )
                 .await
             {
                 log::warn!(
@@ -780,12 +804,13 @@ impl RequestForwarder {
         }
         let _ = self
             .router
-            .record_result(
+            .record_result_with_threshold(
                 &provider.id,
                 app_type_str,
                 used_half_open_permit,
                 false,
                 Some(error.to_string()),
+                self.circuit_failure_threshold,
             )
             .await;
         self.status.write().await.last_error = Some(last_error);
@@ -4948,6 +4973,7 @@ mod tests {
             session_id: String::new(),
             session_client_provided: false,
             rectifier_config: RectifierConfig::default(),
+            circuit_failure_threshold: 4,
             optimizer_config: OptimizerConfig::default(),
             copilot_optimizer_config: CopilotOptimizerConfig::default(),
             non_streaming_timeout,

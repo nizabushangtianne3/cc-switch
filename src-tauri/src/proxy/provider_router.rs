@@ -169,6 +169,27 @@ impl ProviderRouter {
             Ok(app_config) => app_config.circuit_failure_threshold,
             Err(_) => 5, // 默认值
         };
+        self.record_result_with_threshold(
+            provider_id,
+            app_type,
+            used_half_open_permit,
+            success,
+            error_msg,
+            failure_threshold,
+        )
+        .await
+    }
+
+    /// 记录供应商请求结果；调用方已持有阈值时避免重复读取配置。
+    pub async fn record_result_with_threshold(
+        &self,
+        provider_id: &str,
+        app_type: &str,
+        used_half_open_permit: bool,
+        success: bool,
+        error_msg: Option<String>,
+        failure_threshold: u32,
+    ) -> Result<(), AppError> {
 
         // 2. 更新熔断器状态
         let circuit_key = format!("{app_type}:{provider_id}");
