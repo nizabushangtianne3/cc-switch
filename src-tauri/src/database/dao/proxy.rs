@@ -515,14 +515,13 @@ impl Database {
     /// 检查是否有任一 app 的 enabled = true
     pub async fn is_live_takeover_active(&self) -> Result<bool, AppError> {
         let conn = lock_conn!(self.conn);
-        let count: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM proxy_config WHERE enabled = 1",
-                [],
-                |row| row.get(0),
-            )
+        let mut stmt = conn
+            .prepare_cached("SELECT EXISTS(SELECT 1 FROM proxy_config WHERE enabled = 1)")
             .map_err(|e| AppError::Database(e.to_string()))?;
-        Ok(count > 0)
+        let exists: bool = stmt
+            .query_row([], |row| row.get(0))
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        Ok(exists)
     }
 
     /// 同步版本：检查是否有任一 app 的 enabled = true
@@ -533,13 +532,14 @@ impl Database {
             Ok(c) => c,
             Err(_) => return false,
         };
-        conn.query_row(
-            "SELECT COUNT(*) FROM proxy_config WHERE enabled = 1",
-            [],
-            |row| row.get::<_, i64>(0),
-        )
-        .unwrap_or(0)
-            > 0
+        let mut stmt = match conn
+            .prepare_cached("SELECT EXISTS(SELECT 1 FROM proxy_config WHERE enabled = 1)")
+        {
+            Ok(stmt) => stmt,
+            Err(_) => return false,
+        };
+        stmt.query_row([], |row| row.get::<_, bool>(0))
+            .unwrap_or(false)
     }
 
     // ==================== Provider Health ====================
@@ -553,11 +553,14 @@ impl Database {
         let result = {
             let conn = lock_conn!(self.conn);
 
-            conn.query_row(
+            let mut stmt = conn.prepare_cached(
                 "SELECT provider_id, app_type, is_healthy, consecutive_failures,
                         last_success_at, last_failure_at, last_error, updated_at
                  FROM provider_health
                  WHERE provider_id = ?1 AND app_type = ?2",
+            )
+            .map_err(|e| AppError::Database(e.to_string()))?;
+            stmt.query_row(
                 rusqlite::params![provider_id, app_type],
                 |row| {
                     Ok(ProviderHealth {
