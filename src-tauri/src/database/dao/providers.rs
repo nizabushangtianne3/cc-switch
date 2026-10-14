@@ -250,13 +250,11 @@ impl Database {
             return Ok(providers);
         }
 
-        let endpoints_by_provider = load_custom_endpoints(&conn, app_type)?;
+        let mut endpoints_by_provider = load_custom_endpoints(&conn, app_type)?;
         for provider in &mut providers {
             if let Some(meta) = &mut provider.meta {
-                meta.custom_endpoints = endpoints_by_provider
-                    .get(&provider.id)
-                    .cloned()
-                    .unwrap_or_default();
+                meta.custom_endpoints =
+                    endpoints_by_provider.remove(&provider.id).unwrap_or_default();
             }
         }
 
