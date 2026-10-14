@@ -74,7 +74,7 @@ fn load_custom_endpoints(
     };
 
     let mut endpoint_stmt = conn
-        .prepare(sql)
+        .prepare_cached(sql)
         .map_err(|e| AppError::Database(e.to_string()))?;
     let endpoint_iter = endpoint_stmt
         .query_map(params![app_type], |row| {
@@ -198,11 +198,12 @@ impl Database {
         app_type: &str,
     ) -> Result<IndexMap<String, Provider>, AppError> {
         let conn = lock_conn!(self.conn);
-        let mut stmt = conn.prepare(
+        let mut stmt = conn.prepare_cached(
             "SELECT id, name, settings_config, website_url, category, created_at, sort_index, notes, icon, icon_color, meta, in_failover_queue
              FROM providers WHERE app_type = ?1
              ORDER BY COALESCE(sort_index, 999999), created_at ASC, id ASC"
-        ).map_err(|e| AppError::Database(e.to_string()))?;
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
 
         let provider_iter = stmt
             .query_map(params![app_type], provider_from_row)
@@ -287,7 +288,7 @@ impl Database {
     pub fn get_current_provider(&self, app_type: &str) -> Result<Option<String>, AppError> {
         let conn = lock_conn!(self.conn);
         let mut stmt = conn
-            .prepare("SELECT id FROM providers WHERE app_type = ?1 AND is_current = 1 LIMIT 1")
+            .prepare_cached("SELECT id FROM providers WHERE app_type = ?1 AND is_current = 1 LIMIT 1")
             .map_err(|e| AppError::Database(e.to_string()))?;
 
         let mut rows = stmt
@@ -311,7 +312,7 @@ impl Database {
     ) -> Result<Vec<CustomEndpoint>, AppError> {
         let conn = lock_conn!(self.conn);
         let mut stmt = conn
-            .prepare(
+            .prepare_cached(
                 "SELECT url, added_at
                  FROM provider_endpoints
                  WHERE app_type = ?1 AND provider_id = ?2
@@ -339,9 +340,13 @@ impl Database {
         app_type: &str,
     ) -> Result<Option<Provider>, AppError> {
         let conn = lock_conn!(self.conn);
-        let result = conn.query_row(
-            "SELECT name, settings_config, website_url, category, created_at, sort_index, notes, icon, icon_color, meta, in_failover_queue
-             FROM providers WHERE id = ?1 AND app_type = ?2",
+        let mut stmt = conn
+            .prepare_cached(
+                "SELECT name, settings_config, website_url, category, created_at, sort_index, notes, icon, icon_color, meta, in_failover_queue
+                 FROM providers WHERE id = ?1 AND app_type = ?2",
+            )
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        let result = stmt.query_row(
             params![id, app_type],
             |row| {
                 let name: String = row.get(0)?;
@@ -386,15 +391,16 @@ impl Database {
     /// 判断指定 app 下是否存在某个 provider；比加载完整行轻量得多。
     pub fn provider_exists(&self, app_type: &str, provider_id: &str) -> Result<bool, AppError> {
         let conn = lock_conn!(self.conn);
-        let exists: bool = conn
-            .query_row(
+        let mut stmt = conn
+            .prepare_cached(
                 "SELECT EXISTS(
                     SELECT 1 FROM providers
                     WHERE app_type = ?1 AND id = ?2
                  )",
-                params![app_type, provider_id],
-                |row| row.get(0),
             )
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        let exists: bool = stmt
+            .query_row(params![app_type, provider_id], |row| row.get(0))
             .map_err(|e| AppError::Database(e.to_string()))?;
         Ok(exists)
     }
@@ -411,11 +417,15 @@ impl Database {
     ) -> Result<Option<String>, AppError> {
         let conn = lock_conn!(self.conn);
         let preferred = preferred_provider_id.filter(|id| !id.is_empty());
-        conn.query_row(
-            "SELECT id FROM providers
-             WHERE app_type = ?1 AND (id = ?2 OR is_current = 1)
-             ORDER BY CASE WHEN id = ?2 THEN 0 ELSE 1 END
-             LIMIT 1",
+        let mut stmt = conn
+            .prepare_cached(
+                "SELECT id FROM providers
+                 WHERE app_type = ?1 AND (id = ?2 OR is_current = 1)
+                 ORDER BY CASE WHEN id = ?2 THEN 0 ELSE 1 END
+                 LIMIT 1",
+            )
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        stmt.query_row(
             params![app_type, preferred],
             |row| row.get(0),
         )
