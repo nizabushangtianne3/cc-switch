@@ -137,6 +137,10 @@ export function SwitchModePanel({
   const setStackMemberMutation = setStackMember.mutate;
   const adoptCatalog = useAdoptCodexStackCatalog();
   const modeActions = useModeActions(app);
+  const handleSwitch = useCallback(
+    (provider: Provider) => void onSwitch(provider),
+    [onSwitch],
+  );
 
   const [dialog, setDialog] = useState<ModeDialogState | null>(null);
   const [routeSettingsOpen, setRouteSettingsOpen] = useState(false);
@@ -271,7 +275,7 @@ export function SwitchModePanel({
       serviceRunning,
       routingReason,
       actions: {
-        switchDirect: (provider: Provider) => void onSwitch(provider),
+        switchDirect: handleSwitch,
         needsRouteDialog: (provider: Provider) =>
           setDialog({
             kind: "needsRoute",
@@ -279,7 +283,7 @@ export function SwitchModePanel({
             reason: routingReason(provider),
           }),
         exitAndUse,
-        routeTo: (provider: Provider) => void onSwitch(provider),
+        routeTo: handleSwitch,
         queueAdd: (provider: Provider) =>
           addQueueItem({ appType: app, providerId: provider.id }),
         queueRemove: (provider: Provider) =>
@@ -303,7 +307,7 @@ export function SwitchModePanel({
         // 聚合生效时换默认当场生效（同切换供应商）；没生效时只记下选择，切换时的确认框预选它
         stackSetDefault: (provider: Provider) =>
           active === "stack"
-            ? void onSwitch(provider)
+            ? handleSwitch(provider)
             : void rememberDefault(provider),
       },
     };
@@ -318,13 +322,13 @@ export function SwitchModePanel({
     serviceRunning,
     app,
     t,
-    onSwitch,
     addQueueItem,
     removeQueueItem,
     setStackMemberMutation,
     queueMove,
     rememberDefault,
     exitAndUse,
+    handleSwitch,
   ]);
 
   // 状态行：只在看生效的那格时显示；路由只写目标，不写本机地址和端口
@@ -606,7 +610,7 @@ export function SwitchModePanel({
           currentProviderId={currentProviderId}
           appId={app}
           isLoading={isLoading}
-          onSwitch={(provider) => void onSwitch(provider)}
+          onSwitch={handleSwitch}
           switchMode={switchMode}
         />
       </div>
