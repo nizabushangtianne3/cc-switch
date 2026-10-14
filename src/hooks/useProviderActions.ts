@@ -92,13 +92,15 @@ export function useProviderActions(
         return true;
       }
 
-      await queryClient.invalidateQueries({
-        queryKey: ["providers", activeApp],
-      });
-      await queryClient.invalidateQueries({ queryKey: proxyKeys.status });
-      await queryClient.invalidateQueries({
-        queryKey: proxyKeys.takeoverStatus,
-      });
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["providers", activeApp],
+        }),
+        queryClient.invalidateQueries({ queryKey: proxyKeys.status }),
+        queryClient.invalidateQueries({
+          queryKey: proxyKeys.takeoverStatus,
+        }),
+      ]);
       providersApi.updateTrayMenu().catch(() => undefined);
       toast.success(
         t("notifications.multiKeyRoutingEnabled", {
@@ -426,17 +428,19 @@ export function useProviderActions(
         } else {
           await providersApi.update(updatedProvider, activeApp);
         }
-        await queryClient.invalidateQueries({
-          queryKey: ["providers", activeApp],
-        });
-        // 🔧 保存用量脚本后，也应该失效该 provider 的用量查询缓存
-        // 这样主页列表会使用新配置重新查询，而不是使用测试时的缓存
-        await queryClient.invalidateQueries({
-          queryKey: usageKeys.script(provider.id, activeApp),
-        });
-        await queryClient.invalidateQueries({
-          queryKey: ["subscription", "quota", activeApp],
-        });
+        await Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: ["providers", activeApp],
+          }),
+          // 保存用量脚本后，同时失效该 provider 的用量查询缓存
+          // 主页列表会使用新配置重新查询，而不是使用测试时的缓存
+          queryClient.invalidateQueries({
+            queryKey: usageKeys.script(provider.id, activeApp),
+          }),
+          queryClient.invalidateQueries({
+            queryKey: ["subscription", "quota", activeApp],
+          }),
+        ]);
         toast.success(
           t("provider.usageSaved", {
             defaultValue: "用量查询配置已保存",

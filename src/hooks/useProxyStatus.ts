@@ -91,10 +91,12 @@ export function useProxyStatus() {
         }),
         { closeButton: true },
       );
-      queryClient.invalidateQueries({ queryKey: proxyKeys.status });
-      queryClient.invalidateQueries({ queryKey: proxyKeys.takeoverStatus });
-      // 退回直连后「当前」显示回直连供应商。
-      queryClient.invalidateQueries({ queryKey: ["providers"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: proxyKeys.status }),
+        queryClient.invalidateQueries({ queryKey: proxyKeys.takeoverStatus }),
+        // 退回直连后「当前」显示回直连供应商。
+        queryClient.invalidateQueries({ queryKey: ["providers"] }),
+      ]);
       // 彻底删除所有供应商健康状态缓存（后端已清空数据库记录）
       queryClient.removeQueries({ queryKey: ["providerHealth"] });
       // 彻底删除所有熔断器统计缓存（代理停止后熔断器状态已重置）
@@ -142,12 +144,14 @@ export function useProxyStatus() {
             }),
         { closeButton: true },
       );
-      queryClient.invalidateQueries({ queryKey: proxyKeys.status });
-      queryClient.invalidateQueries({ queryKey: proxyKeys.takeoverStatus });
-      // 路由模式下「当前」是路由到的那家，进出路由都要刷新。
-      queryClient.invalidateQueries({
-        queryKey: ["providers", variables.appType],
-      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: proxyKeys.status }),
+        queryClient.invalidateQueries({ queryKey: proxyKeys.takeoverStatus }),
+        // 路由模式下「当前」是路由到的那家，进出路由都要刷新。
+        queryClient.invalidateQueries({
+          queryKey: ["providers", variables.appType],
+        }),
+      ]);
     },
     onError: (error: Error) => {
       const detail =
@@ -174,11 +178,13 @@ export function useProxyStatus() {
           { closeButton: true },
         );
       }
-      queryClient.invalidateQueries({ queryKey: proxyKeys.status });
-      queryClient.invalidateQueries({ queryKey: proxyKeys.takeoverStatus });
-      for (const app of apps) {
-        queryClient.invalidateQueries({ queryKey: ["providers", app] });
-      }
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: proxyKeys.status }),
+        queryClient.invalidateQueries({ queryKey: proxyKeys.takeoverStatus }),
+        ...apps.map((app) =>
+          queryClient.invalidateQueries({ queryKey: ["providers", app] }),
+        ),
+      ]);
     },
     onError: (error: Error) => {
       const detail =
