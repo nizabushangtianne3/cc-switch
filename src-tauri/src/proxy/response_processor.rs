@@ -356,6 +356,17 @@ pub async fn process_response(
 
 type UsageCallbackWithTiming = Arc<dyn Fn(Vec<Value>, Option<u64>) + Send + Sync + 'static>;
 
+/// 流式用量日志在多个事件间不变的上下文。
+#[derive(Clone)]
+struct SseUsageLogContext {
+    state: ProxyState,
+    provider_id: String,
+    request_model: String,
+    outbound_model: String,
+    session_id: String,
+    api_key_id: Option<String>,
+}
+
 /// SSE 使用量收集器
 #[derive(Clone)]
 pub struct SseUsageCollector {
@@ -510,15 +521,19 @@ pub(crate) fn create_usage_collector(
         return None;
     }
 
-    let state = state.clone();
-    let provider_id = ctx.provider.id.clone();
-    let request_model = ctx.request_model.clone();
-    // 流式事件缺失模型名时的归因兜底：映射后的出站模型（路由接管真值）优先，
-    // 其次才是客户端请求别名
-    let fallback_model = ctx
-        .outbound_model
-        .clone()
-        .unwrap_or_else(|| ctx.request_model.clone());
+    let context = Arc::new(SseUsageLogContext {
+        state: state.clone(),
+        provider_id: ctx.provider.id.clone(),
+        request_model: ctx.request_model.clone(),
+        // 流式事件缺失模型名时的归因兜底：映射后的出站模型（路由接管真值）
+        // 优先，其次才是客户端请求别名。
+        outbound_model: ctx
+            .outbound_model
+            .clone()
+            .unwrap_or_else(|| ctx.request_model.clone()),
+        session_id: ctx.session_id.clone(),
+        api_key_id: ctx.api_key_id.clone(),
+    });
     // 用 ctx 的 app_type 而不是 parser_config 的：Claude Desktop 流式透传复用
     // CLAUDE_PARSER_CONFIG（app_type_str="claude"），按 parser_config 记账会把
     // claude-desktop 的行错记到 claude 名下，导致供应商计价覆盖解析不到。
@@ -527,67 +542,54 @@ pub(crate) fn create_usage_collector(
     let start_time = ctx.start_time;
     let stream_parser = parser_config.stream_parser;
     let model_extractor = parser_config.model_extractor;
-    let session_id = ctx.session_id.clone();
-    let api_key_id = ctx.api_key_id.clone();
-
     Some(SseUsageCollector::new(
         start_time,
         parser_config.stream_event_filter,
         move |events, first_token_ms| {
             if let Some(usage) = stream_parser(&events) {
-                let model = model_extractor(&events, &fallback_model);
+                let model = model_extractor(&events, &context.outbound_model);
                 let latency_ms = start_time.elapsed().as_millis() as u64;
 
-                let state = state.clone();
-                let provider_id = provider_id.clone();
-                let session_id = session_id.clone();
-                let request_model = request_model.clone();
-                let outbound_model = fallback_model.clone();
-                let api_key_id = api_key_id.clone();
+                let context = Arc::clone(&context);
 
                 tokio::spawn(async move {
                     log_usage_internal(
-                        &state,
-                        &provider_id,
+                        &context.state,
+                        &context.provider_id,
                         app_type_str,
                         &model,
-                        &request_model,
-                        &outbound_model,
+                        &context.request_model,
+                        &context.outbound_model,
                         usage,
                         latency_ms,
                         first_token_ms,
                         true, // is_streaming
                         status_code,
-                        Some(session_id),
-                        api_key_id.as_deref(),
+                        Some(context.session_id.clone()),
+                        context.api_key_id.as_deref(),
                     )
                     .await;
                 });
             } else {
-                let model = model_extractor(&events, &fallback_model);
+                let model = model_extractor(&events, &context.outbound_model);
                 let latency_ms = start_time.elapsed().as_millis() as u64;
-                let state = state.clone();
-                let provider_id = provider_id.clone();
-                let session_id = session_id.clone();
-                let request_model = request_model.clone();
-                let outbound_model = fallback_model.clone();
-                let api_key_id = api_key_id.clone();
+                let context = Arc::clone(&context);
 
                 tokio::spawn(async move {
                     log_usage_internal(
-                        &state,
-                        &provider_id,
+                        &context.state,
+                        &context.provider_id,
                         app_type_str,
                         &model,
-                        &request_model,
-                        &outbound_model,
+                        &context.request_model,
+                        &context.outbound_model,
                         TokenUsage::default(),
                         latency_ms,
                         first_token_ms,
                         true, // is_streaming
                         status_code,
-                        Some(session_id),
-                        api_key_id.as_deref(),
+                        Some(context.session_id.clone()),
+                        context.api_key_id.as_deref(),
                     )
                     .await;
                 });
