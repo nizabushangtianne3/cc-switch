@@ -6905,9 +6905,9 @@ impl ProviderService {
             return Err(AppError::Message("No current provider".to_string()));
         }
 
-        let providers = state.db.get_all_providers(app_type.as_str())?;
-        let provider = providers
-            .get(&current_id)
+        let provider = state
+            .db
+            .get_provider_by_id(&current_id, app_type.as_str())?
             .ok_or_else(|| AppError::Message(format!("Provider {current_id} not found")))?;
 
         match app_type {
