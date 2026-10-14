@@ -420,12 +420,12 @@ export const SwitchModePanel = memo(function SwitchModePanel({
     setFailover.mutate({ appType: app, enabled: true });
   };
 
-  const enterMode = async (
-    target: Exclude<AppMode, "direct">,
-    pick: string,
-  ) => {
-    await modeActions.enter(target, pick, providers[pick]?.name);
-  };
+  const enterMode = useCallback(
+    async (target: Exclude<AppMode, "direct">, pick: string) => {
+      await modeActions.enter(target, pick, providers[pick]?.name);
+    },
+    [modeActions.enter, providers],
+  );
 
   const eligibleIds = useMemo(
     () =>
@@ -448,6 +448,14 @@ export const SwitchModePanel = memo(function SwitchModePanel({
     }
   };
   const openRouteSettings = useCallback(() => setRouteSettingsOpen(true), []);
+  const closeDialog = useCallback(() => setDialog(null), []);
+  const handleSwitchDirect = useCallback(
+    (providerId: string) => {
+      const provider = providers[providerId];
+      if (provider) void onSwitch(provider, { acknowledgedRouting: true });
+    },
+    [providers, onSwitch],
+  );
   const failoverProps = useMemo(
     () =>
       view === "route" && active === "route"
@@ -660,12 +668,9 @@ export const SwitchModePanel = memo(function SwitchModePanel({
         eligibleIds={eligibleIds}
         defaultPick={routeId ?? directId}
         stackMembers={stackMembersForDialog}
-        onClose={() => setDialog(null)}
+        onClose={closeDialog}
         onEnter={enterMode}
-        onSwitchDirect={(providerId) => {
-          const provider = providers[providerId];
-          if (provider) void onSwitch(provider, { acknowledgedRouting: true });
-        }}
+        onSwitchDirect={handleSwitchDirect}
       />
 
       <RouteSettingsSheet

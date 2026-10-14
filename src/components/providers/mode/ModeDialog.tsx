@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Loader2 } from "lucide-react";
 import type { AppId } from "@/lib/api";
@@ -71,7 +71,7 @@ interface ModeDialogProps {
  * 出错时就地显示，不关框。路由到哪家、聚合以哪家为默认都在框里选（进入模式只有这一个入口，
  * 卡片上不再有「从这家开始」的按钮）。
  */
-export function ModeDialog(props: ModeDialogProps) {
+export const ModeDialog = memo(function ModeDialog(props: ModeDialogProps) {
   const { app, state, onClose } = props;
 
   useEffect(() => {
@@ -99,7 +99,7 @@ export function ModeDialog(props: ModeDialogProps) {
       )}
     </Dialog>
   );
-}
+});
 
 function EnterBody({
   app,
