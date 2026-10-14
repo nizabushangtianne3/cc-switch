@@ -846,6 +846,7 @@ impl RequestForwarder {
     /// `active_connections` / 刷新 `last_request_at`，无论 inner 走哪条出口路径，
     /// 出口处都会把 `active_connections` 回收。Per-attempt 维度（成功/失败/熔断
     /// 等）仍由 inner 内自行更新 `success_requests` / `failed_requests`。
+    #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
     pub async fn forward_with_retry(
         &self,
@@ -870,6 +871,7 @@ impl RequestForwarder {
     }
 
     /// `forward_with_retry` 的所有权版本：调用方已有请求体时直接共享，避免复制。
+    #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
     pub async fn forward_with_retry_arc(
         &self,
@@ -3036,7 +3038,7 @@ impl RequestForwarder {
                 &target_for_log,
                 method,
                 ordered_headers,
-                &extensions,
+                extensions,
                 body_bytes,
                 timeout,
                 upstream_proxy_url.as_deref(),

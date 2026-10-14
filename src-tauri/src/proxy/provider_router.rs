@@ -152,6 +152,7 @@ impl ProviderRouter {
     }
 
     /// 记录供应商请求结果
+    #[cfg(test)]
     pub async fn record_result(
         &self,
         provider_id: &str,
