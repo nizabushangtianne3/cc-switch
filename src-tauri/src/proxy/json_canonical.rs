@@ -1,5 +1,6 @@
 //! Stable JSON helpers for cache-sensitive request bodies.
 
+use std::fmt::Write as _;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
@@ -10,7 +11,7 @@ pub(crate) fn canonicalize_value(value: Value) -> Value {
             let mut entries = map.into_iter().collect::<Vec<_>>();
             entries.sort_by(|(left, _), (right, _)| left.cmp(right));
 
-            let mut sorted = serde_json::Map::new();
+            let mut sorted = serde_json::Map::with_capacity(entries.len());
             for (key, value) in entries {
                 sorted.insert(key, canonicalize_value(value));
             }
@@ -96,11 +97,11 @@ pub(crate) fn short_value_hash(value: Option<&Value>) -> String {
 
 pub(crate) fn short_sha256_hex(bytes: &[u8]) -> String {
     let digest = Sha256::digest(bytes);
-    digest
-        .iter()
-        .take(8)
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>()
+    let mut hex = String::with_capacity(16);
+    for byte in &digest[..8] {
+        write!(hex, "{byte:02x}").expect("writing to a String should not fail");
+    }
+    hex
 }
 
 #[cfg(test)]
