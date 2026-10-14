@@ -321,8 +321,9 @@ function buildSwitchSectionsByView(input: SwitchModeInput): ProviderSection[] {
       // 可能被搜索过滤过、只决定画哪些卡；「路由中」是后端记下的那家（转移成功后
       // 会换），不一定是队首
       const byId = new Map(providers.map((p) => [p.id, p]));
+      const queuedIds = new Set(queue);
       const routing =
-        routeId !== null && queue.includes(routeId) ? routeId : queue[0];
+        routeId !== null && queuedIds.has(routeId) ? routeId : queue[0];
       const queueItems = queue.flatMap((id, index) => {
         const p = byId.get(id);
         if (!p) return [];
@@ -365,7 +366,7 @@ function buildSwitchSectionsByView(input: SwitchModeInput): ProviderSection[] {
         ];
       });
       const rest = providers
-        .filter((p) => !queue.includes(p.id))
+        .filter((p) => !queuedIds.has(p.id))
         .map((p) => {
           if (blockedFromRouting(app, p))
             return blocked(p, t("providerCard.action.addToQueue"), noRoute);
@@ -439,12 +440,14 @@ function buildSwitchSectionsByView(input: SwitchModeInput): ProviderSection[] {
 
   // view === "stack"
   const on = active === "stack";
+  const providerById = new Map(providers.map((p) => [p.id, p]));
   const defaultId = (() => {
     const candidate = on ? routeId : (routeId ?? directId);
-    const p = providers.find((x) => x.id === candidate);
+    const p = candidate === null ? undefined : providerById.get(candidate);
     return p && !blockedFromRouting(app, p) ? p.id : null;
   })();
-  const defaultProvider = providers.find((p) => p.id === defaultId);
+  const defaultProvider =
+    defaultId === null ? undefined : providerById.get(defaultId);
   // 行上的主操作只有名单的添加 / 移除；「设为默认」在「更多」菜单里：进了聚合当场生效，
   // 在直连时只记下选择（切换时的确认框里还能改）。正在路由时不能点：默认和路由目标是同一个
   // 指针，改了就是当场换路由
@@ -462,6 +465,7 @@ function buildSwitchSectionsByView(input: SwitchModeInput): ProviderSection[] {
   const memberIds = providers
     .filter((p) => p.id !== defaultId && stackMembers.has(p.id))
     .map((p) => p.id);
+  const memberIdSet = new Set(memberIds);
   const modelsChip = (p: Provider): CardChip => {
     const count = stackMembers.get(p.id) ?? 0;
     return count > 0
@@ -508,7 +512,7 @@ function buildSwitchSectionsByView(input: SwitchModeInput): ProviderSection[] {
     : [];
 
   const memberItems = memberIds.map((id) => {
-    const p = providers.find((x) => x.id === id)!;
+    const p = providerById.get(id)!;
     return {
       provider: p,
       presentation: {
@@ -526,7 +530,7 @@ function buildSwitchSectionsByView(input: SwitchModeInput): ProviderSection[] {
   });
 
   const availItems = providers
-    .filter((p) => p.id !== defaultId && !memberIds.includes(p.id))
+    .filter((p) => p.id !== defaultId && !memberIdSet.has(p.id))
     .map((p) => {
       if (blockedFromRouting(app, p)) {
         return blocked(
