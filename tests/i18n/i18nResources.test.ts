@@ -8,6 +8,7 @@ describe("i18n resources", () => {
 
     await i18nReady;
     await i18n.changeLanguage("ja");
+    await i18n.loadNamespaces("translation");
 
     expect(i18n.hasResourceBundle("ja", "translation")).toBe(true);
     expect(i18n.hasResourceBundle("zh", "translation")).toBe(false);
