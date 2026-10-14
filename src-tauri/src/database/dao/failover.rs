@@ -48,16 +48,9 @@ impl Database {
         Ok(items)
     }
 
-    /// 获取故障转移队列中的供应商（完整 Provider 信息，按顺序）
+    /// 获取故障转移队列中的供应商（按队列顺序，不加载 endpoint）
     pub fn get_failover_providers(&self, app_type: &str) -> Result<Vec<Provider>, AppError> {
-        let all_providers = self.get_all_providers(app_type)?;
-
-        let result: Vec<Provider> = all_providers
-            .into_values()
-            .filter(|p| p.in_failover_queue)
-            .collect();
-
-        Ok(result)
+        self.get_failover_queue_providers(app_type)
     }
 
     /// 添加供应商到故障转移队列
