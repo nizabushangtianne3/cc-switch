@@ -20,6 +20,13 @@ const TEMPLATE_TYPE_BALANCE: &str = "balance";
 const TEMPLATE_TYPE_OFFICIAL_SUBSCRIPTION: &str = "official_subscription";
 const COPILOT_UNIT_PREMIUM: &str = "requests";
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderState {
+    pub providers: IndexMap<String, Provider>,
+    pub current_provider_id: String,
+}
+
 /// 获取所有供应商
 #[tauri::command]
 pub fn get_providers(
@@ -34,6 +41,23 @@ pub fn get_providers(
 pub fn get_current_provider(state: State<'_, AppState>, app: String) -> Result<String, String> {
     let app_type = AppType::from_str(&app).map_err(|e| e.to_string())?;
     ProviderService::current(state.inner(), app_type).map_err(|e| e.to_string())
+}
+
+/// Load the provider list and effective current pointer with one IPC call.
+#[tauri::command]
+pub fn get_provider_state(
+    state: State<'_, AppState>,
+    app: String,
+) -> Result<ProviderState, String> {
+    let app_type = AppType::from_str(&app).map_err(|e| e.to_string())?;
+    let providers = ProviderService::list(state.inner(), app_type.clone())
+        .map_err(|e| e.to_string())?;
+    let current_provider_id =
+        ProviderService::current(state.inner(), app_type).map_err(|e| e.to_string())?;
+    Ok(ProviderState {
+        providers,
+        current_provider_id,
+    })
 }
 
 #[tauri::command]

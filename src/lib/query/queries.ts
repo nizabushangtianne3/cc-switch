@@ -52,28 +52,10 @@ export const providersQueryOptions = (appId: AppId) => ({
   // 列表很小：没人订阅时也一直留在缓存里，过了默认的 5 分钟再切过去也不画骨架
   gcTime: Infinity,
   queryFn: async (): Promise<ProvidersQueryData> => {
-    const [providersResult, currentProviderResult] = await Promise.allSettled([
-      providersApi.getAll(appId),
-      providersApi.getCurrent(appId),
-    ]);
-    let providers: Record<string, Provider> = {};
-    let currentProviderId = "";
-
-    if (providersResult.status === "fulfilled") {
-      providers = providersResult.value;
-    } else {
-      console.error("获取供应商列表失败:", providersResult.reason);
-    }
-
-    if (currentProviderResult.status === "fulfilled") {
-      currentProviderId = currentProviderResult.value;
-    } else {
-      console.error("获取当前供应商失败:", currentProviderResult.reason);
-    }
-
+    const state = await providersApi.getState(appId);
     return {
-      providers: sortProviders(providers),
-      currentProviderId,
+      providers: sortProviders(state.providers),
+      currentProviderId: state.currentProviderId,
     };
   },
 });

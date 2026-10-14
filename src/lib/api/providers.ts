@@ -18,6 +18,11 @@ export interface ProviderSwitchEvent {
   providerId: string;
 }
 
+export interface ProviderState {
+  providers: Record<string, Provider>;
+  currentProviderId: string;
+}
+
 export interface SwitchResult {
   warnings: string[];
 }
@@ -77,6 +82,10 @@ export const providersApi = {
 
   async getCurrent(appId: AppId): Promise<string> {
     return await invoke("get_current_provider", { app: appId });
+  },
+
+  async getState(appId: AppId): Promise<ProviderState> {
+    return await invoke("get_provider_state", { app: appId });
   },
 
   async add(
