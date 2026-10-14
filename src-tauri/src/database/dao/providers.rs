@@ -989,7 +989,7 @@ impl Database {
             let app_type_str = seed.app_type.as_str();
 
             // 若该 id 已存在（极端情况：用户曾手动用过同 id），跳过
-            if self.get_provider_by_id(seed.id, app_type_str)?.is_some() {
+            if self.provider_exists(app_type_str, seed.id)? {
                 continue;
             }
 
@@ -1054,7 +1054,7 @@ impl Database {
 
         let app_type_str = seed.app_type.as_str();
 
-        if self.get_provider_by_id(seed_id, app_type_str)?.is_some() {
+        if self.provider_exists(app_type_str, seed_id)? {
             return Ok(false);
         }
 
