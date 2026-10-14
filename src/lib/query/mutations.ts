@@ -98,32 +98,30 @@ export const useAddProviderMutation = (appId: AppId) => {
       return newProvider;
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["providers", appId] });
-
-      if (appId === "opencode") {
-        await queryClient.invalidateQueries({
-          queryKey: ["omo", "current-provider-id"],
-        });
-        await queryClient.invalidateQueries({
-          queryKey: ["omo", "provider-count"],
-        });
-        await queryClient.invalidateQueries({
-          queryKey: ["omo-slim", "current-provider-id"],
-        });
-        await queryClient.invalidateQueries({
-          queryKey: ["omo-slim", "provider-count"],
-        });
-      }
-
-      if (appId === "openclaw") {
-        await queryClient.invalidateQueries({
-          queryKey: openclawKeys.health,
-        });
-      }
-
-      if (appId === "hermes") {
-        await invalidateHermesProviderCaches(queryClient);
-      }
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["providers", appId] }),
+        appId === "opencode" &&
+          queryClient.invalidateQueries({
+            queryKey: ["omo", "current-provider-id"],
+          }),
+        appId === "opencode" &&
+          queryClient.invalidateQueries({
+            queryKey: ["omo", "provider-count"],
+          }),
+        appId === "opencode" &&
+          queryClient.invalidateQueries({
+            queryKey: ["omo-slim", "current-provider-id"],
+          }),
+        appId === "opencode" &&
+          queryClient.invalidateQueries({
+            queryKey: ["omo-slim", "provider-count"],
+          }),
+        appId === "openclaw" &&
+          queryClient.invalidateQueries({
+            queryKey: openclawKeys.health,
+          }),
+        appId === "hermes" && invalidateHermesProviderCaches(queryClient),
+      ]);
       try {
         await providersApi.updateTrayMenu();
       } catch (trayError) {
@@ -246,32 +244,30 @@ export const useDeleteProviderMutation = (appId: AppId) => {
       await providersApi.delete(providerId, appId);
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["providers", appId] });
-
-      if (appId === "opencode") {
-        await queryClient.invalidateQueries({
-          queryKey: ["omo", "current-provider-id"],
-        });
-        await queryClient.invalidateQueries({
-          queryKey: ["omo", "provider-count"],
-        });
-        await queryClient.invalidateQueries({
-          queryKey: ["omo-slim", "current-provider-id"],
-        });
-        await queryClient.invalidateQueries({
-          queryKey: ["omo-slim", "provider-count"],
-        });
-      }
-
-      if (appId === "openclaw") {
-        await queryClient.invalidateQueries({
-          queryKey: openclawKeys.health,
-        });
-      }
-
-      if (appId === "hermes") {
-        await invalidateHermesProviderCaches(queryClient);
-      }
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["providers", appId] }),
+        appId === "opencode" &&
+          queryClient.invalidateQueries({
+            queryKey: ["omo", "current-provider-id"],
+          }),
+        appId === "opencode" &&
+          queryClient.invalidateQueries({
+            queryKey: ["omo", "provider-count"],
+          }),
+        appId === "opencode" &&
+          queryClient.invalidateQueries({
+            queryKey: ["omo-slim", "current-provider-id"],
+          }),
+        appId === "opencode" &&
+          queryClient.invalidateQueries({
+            queryKey: ["omo-slim", "provider-count"],
+          }),
+        appId === "openclaw" &&
+          queryClient.invalidateQueries({
+            queryKey: openclawKeys.health,
+          }),
+        appId === "hermes" && invalidateHermesProviderCaches(queryClient),
+      ]);
       try {
         await providersApi.updateTrayMenu();
       } catch (trayError) {
@@ -465,10 +461,12 @@ export const useSaveSettingsMutation = () => {
       await settingsApi.save(settings);
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["settings"] });
-      await queryClient.invalidateQueries({
-        queryKey: ["opencode", "runtime-models"],
-      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["settings"] }),
+        queryClient.invalidateQueries({
+          queryKey: ["opencode", "runtime-models"],
+        }),
+      ]);
     },
   });
 };
