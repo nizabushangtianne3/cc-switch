@@ -175,11 +175,14 @@ export function ProviderCard({
   dragHandleProps,
 }: ProviderCardProps) {
   const { t } = useTranslation();
-  const codexOfficialIdentity = resolveCodexOfficialIdentity(appId, provider);
-  const managedCodexAccountId = resolveManagedAccountId(
-    provider.meta,
-    "codex_oauth",
-  )?.trim();
+  const codexOfficialIdentity = useMemo(
+    () => resolveCodexOfficialIdentity(appId, provider),
+    [appId, provider],
+  );
+  const managedCodexAccountId = useMemo(
+    () => resolveManagedAccountId(provider.meta, "codex_oauth")?.trim(),
+    [provider.meta],
+  );
   const {
     data: codexAuthStatus,
     isSuccess: isCodexAuthStatusSuccess,
@@ -230,7 +233,10 @@ export function ProviderCard({
   const isBoundCodexOfficial = codexOfficialIdentity === "managed_account";
   const usageEnabled =
     provider.meta?.usage_script?.enabled ?? isBoundCodexOfficial;
-  const isOfficial = isOfficialProvider(provider, appId);
+  const isOfficial = useMemo(
+    () => isOfficialProvider(provider, appId),
+    [appId, provider],
+  );
   const supportsOfficialSubscription =
     isOfficial && ["claude", "codex", "gemini", "grokbuild"].includes(appId);
   const isOfficialSubscriptionUsage =
