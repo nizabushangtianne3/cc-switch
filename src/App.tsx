@@ -1391,8 +1391,7 @@ function App() {
   );
 
   const handleRemoveFromConfig = useCallback(
-    (provider: Provider) =>
-      setConfirmAction({ provider, action: "remove" }),
+    (provider: Provider) => setConfirmAction({ provider, action: "remove" }),
     [],
   );
 
