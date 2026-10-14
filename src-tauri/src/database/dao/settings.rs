@@ -4,8 +4,8 @@
 
 use crate::database::{lock_conn, Database};
 use crate::error::AppError;
-use rusqlite::Connection;
 use rusqlite::params;
+use rusqlite::Connection;
 
 pub(crate) fn proxy_runtime_configs_from_conn(
     conn: &Connection,

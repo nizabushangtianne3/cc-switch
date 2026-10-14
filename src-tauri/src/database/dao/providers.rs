@@ -232,10 +232,7 @@ impl Database {
     }
 
     /// 读取故障转移队列中的完整 Provider，顺序与前端队列一致。
-    pub fn get_failover_queue_providers(
-        &self,
-        app_type: &str,
-    ) -> Result<Vec<Provider>, AppError> {
+    pub fn get_failover_queue_providers(&self, app_type: &str) -> Result<Vec<Provider>, AppError> {
         let conn = lock_conn!(self.conn);
         let mut stmt = conn.prepare(
             "SELECT id, name, settings_config, website_url, category, created_at, sort_index, notes, icon, icon_color, meta, in_failover_queue
@@ -250,8 +247,7 @@ impl Database {
             .map_err(|e| AppError::Database(e.to_string()))?;
         let mut providers = Vec::new();
         for provider_res in provider_iter {
-            let (id, mut provider) =
-                provider_res.map_err(|e| AppError::Database(e.to_string()))?;
+            let (id, mut provider) = provider_res.map_err(|e| AppError::Database(e.to_string()))?;
             provider.id = id;
             providers.push(provider);
         }
@@ -263,8 +259,9 @@ impl Database {
         let mut endpoints_by_provider = load_custom_endpoints(&conn, app_type, true)?;
         for provider in &mut providers {
             if let Some(meta) = &mut provider.meta {
-                meta.custom_endpoints =
-                    endpoints_by_provider.remove(&provider.id).unwrap_or_default();
+                meta.custom_endpoints = endpoints_by_provider
+                    .remove(&provider.id)
+                    .unwrap_or_default();
             }
         }
 

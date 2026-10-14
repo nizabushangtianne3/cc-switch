@@ -602,9 +602,7 @@ impl Database {
                  ON provider_endpoints(app_type, provider_id, added_at, url)",
                 [],
             )
-            .map_err(|e| {
-                AppError::Database(format!("创建 provider_endpoints 索引失败: {e}"))
-            })?;
+            .map_err(|e| AppError::Database(format!("创建 provider_endpoints 索引失败: {e}")))?;
 
             Ok(())
         })();

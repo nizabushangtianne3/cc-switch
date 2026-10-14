@@ -103,12 +103,11 @@ impl RequestContext {
         let start_time = Instant::now();
 
         // 应用级代理配置和运行时配置一次锁读完，避免代理热路径重复获取 DB 锁。
-        let (mut app_config, rectifier_config, optimizer_config, copilot_optimizer_config) =
-            state
-                .db
-                .get_proxy_request_configs(app_type_str)
-                .await
-                .map_err(|e| ProxyError::DatabaseError(e.to_string()))?;
+        let (mut app_config, rectifier_config, optimizer_config, copilot_optimizer_config) = state
+            .db
+            .get_proxy_request_configs(app_type_str)
+            .await
+            .map_err(|e| ProxyError::DatabaseError(e.to_string()))?;
 
         // 提取 Session ID
         let session_result = extract_session_id(headers, body, app_type_str);
