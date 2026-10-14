@@ -516,9 +516,10 @@ pub async fn reset_circuit_breaker(
 
                     // 获取供应商名称用于日志和事件
                     let provider_name = db
-                        .get_all_providers(&app_type)
+                        .get_provider_by_id(&provider_id, &app_type)
                         .ok()
-                        .and_then(|providers| providers.get(&provider_id).map(|p| p.name.clone()))
+                        .flatten()
+                        .map(|provider| provider.name)
                         .unwrap_or_else(|| provider_id.clone());
 
                     // 创建故障转移切换管理器并执行切换

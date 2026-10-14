@@ -612,11 +612,11 @@ async fn query_provider_usage_inner(
     provider_id: &str,
 ) -> Result<crate::provider::UsageResult, String> {
     // 从数据库读取供应商信息，检查特殊模板类型
-    let providers = state
+    let provider = state
         .db
-        .get_all_providers(app_type.as_str())
+        .get_provider_by_id(provider_id, app_type.as_str())
         .map_err(|e| format!("Failed to get providers: {e}"))?;
-    let provider = providers.get(provider_id);
+    let provider = provider.as_ref();
     let usage_script = provider
         .and_then(|p| p.meta.as_ref())
         .and_then(|m| m.usage_script.as_ref());
