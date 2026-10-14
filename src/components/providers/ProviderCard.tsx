@@ -231,6 +231,10 @@ export function ProviderCard({
   }, [provider.notes, displayUrl, fallbackUrlText]);
 
   const isBoundCodexOfficial = codexOfficialIdentity === "managed_account";
+  const providerIcon = useMemo(
+    () => resolveProviderIcon(appId, provider.icon, provider.iconColor),
+    [appId, provider.icon, provider.iconColor],
+  );
   const usageEnabled =
     provider.meta?.usage_script?.enabled ?? isBoundCodexOfficial;
   const isOfficial = useMemo(
@@ -326,7 +330,7 @@ export function ProviderCard({
         )}
 
         <ProviderIconBox
-          icon={resolveProviderIcon(appId, provider.icon, provider.iconColor)}
+          icon={providerIcon}
           name={provider.name}
           color={provider.iconColor}
           className={cn(
