@@ -240,6 +240,23 @@ const getInitialApp = (): AppId => {
   return "claude";
 };
 
+const generateUniqueProviderCopyKey = (
+  originalKey: string,
+  existingKeys: string[],
+): string => {
+  const baseKey = `${originalKey}-copy`;
+
+  if (!existingKeys.includes(baseKey)) {
+    return baseKey;
+  }
+
+  let counter = 2;
+  while (existingKeys.includes(`${baseKey}-${counter}`)) {
+    counter++;
+  }
+  return `${baseKey}-${counter}`;
+};
+
 function App() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -389,10 +406,10 @@ function App() {
   // 换了应用、新面板还没报上来时为 undefined：表单按应用实际生效的模式
   const currentModeView =
     providerModeView?.app === activeApp ? providerModeView.view : undefined;
-  const openAddProvider = (modeView: AppMode | undefined) => {
+  const openAddProvider = useCallback((modeView: AppMode | undefined) => {
     setFormModeView(modeView);
     setIsAddOpen(true);
-  };
+  }, []);
   const currentAppUsesProxy =
     proxyAppId !== null || activeApp === "claude-desktop";
   const isCurrentAppTakeoverActive = proxyAppId
@@ -953,159 +970,145 @@ function App() {
     setConfirmAction(null);
   };
 
-  const generateUniqueProviderCopyKey = (
-    originalKey: string,
-    existingKeys: string[],
-  ): string => {
-    const baseKey = `${originalKey}-copy`;
-
-    if (!existingKeys.includes(baseKey)) {
-      return baseKey;
-    }
-
-    let counter = 2;
-    while (existingKeys.includes(`${baseKey}-${counter}`)) {
-      counter++;
-    }
-    return `${baseKey}-${counter}`;
-  };
-
-  const handleDuplicateProvider = async (provider: Provider) => {
-    if (
-      activeApp === "opencode" &&
-      provider.category !== "omo" &&
-      provider.category !== "omo-slim"
-    ) {
-      // A copy gets a new ID, so it cannot inherit a built-in definition.
-      // Native V2 declarations name their package in `package`, not `npm`.
-      const isNative = isNativeOpencodeConfig(
-        JSON.stringify(provider.settingsConfig),
-        provider.meta?.opencodeConfigFormat,
-      );
+  const handleDuplicateProvider = useCallback(
+    async (provider: Provider) => {
       if (
-        !hasOpencodeDefinition(
-          provider.settingsConfig,
-          isNative ? "package" : "npm",
-        )
+        activeApp === "opencode" &&
+        provider.category !== "omo" &&
+        provider.category !== "omo-slim"
       ) {
-        toast.error(
-          t(
-            isNative
-              ? "opencode.duplicateRequiresNativeDefinition"
-              : "opencode.duplicateRequiresDefinition",
-          ),
+        // A copy gets a new ID, so it cannot inherit a built-in definition.
+        // Native V2 declarations name their package in `package`, not `npm`.
+        const isNative = isNativeOpencodeConfig(
+          JSON.stringify(provider.settingsConfig),
+          provider.meta?.opencodeConfigFormat,
         );
-        return;
-      }
-    }
-
-    const newSortIndex =
-      provider.sortIndex !== undefined ? provider.sortIndex + 1 : undefined;
-
-    const duplicatedProvider: Omit<Provider, "id" | "createdAt"> & {
-      providerKey?: string;
-      addToLive?: boolean;
-    } = {
-      name: `${provider.name} copy`,
-      settingsConfig: deepClone(provider.settingsConfig),
-      websiteUrl: provider.websiteUrl,
-      category: provider.category,
-      sortIndex: newSortIndex, // 复制原 sortIndex + 1
-      meta: provider.meta ? deepClone(provider.meta) : undefined,
-      icon: provider.icon,
-      iconColor: provider.iconColor,
-    };
-
-    if (
-      activeApp === "opencode" ||
-      activeApp === "openclaw" ||
-      activeApp === "hermes" ||
-      activeApp === "pi"
-    ) {
-      let liveProviderIds: string[] = [];
-      try {
-        liveProviderIds =
-          activeApp === "opencode"
-            ? await queryClient.ensureQueryData({
-                queryKey: ["opencodeLiveProviderIds"],
-                queryFn: () => providersApi.getOpenCodeLiveProviderIds(),
-              })
-            : activeApp === "openclaw"
-              ? await queryClient.ensureQueryData({
-                  queryKey: openclawKeys.liveProviderIds,
-                  queryFn: () => providersApi.getOpenClawLiveProviderIds(),
-                })
-              : activeApp === "hermes"
-                ? await queryClient.ensureQueryData({
-                    queryKey: hermesKeys.liveProviderIds,
-                    queryFn: () => providersApi.getHermesLiveProviderIds(),
-                  })
-                : (
-                    await queryClient.ensureQueryData({
-                      queryKey: ["pi", "currentState"],
-                      queryFn: () => piApi.getCurrentState(),
-                    })
-                  ).enabledProviderIds;
-      } catch (error) {
-        console.error(
-          "[App] Failed to load live provider IDs for duplication",
-          error,
-        );
-        const errorMessage = extractErrorMessage(error);
-        toast.error(
-          t("provider.duplicateLiveIdsLoadFailed", {
-            defaultValue: "读取配置中的供应商标识失败，请先修复配置后再试",
-          }) + (errorMessage ? `: ${errorMessage}` : ""),
-        );
-        return;
-      }
-      const existingKeys = Array.from(
-        new Set([...Object.keys(providers), ...liveProviderIds]),
-      );
-      duplicatedProvider.providerKey = generateUniqueProviderCopyKey(
-        provider.id,
-        existingKeys,
-      );
-      duplicatedProvider.addToLive = false;
-    } else if (activeApp === "mcode") {
-      // The MCode list already includes its live custom nodes; the backend
-      // rejects a key that MCode itself owns.
-      duplicatedProvider.providerKey = generateUniqueProviderCopyKey(
-        provider.id,
-        Object.keys(providers),
-      );
-    }
-
-    if (provider.sortIndex !== undefined) {
-      const updates = Object.values(providers)
-        .filter(
-          (p) =>
-            p.sortIndex !== undefined &&
-            p.sortIndex >= newSortIndex! &&
-            p.id !== provider.id,
-        )
-        .map((p) => ({
-          id: p.id,
-          sortIndex: p.sortIndex! + 1,
-        }));
-
-      if (updates.length > 0) {
-        try {
-          await providersApi.updateSortOrder(updates, activeApp);
-        } catch (error) {
-          console.error("[App] Failed to update sort order", error);
+        if (
+          !hasOpencodeDefinition(
+            provider.settingsConfig,
+            isNative ? "package" : "npm",
+          )
+        ) {
           toast.error(
-            t("provider.sortUpdateFailed", {
-              defaultValue: "排序更新失败",
-            }),
+            t(
+              isNative
+                ? "opencode.duplicateRequiresNativeDefinition"
+                : "opencode.duplicateRequiresDefinition",
+            ),
           );
-          return; // 如果排序更新失败，不继续添加
+          return;
         }
       }
-    }
 
-    await addProvider(duplicatedProvider);
-  };
+      const newSortIndex =
+        provider.sortIndex !== undefined ? provider.sortIndex + 1 : undefined;
+
+      const duplicatedProvider: Omit<Provider, "id" | "createdAt"> & {
+        providerKey?: string;
+        addToLive?: boolean;
+      } = {
+        name: `${provider.name} copy`,
+        settingsConfig: deepClone(provider.settingsConfig),
+        websiteUrl: provider.websiteUrl,
+        category: provider.category,
+        sortIndex: newSortIndex, // 复制原 sortIndex + 1
+        meta: provider.meta ? deepClone(provider.meta) : undefined,
+        icon: provider.icon,
+        iconColor: provider.iconColor,
+      };
+
+      if (
+        activeApp === "opencode" ||
+        activeApp === "openclaw" ||
+        activeApp === "hermes" ||
+        activeApp === "pi"
+      ) {
+        let liveProviderIds: string[] = [];
+        try {
+          liveProviderIds =
+            activeApp === "opencode"
+              ? await queryClient.ensureQueryData({
+                  queryKey: ["opencodeLiveProviderIds"],
+                  queryFn: () => providersApi.getOpenCodeLiveProviderIds(),
+                })
+              : activeApp === "openclaw"
+                ? await queryClient.ensureQueryData({
+                    queryKey: openclawKeys.liveProviderIds,
+                    queryFn: () => providersApi.getOpenClawLiveProviderIds(),
+                  })
+                : activeApp === "hermes"
+                  ? await queryClient.ensureQueryData({
+                      queryKey: hermesKeys.liveProviderIds,
+                      queryFn: () => providersApi.getHermesLiveProviderIds(),
+                    })
+                  : (
+                      await queryClient.ensureQueryData({
+                        queryKey: ["pi", "currentState"],
+                        queryFn: () => piApi.getCurrentState(),
+                      })
+                    ).enabledProviderIds;
+        } catch (error) {
+          console.error(
+            "[App] Failed to load live provider IDs for duplication",
+            error,
+          );
+          const errorMessage = extractErrorMessage(error);
+          toast.error(
+            t("provider.duplicateLiveIdsLoadFailed", {
+              defaultValue: "读取配置中的供应商标识失败，请先修复配置后再试",
+            }) + (errorMessage ? `: ${errorMessage}` : ""),
+          );
+          return;
+        }
+        const existingKeys = Array.from(
+          new Set([...Object.keys(providers), ...liveProviderIds]),
+        );
+        duplicatedProvider.providerKey = generateUniqueProviderCopyKey(
+          provider.id,
+          existingKeys,
+        );
+        duplicatedProvider.addToLive = false;
+      } else if (activeApp === "mcode") {
+        // The MCode list already includes its live custom nodes; the backend
+        // rejects a key that MCode itself owns.
+        duplicatedProvider.providerKey = generateUniqueProviderCopyKey(
+          provider.id,
+          Object.keys(providers),
+        );
+      }
+
+      if (provider.sortIndex !== undefined) {
+        const updates = Object.values(providers)
+          .filter(
+            (p) =>
+              p.sortIndex !== undefined &&
+              p.sortIndex >= newSortIndex! &&
+              p.id !== provider.id,
+          )
+          .map((p) => ({
+            id: p.id,
+            sortIndex: p.sortIndex! + 1,
+          }));
+
+        if (updates.length > 0) {
+          try {
+            await providersApi.updateSortOrder(updates, activeApp);
+          } catch (error) {
+            console.error("[App] Failed to update sort order", error);
+            toast.error(
+              t("provider.sortUpdateFailed", {
+                defaultValue: "排序更新失败",
+              }),
+            );
+            return; // 如果排序更新失败，不继续添加
+          }
+        }
+      }
+
+      await addProvider(duplicatedProvider);
+    },
+    [activeApp, addProvider, providers, queryClient, t],
+  );
 
   const confirmActionMessage = useMemo(() => {
     if (!confirmAction) return "";
@@ -1127,31 +1130,34 @@ function App() {
       : message;
   }, [activeApp, confirmAction, piCurrentState?.defaultProviderId, t]);
 
-  const handleOpenTerminal = async (provider: Provider) => {
-    try {
-      const selectedDir = await settingsApi.pickDirectory();
-      if (!selectedDir) {
-        return;
-      }
+  const handleOpenTerminal = useCallback(
+    async (provider: Provider) => {
+      try {
+        const selectedDir = await settingsApi.pickDirectory();
+        if (!selectedDir) {
+          return;
+        }
 
-      await providersApi.openTerminal(provider.id, activeApp, {
-        cwd: selectedDir,
-      });
-      toast.success(
-        t("provider.terminalOpened", {
-          defaultValue: "终端已打开",
-        }),
-      );
-    } catch (error) {
-      console.error("[App] Failed to open terminal", error);
-      const errorMessage = extractErrorMessage(error);
-      toast.error(
-        t("provider.terminalOpenFailed", {
-          defaultValue: "打开终端失败",
-        }) + (errorMessage ? `: ${errorMessage}` : ""),
-      );
-    }
-  };
+        await providersApi.openTerminal(provider.id, activeApp, {
+          cwd: selectedDir,
+        });
+        toast.success(
+          t("provider.terminalOpened", {
+            defaultValue: "终端已打开",
+          }),
+        );
+      } catch (error) {
+        console.error("[App] Failed to open terminal", error);
+        const errorMessage = extractErrorMessage(error);
+        toast.error(
+          t("provider.terminalOpenFailed", {
+            defaultValue: "打开终端失败",
+          }) + (errorMessage ? `: ${errorMessage}` : ""),
+        );
+      }
+    },
+    [activeApp, t],
+  );
 
   const handleImportSuccess = async () => {
     try {
@@ -1363,21 +1369,32 @@ function App() {
     return null;
   };
 
-  const listCallbacks = {
-    onEdit: (provider: Provider) => {
-      setFormModeView(currentModeView);
-      setEditingProvider(provider);
-    },
-    onDelete: (provider: Provider) =>
-      setConfirmAction({ provider, action: "delete" }),
-    onDuplicate: handleDuplicateProvider,
-    onConfigureUsage: setUsageProvider,
-    onOpenWebsite: handleOpenWebsite,
-    onOpenTerminal: activeApp === "claude" ? handleOpenTerminal : undefined,
-    onCreate: () => openAddProvider(currentModeView),
-    searchOpen: providerSearchOpen,
-    onSearchOpenChange: setProviderSearchOpen,
-  };
+  const listCallbacks = useMemo(
+    () => ({
+      onEdit: (provider: Provider) => {
+        setFormModeView(currentModeView);
+        setEditingProvider(provider);
+      },
+      onDelete: (provider: Provider) =>
+        setConfirmAction({ provider, action: "delete" }),
+      onDuplicate: handleDuplicateProvider,
+      onConfigureUsage: setUsageProvider,
+      onOpenWebsite: handleOpenWebsite,
+      onOpenTerminal: activeApp === "claude" ? handleOpenTerminal : undefined,
+      onCreate: () => openAddProvider(currentModeView),
+      searchOpen: providerSearchOpen,
+      onSearchOpenChange: setProviderSearchOpen,
+    }),
+    [
+      activeApp,
+      currentModeView,
+      handleDuplicateProvider,
+      handleOpenTerminal,
+      handleOpenWebsite,
+      openAddProvider,
+      providerSearchOpen,
+    ],
+  );
 
   const handleProviderSwitch = useCallback(
     (provider: Provider) => {

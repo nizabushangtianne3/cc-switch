@@ -6,6 +6,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import {
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -85,7 +86,7 @@ interface ProviderListProps {
   onSearchOpenChange?: (open: boolean) => void;
 }
 
-export function ProviderList({
+function ProviderListComponent({
   providers,
   currentProviderId,
   appId,
@@ -454,9 +455,7 @@ export function ProviderList({
       onEdit={onEdit}
       onDelete={onDelete}
       onDuplicate={onDuplicate}
-      onConfigureUsage={
-        onConfigureUsage ? (item) => onConfigureUsage(item) : () => undefined
-      }
+      onConfigureUsage={onConfigureUsage}
       onOpenWebsite={onOpenWebsite}
       onOpenTerminal={onOpenTerminal}
       onTest={handleTest}
@@ -587,6 +586,8 @@ export function ProviderList({
   );
 }
 
+export const ProviderList = memo(ProviderListComponent);
+
 interface SortableProviderCardProps {
   provider: Provider;
   appId: AppId;
@@ -596,14 +597,16 @@ interface SortableProviderCardProps {
   onEdit: (provider: Provider) => void;
   onDelete: (provider: Provider) => void;
   onDuplicate: (provider: Provider) => void;
-  onConfigureUsage: (provider: Provider) => void;
+  onConfigureUsage?: (provider: Provider) => void;
   onOpenWebsite: (url: string) => void;
   onOpenTerminal?: (provider: Provider) => void;
   onTest?: (provider: Provider) => void;
   isTesting: boolean;
 }
 
-function SortableProviderCard(props: SortableProviderCardProps) {
+const SortableProviderCard = memo(function SortableProviderCard(
+  props: SortableProviderCardProps,
+) {
   const {
     setNodeRef,
     attributes,
@@ -626,4 +629,4 @@ function SortableProviderCard(props: SortableProviderCardProps) {
       />
     </div>
   );
-}
+});
