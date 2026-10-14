@@ -185,6 +185,15 @@ export const SwitchModePanel = memo(function SwitchModePanel({
     }
     return members;
   }, [stack?.members]);
+  const stackMembersForDialog = useMemo(
+    () =>
+      (stack?.members ?? []).map((member) => ({
+        id: member.providerId,
+        name: nameOf(member.providerId),
+        models: member.modelIds.length,
+      })),
+    [stack?.members, nameOf],
+  );
 
   const queueIds = useMemo(
     () => (queue ?? []).map((item) => item.providerId),
@@ -650,11 +659,7 @@ export const SwitchModePanel = memo(function SwitchModePanel({
         providers={providerList}
         eligibleIds={eligibleIds}
         defaultPick={routeId ?? directId}
-        stackMembers={(stack?.members ?? []).map((member) => ({
-          id: member.providerId,
-          name: nameOf(member.providerId),
-          models: member.modelIds.length,
-        }))}
+        stackMembers={stackMembersForDialog}
         onClose={() => setDialog(null)}
         onEnter={enterMode}
         onSwitchDirect={(providerId) => {
