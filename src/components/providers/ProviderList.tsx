@@ -138,6 +138,22 @@ export function ProviderList({
     error: piCurrentStateError,
   } = usePiCurrentState(appId === "pi");
   const isPiStateReady = appId !== "pi" || isPiCurrentStateSuccess;
+  const opencodeLiveIdSet = useMemo(
+    () => new Set(opencodeLiveIds ?? []),
+    [opencodeLiveIds],
+  );
+  const openclawLiveIdSet = useMemo(
+    () => new Set(openclawLiveIds ?? []),
+    [openclawLiveIds],
+  );
+  const hermesLiveIdSet = useMemo(
+    () => new Set(hermesLiveIds ?? []),
+    [hermesLiveIds],
+  );
+  const piEnabledProviderIdSet = useMemo(
+    () => new Set(piCurrentState?.enabledProviderIds ?? []),
+    [piCurrentState],
+  );
   // 累加式应用要等 live 里有哪些供应商读回来（成功或失败）才知道卡片该进哪个分区；
   // 在那之前按加载中画骨架，不然卡片先全落进「可添加」，读回来再整体搬到「已添加」。
   // 一张卡都没有时不用等，直接出空状态
@@ -153,15 +169,14 @@ export function ProviderList({
         case "mcode":
           return provider.meta?.liveConfigManaged === true;
         case "opencode":
-          return opencodeLiveIds?.includes(provider.id) ?? false;
+          return opencodeLiveIdSet.has(provider.id);
         case "openclaw":
-          return openclawLiveIds?.includes(provider.id) ?? false;
+          return openclawLiveIdSet.has(provider.id);
         case "hermes":
-          return hermesLiveIds?.includes(provider.id) ?? false;
+          return hermesLiveIdSet.has(provider.id);
         case "pi":
           return isPiStateReady
-            ? (piCurrentState?.enabledProviderIds.includes(provider.id) ??
-                false)
+            ? piEnabledProviderIdSet.has(provider.id)
             : false;
         default:
           return true;
@@ -169,9 +184,10 @@ export function ProviderList({
     },
     [
       appId,
-      opencodeLiveIds,
-      openclawLiveIds,
-      hermesLiveIds,
+      opencodeLiveIdSet,
+      openclawLiveIdSet,
+      hermesLiveIdSet,
+      piEnabledProviderIdSet,
       isPiStateReady,
       piCurrentState,
     ],
