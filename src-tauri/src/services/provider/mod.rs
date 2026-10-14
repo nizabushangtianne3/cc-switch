@@ -6429,12 +6429,12 @@ impl ProviderService {
             return pi::remove(state, id);
         }
 
+        // 一次读取供应商行：OpenCode 用来判断 OMO 变体，收尾用来更新 liveConfigManaged。
+        let provider = state.db.get_provider_by_id(id, app_type.as_str())?;
+
         match app_type {
             AppType::OpenCode => {
-                let provider_category = state
-                    .db
-                    .get_provider_by_id(id, app_type.as_str())?
-                    .and_then(|p| p.category);
+                let provider_category = provider.as_ref().and_then(|p| p.category.clone());
 
                 let omo_variant = match provider_category.as_deref() {
                     Some("omo") => Some(&crate::services::omo::STANDARD),
@@ -6473,9 +6473,11 @@ impl ProviderService {
             }
         }
 
-        if let Some(mut provider) = state.db.get_provider_by_id(id, app_type.as_str())? {
-            Self::set_provider_live_config_managed(&mut provider, false);
-            state.db.save_provider(app_type.as_str(), &provider)?;
+        if let Some(mut provider) = provider {
+            if Self::provider_live_config_managed(&provider) != Some(false) {
+                Self::set_provider_live_config_managed(&mut provider, false);
+                state.db.save_provider(app_type.as_str(), &provider)?;
+            }
         }
 
         Ok(())
