@@ -5,6 +5,12 @@ All notable changes to CC Switch will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.14] - 2026-10-15
+
+### Changed
+
+- **Performance and rendering stability:** Reduced repeated database existence checks and provider reads, removed unused failover and legacy runtime queries, and memoized sidebar, app visibility, dialogs and settings surfaces for faster navigation.
+
 ## [4.0.13] - 2026-10-14
 
 ### Changed

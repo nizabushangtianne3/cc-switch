@@ -1,0 +1,12 @@
+{
+  "version": "4.0.14",
+  "items": [
+    {
+      "type": "improve",
+      "zh": "优化数据库查询与界面导航性能",
+      "zh-TW": "最佳化資料庫查詢與介面導覽效能",
+      "en": "Improved database queries and UI navigation performance",
+      "ja": "データベースクエリとUIナビゲーションのパフォーマンスを改善"
+    }
+  ]
+}
