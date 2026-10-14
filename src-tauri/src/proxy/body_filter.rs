@@ -67,19 +67,19 @@ pub fn filter_private_params(body: Value) -> Value {
 /// ```
 pub fn filter_private_params_with_whitelist(body: Value, whitelist: &[String]) -> Value {
     let whitelist_set: HashSet<&str> = whitelist.iter().map(|s| s.as_str()).collect();
-    filter_recursive_with_whitelist(body, &mut Vec::new(), &mut Vec::new(), &whitelist_set)
+    filter_recursive_with_whitelist(body, None, &mut Vec::new(), &whitelist_set)
 }
 
 /// 递归过滤实现（支持白名单）
 fn filter_recursive_with_whitelist(
     value: Value,
-    path: &mut Vec<String>,
+    parent_key: Option<&str>,
     removed_keys: &mut Vec<String>,
     whitelist: &HashSet<&str>,
 ) -> Value {
     match value {
         Value::Object(map) => {
-            let is_schema_name_map = path.last().is_some_and(|key| matches_schema_name_map(key));
+            let is_schema_name_map = parent_key.is_some_and(matches_schema_name_map);
             let filtered: serde_json::Map<String, Value> = map
                 .into_iter()
                 .filter_map(|(key, val)| {
@@ -91,10 +91,12 @@ fn filter_recursive_with_whitelist(
                         removed_keys.push(key);
                         None
                     } else {
-                        path.push(key.clone());
-                        let filtered_value =
-                            filter_recursive_with_whitelist(val, path, removed_keys, whitelist);
-                        path.pop();
+                        let filtered_value = filter_recursive_with_whitelist(
+                            val,
+                            Some(key.as_str()),
+                            removed_keys,
+                            whitelist,
+                        );
                         Some((key, filtered_value))
                     }
                 })
@@ -110,7 +112,9 @@ fn filter_recursive_with_whitelist(
         }
         Value::Array(arr) => Value::Array(
             arr.into_iter()
-                .map(|v| filter_recursive_with_whitelist(v, path, removed_keys, whitelist))
+                .map(|v| {
+                    filter_recursive_with_whitelist(v, parent_key, removed_keys, whitelist)
+                })
                 .collect(),
         ),
         other => other,
