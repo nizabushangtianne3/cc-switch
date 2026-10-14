@@ -1412,6 +1412,21 @@ function App() {
     [],
   );
 
+  const handleOpenRoutingSettings = useCallback(() => {
+    openSettingsRef.current("routing");
+  }, []);
+
+  const handleNeedsRouteHandled = useCallback(() => {
+    setTrayNeedsRoute(null);
+  }, []);
+
+  const dismissStartupFailure = useCallback(() => {
+    if (!proxyAppId) return;
+    setStartupFailures((list) =>
+      list.filter((failure) => failure.appType !== proxyAppId),
+    );
+  }, [proxyAppId]);
+
   const handleSetAsDefault = useCallback(
     (provider: Provider, modelId?: string) => {
       if (activeApp === "openclaw") {
@@ -1439,18 +1454,14 @@ function App() {
           isLoading={isLoading}
           scrollRef={providerScrollContainerRef}
           onSwitch={switchProvider}
-          onOpenRoutingSettings={() => openSettings("routing")}
+          onOpenRoutingSettings={handleOpenRoutingSettings}
           needsRouteRequest={
             trayNeedsRoute?.app === proxyAppId ? trayNeedsRoute : undefined
           }
-          onNeedsRouteHandled={() => setTrayNeedsRoute(null)}
+          onNeedsRouteHandled={handleNeedsRouteHandled}
           onViewChange={handleProviderModeViewChange}
           startupFailure={startupFailure}
-          onDismissStartupFailure={() =>
-            setStartupFailures((list) =>
-              list.filter((failure) => failure.appType !== proxyAppId),
-            )
-          }
+          onDismissStartupFailure={dismissStartupFailure}
           {...listCallbacks}
         />
       );

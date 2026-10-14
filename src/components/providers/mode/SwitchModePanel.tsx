@@ -1,4 +1,5 @@
 import {
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -87,7 +88,7 @@ const modesFor = (app: ProxyAppId): AppMode[] =>
  * 切换式应用的供应商页（v7 S1–S3）：模式行 → 通知槽 → 按查看的模式分区的列表。
  * tab 只负责查看；要生效必须点写明后果的按钮（确认框），回到直连一步完成、可撤销。
  */
-export function SwitchModePanel({
+export const SwitchModePanel = memo(function SwitchModePanel({
   app,
   providers,
   currentProviderId,
@@ -653,4 +654,4 @@ export function SwitchModePanel({
       />
     </>
   );
-}
+});
