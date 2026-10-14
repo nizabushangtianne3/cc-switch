@@ -304,7 +304,7 @@ impl RequestContext {
             max_retries,
         )
         .stack_request(self.is_stack)
-        .circuit_failure_threshold(self.app_config.circuit_failure_threshold)
+        .with_circuit_failure_threshold(self.app_config.circuit_failure_threshold)
     }
 
     /// 获取 Provider 列表（用于故障转移）

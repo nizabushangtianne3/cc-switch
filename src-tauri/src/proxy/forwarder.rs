@@ -569,7 +569,7 @@ impl RequestForwarder {
     }
 
     /// 使用请求创建时的熔断阈值，避免结果记账再读一次配置。
-    pub fn circuit_failure_threshold(mut self, threshold: u32) -> Self {
+    pub fn with_circuit_failure_threshold(mut self, threshold: u32) -> Self {
         self.circuit_failure_threshold = threshold;
         self
     }
@@ -8346,7 +8346,7 @@ mod tests {
 
             let err = expect_err(send(&fwd, vec![provider("p1", &up)], plain_body()).await);
 
-            assert_eq!(err.provider.map(|p| p.id), Some("p1".into()));
+            assert_eq!(err.provider.map(|p| p.id.clone()), Some("p1".into()));
             assert_eq!(
                 books(&fwd).await,
                 Books {
@@ -8378,7 +8378,7 @@ mod tests {
                 .await,
             );
 
-            assert_eq!(err.provider.map(|p| p.id), Some("p2".into()));
+            assert_eq!(err.provider.map(|p| p.id.clone()), Some("p2".into()));
             assert_eq!(
                 books(&fwd).await,
                 Books {
@@ -8514,7 +8514,7 @@ mod tests {
                 .await,
             );
 
-            assert_eq!(err.provider.map(|p| p.id), Some("p1".into()));
+            assert_eq!(err.provider.map(|p| p.id.clone()), Some("p1".into()));
             assert_eq!(
                 books(&fwd).await,
                 Books {
@@ -8848,7 +8848,7 @@ mod tests {
             );
 
             // 客户端请求本身有问题：换 Key、换供应商都会被同样拒绝，立刻返回。
-            assert_eq!(err.provider.map(|p| p.id), Some("p1".into()));
+            assert_eq!(err.provider.map(|p| p.id.clone()), Some("p1".into()));
             assert_eq!(
                 keys_seen(&up1.seen.lock().await),
                 vec!["sk-a".to_string()],
