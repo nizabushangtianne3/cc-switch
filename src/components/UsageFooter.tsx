@@ -97,15 +97,16 @@ function planLine(
   return null;
 }
 
-function UsageFooterComponent({
-  provider,
-  providerId,
-  appId,
-  usageEnabled,
-  isCurrent,
-  isInConfig = false,
-  inline = false,
-}) {
+function UsageFooterComponent(props: UsageFooterProps) {
+  const {
+    provider,
+    providerId,
+    appId,
+    usageEnabled,
+    isCurrent,
+    isInConfig = false,
+    inline = false,
+  } = props;
   const { t } = useTranslation();
   const display = useQuotaDisplay();
   const isTokenPlan =

@@ -84,7 +84,7 @@ export function useProxyStatus() {
   // 停止服务器（总开关关闭：强制恢复所有已接管的 Live 配置）
   const stopWithRestoreMutation = useMutation({
     mutationFn: () => proxyApi.stopProxyWithRestore(),
-    onSuccess: () => {
+    onSuccess: async () => {
       toast.success(
         t("proxy.stoppedWithRestore", {
           defaultValue: "路由服务已关闭，所有应用已退回直连",
@@ -127,7 +127,7 @@ export function useProxyStatus() {
       enabled: boolean;
       stack?: boolean;
     }) => proxyApi.setProxyTakeoverForApp(appType, enabled, stack),
-    onSuccess: (_data, variables) => {
+    onSuccess: async (_data, variables) => {
       const appLabel = getAppLabel(variables.appType);
 
       toast.success(
@@ -169,7 +169,7 @@ export function useProxyStatus() {
   // 设置里在路由和 Stack 之间换时：处于另一种模式的 Claude Code、Codex 先退回直连
   const exitAppsInModeMutation = useMutation({
     mutationFn: (stack: boolean) => proxyApi.exitProxyAppsInMode(stack),
-    onSuccess: (apps) => {
+    onSuccess: async (apps) => {
       if (apps.length > 0) {
         toast.success(
           t("proxy.stackMode.exitedToDirect", {

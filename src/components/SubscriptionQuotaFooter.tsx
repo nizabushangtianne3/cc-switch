@@ -159,14 +159,15 @@ export function quotaFailureReason(
  * - `SubscriptionQuotaFooter`（CLI 凭据路径，by appId）
  * - `CodexOauthQuotaFooter`（cc-switch 自管 OAuth 路径，by ChatGPT account）
  */
-function SubscriptionQuotaViewComponent({
-  quota,
-  loading,
-  refetch,
-  appIdForExpiredHint,
-  inline = false,
-  display = "left",
-}) {
+function SubscriptionQuotaViewComponent(props: SubscriptionQuotaViewProps) {
+  const {
+    quota,
+    loading,
+    refetch,
+    appIdForExpiredHint,
+    inline = false,
+    display = "left",
+  } = props;
   const { t, i18n } = useTranslation();
 
   // 无凭据 / 凭据解析错误 → 不显示（静默）
@@ -266,12 +267,13 @@ export const SubscriptionQuotaView = React.memo(SubscriptionQuotaViewComponent);
  * CLI 凭据路径下的薄 wrapper：通过 useSubscriptionQuota(appId) 自取数据
  * 后转发到 SubscriptionQuotaView。
  */
-function SubscriptionQuotaFooterComponent({
-  appId,
-  inline = false,
-  isCurrent = false,
-  autoQueryInterval = 5,
-}) {
+function SubscriptionQuotaFooterComponent(props: SubscriptionQuotaFooterProps) {
+  const {
+    appId,
+    inline = false,
+    isCurrent = false,
+    autoQueryInterval = 5,
+  } = props;
   const display = useQuotaDisplay();
   const {
     data: quota,

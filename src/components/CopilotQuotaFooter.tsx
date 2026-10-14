@@ -15,11 +15,8 @@ interface CopilotQuotaFooterProps {
   isCurrent?: boolean;
 }
 
-function CopilotQuotaFooterComponent({
-  meta,
-  inline = false,
-  isCurrent = false,
-}) {
+function CopilotQuotaFooterComponent(props: CopilotQuotaFooterProps) {
+  const { meta, inline = false, isCurrent = false } = props;
   const { t } = useTranslation();
   const display = useQuotaDisplay();
   const accountId = resolveManagedAccountId(
@@ -79,4 +76,4 @@ function CopilotQuotaFooterComponent({
   );
 }
 
-export default React.memo(CopilotQuotaFooter);
+export default React.memo(CopilotQuotaFooterComponent);
