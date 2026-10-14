@@ -5,6 +5,12 @@ All notable changes to CC Switch will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.13] - 2026-10-14
+
+### Changed
+
+- **Performance and rendering stability:** Reduced provider switching, queue and frontend rendering work by loading only the providers a query needs, batching provider updates and memoizing provider lists, mode tabs and cards.
+
 ## [4.0.12] - 2026-10-13
 
 ### Fixed

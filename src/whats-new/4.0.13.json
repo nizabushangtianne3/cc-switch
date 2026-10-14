@@ -1,0 +1,12 @@
+{
+  "version": "4.0.13",
+  "items": [
+    {
+      "type": "improve",
+      "zh": "优化供应商切换、队列查询和前端渲染性能",
+      "zh-TW": "優化供應商切換、佇列查詢和前端渲染效能",
+      "en": "Improved provider switching, queue queries and frontend rendering",
+      "ja": "プロバイダー切り替え、キュー照会、フロントエンド描画を最適化"
+    }
+  ]
+}
