@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { ProviderIcon } from "@/components/ProviderIcon";
 import { isTileIcon } from "@/icons/extracted";
 import { cn } from "@/lib/utils";
@@ -20,7 +21,7 @@ interface ProviderIconBoxProps {
  * 供应商图标的 32px 圆角框。透明 logo 缩小居中、框带边框；自带实心底的图标
  * （metadata 里 shape: "tile"）铺满整框并裁成框的圆角，否则会变成「框里套一块小方块」。
  */
-export function ProviderIconBox({
+export const ProviderIconBox = memo(function ProviderIconBox({
   icon,
   name,
   color,
@@ -51,4 +52,4 @@ export function ProviderIconBox({
       />
     </span>
   );
-}
+});

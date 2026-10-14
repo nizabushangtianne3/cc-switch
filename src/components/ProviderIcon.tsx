@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import { memo, useMemo } from "react";
 import {
   getIcon,
   hasIcon,
@@ -18,7 +18,7 @@ interface ProviderIconProps {
   fallbackClassName?: string; // 覆盖首字母 fallback 的底色 / 文字色
 }
 
-export const ProviderIcon: React.FC<ProviderIconProps> = ({
+export const ProviderIcon = memo(function ProviderIcon({
   icon,
   name,
   color,
@@ -133,4 +133,4 @@ export const ProviderIcon: React.FC<ProviderIconProps> = ({
   }
 
   return null;
-};
+});
