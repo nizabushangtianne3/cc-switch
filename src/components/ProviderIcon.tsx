@@ -26,7 +26,7 @@ export const ProviderIcon = memo(function ProviderIcon({
   className,
   showFallback = true,
   fallbackClassName,
-}) => {
+}) {
   // 获取内联 SVG 字符串
   const iconSvg = useMemo(() => {
     if (icon && !isUrlIcon(icon) && hasIcon(icon)) {
