@@ -1183,37 +1183,31 @@ function ProviderFormFull({
 
   const additiveExistingProviderKeys = useMemo(() => {
     if (appId === "opencode" && !isAnyOmoCategory) {
-      return Array.from(
-        new Set(
-          [...existingOpencodeKeys, ...opencodeLiveProviderIds].filter(
-            (key) => key !== providerId,
-          ),
+      return new Set(
+        [...existingOpencodeKeys, ...opencodeLiveProviderIds].filter(
+          (key) => key !== providerId,
         ),
       );
     }
 
     if (appId === "openclaw") {
-      return Array.from(
-        new Set(
-          [
-            ...openclawForm.existingOpenclawKeys,
-            ...openclawLiveProviderIds,
-          ].filter((key) => key !== providerId),
-        ),
+      return new Set(
+        [
+          ...openclawForm.existingOpenclawKeys,
+          ...openclawLiveProviderIds,
+        ].filter((key) => key !== providerId),
       );
     }
 
     if (appId === "hermes") {
-      return Array.from(
-        new Set(
-          [...hermesForm.existingHermesKeys, ...hermesLiveProviderIds].filter(
-            (key) => key !== providerId,
-          ),
+      return new Set(
+        [...hermesForm.existingHermesKeys, ...hermesLiveProviderIds].filter(
+          (key) => key !== providerId,
         ),
       );
     }
 
-    return [];
+    return new Set<string>();
   }, [
     appId,
     existingOpencodeKeys,
@@ -1339,7 +1333,7 @@ function ProviderFormFull({
       }
       if (
         !isProviderKeyLocked &&
-        additiveExistingProviderKeys.includes(opencodeForm.opencodeProviderKey)
+        additiveExistingProviderKeys.has(opencodeForm.opencodeProviderKey)
       ) {
         toast.error(t("opencode.providerKeyDuplicate"));
         return;
@@ -1386,7 +1380,7 @@ function ProviderFormFull({
       }
       if (
         !isProviderKeyLocked &&
-        additiveExistingProviderKeys.includes(openclawForm.openclawProviderKey)
+        additiveExistingProviderKeys.has(openclawForm.openclawProviderKey)
       ) {
         toast.error(t("openclaw.providerKeyDuplicate"));
         return;
@@ -1412,7 +1406,7 @@ function ProviderFormFull({
       }
       if (
         !isProviderKeyLocked &&
-        additiveExistingProviderKeys.includes(hermesForm.hermesProviderKey)
+        additiveExistingProviderKeys.has(hermesForm.hermesProviderKey)
       ) {
         toast.error(t("hermes.form.providerKeyDuplicate"));
         return;
@@ -2400,7 +2394,7 @@ function ProviderFormFull({
                       isProviderKeyLocked || isProviderKeyLockStateLoading
                     }
                     className={
-                      (additiveExistingProviderKeys.includes(
+                      (additiveExistingProviderKeys.has(
                         opencodeForm.opencodeProviderKey,
                       ) &&
                         !isProviderKeyLocked) ||
@@ -2409,7 +2403,7 @@ function ProviderFormFull({
                         : ""
                     }
                   />
-                  {additiveExistingProviderKeys.includes(
+                  {additiveExistingProviderKeys.has(
                     opencodeForm.opencodeProviderKey,
                   ) &&
                     !isProviderKeyLocked && (
@@ -2423,7 +2417,7 @@ function ProviderFormFull({
                     </p>
                   )}
                   {!(
-                    additiveExistingProviderKeys.includes(
+                    additiveExistingProviderKeys.has(
                       opencodeForm.opencodeProviderKey,
                     ) && !isProviderKeyLocked
                   ) &&
@@ -2454,7 +2448,7 @@ function ProviderFormFull({
                       isProviderKeyLocked || isProviderKeyLockStateLoading
                     }
                     className={
-                      (additiveExistingProviderKeys.includes(
+                      (additiveExistingProviderKeys.has(
                         openclawForm.openclawProviderKey,
                       ) &&
                         !isProviderKeyLocked) ||
@@ -2466,7 +2460,7 @@ function ProviderFormFull({
                         : ""
                     }
                   />
-                  {additiveExistingProviderKeys.includes(
+                  {additiveExistingProviderKeys.has(
                     openclawForm.openclawProviderKey,
                   ) &&
                     !isProviderKeyLocked && (
@@ -2483,7 +2477,7 @@ function ProviderFormFull({
                       </p>
                     )}
                   {!(
-                    additiveExistingProviderKeys.includes(
+                    additiveExistingProviderKeys.has(
                       openclawForm.openclawProviderKey,
                     ) && !isProviderKeyLocked
                   ) &&
@@ -2521,7 +2515,7 @@ function ProviderFormFull({
                       isProviderKeyLocked || isProviderKeyLockStateLoading
                     }
                     className={
-                      (additiveExistingProviderKeys.includes(
+                      (additiveExistingProviderKeys.has(
                         hermesForm.hermesProviderKey,
                       ) &&
                         !isProviderKeyLocked) ||
@@ -2533,7 +2527,7 @@ function ProviderFormFull({
                         : ""
                     }
                   />
-                  {additiveExistingProviderKeys.includes(
+                  {additiveExistingProviderKeys.has(
                     hermesForm.hermesProviderKey,
                   ) &&
                     !isProviderKeyLocked && (
@@ -2550,7 +2544,7 @@ function ProviderFormFull({
                       </p>
                     )}
                   {!(
-                    additiveExistingProviderKeys.includes(
+                    additiveExistingProviderKeys.has(
                       hermesForm.hermesProviderKey,
                     ) && !isProviderKeyLocked
                   ) &&
