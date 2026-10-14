@@ -47,6 +47,9 @@ use tokio::sync::RwLock;
 
 const PROXY_AUTH_PLACEHOLDER: &str = "PROXY_MANAGED";
 
+/// 跨请求生命周期共享的 Provider。避免在上下文、成功结果和错误回填间深拷贝配置。
+pub type SharedProvider = Arc<Provider>;
+
 /// Whether the upstream belongs to the OpenCode gateway (`opencode.ai`).
 ///
 /// That gateway (<https://opencode.ai/docs/go/>) expects clients to identify
@@ -298,7 +301,7 @@ impl CopilotRequestContext {
 
 pub struct ForwardResult {
     pub response: ProxyResponse,
-    pub provider: Provider,
+    pub provider: SharedProvider,
     /// SHA-256 fingerprint of the key-pool entry used by the successful try.
     pub api_key_id: Option<String>,
     pub claude_api_format: Option<String>,
@@ -319,7 +322,7 @@ pub struct ForwardResult {
 
 pub struct ForwardError {
     pub error: ProxyError,
-    pub provider: Option<Provider>,
+    pub provider: Option<SharedProvider>,
 }
 
 /// 活跃连接 RAII guard
@@ -623,13 +626,13 @@ impl RequestForwarder {
     async fn handle_rectifier_retry_failure(
         &self,
         retry_err: ProxyError,
-        provider: &Provider,
+        provider: &SharedProvider,
         app_type_str: &str,
         used_half_open_permit: bool,
         rectifier_label: &str,
         try_next_key: bool,
         last_error: &mut Option<ProxyError>,
-        last_provider: &mut Option<Provider>,
+        last_provider: &mut Option<SharedProvider>,
     ) -> Option<ForwardError> {
         // Provider 错误：本家上游/网络确实出问题，下一家 provider 可能可用 → 继续故障转移。
         // 客户端错误：整流后请求仍违法，下一家也修不好 → 直接返回。
@@ -661,7 +664,7 @@ impl RequestForwarder {
                 .await;
             }
             *last_error = Some(retry_err);
-            *last_provider = Some(provider.clone());
+            *last_provider = Some(Arc::clone(provider));
             return None;
         }
 
@@ -696,7 +699,7 @@ impl RequestForwarder {
     /// 就计一次故障转移，并异步把当前供应商切过去（同步 UI/托盘）。
     async fn finish_success(
         &self,
-        provider: &Provider,
+        provider: &SharedProvider,
         app_type_str: &str,
         used_half_open_permit: bool,
         api_key_id: Option<String>,
@@ -709,7 +712,7 @@ impl RequestForwarder {
     ) -> ForwardResult {
         let result = ForwardResult {
             response,
-            provider: provider.clone(),
+            provider: Arc::clone(provider),
             api_key_id,
             claude_api_format,
             codex_upstream_format,
@@ -792,7 +795,7 @@ impl RequestForwarder {
     async fn finish_neutral_failure(
         &self,
         error: ProxyError,
-        provider: &Provider,
+        provider: &SharedProvider,
         app_type_str: &str,
         used_half_open_permit: bool,
     ) -> ForwardError {
@@ -804,7 +807,7 @@ impl RequestForwarder {
         }
         ForwardError {
             error,
-            provider: Some(provider.clone()),
+            provider: Some(Arc::clone(provider)),
         }
     }
 
@@ -860,6 +863,34 @@ impl RequestForwarder {
         extensions: Extensions,
         providers: &[Provider],
     ) -> Result<ForwardResult, ForwardError> {
+        let shared_providers: Vec<SharedProvider> = providers
+            .iter()
+            .map(|provider| Arc::new(provider.clone()))
+            .collect();
+        self.forward_with_retry_shared(
+            app_type,
+            method,
+            endpoint,
+            body,
+            headers,
+            extensions,
+            &shared_providers,
+        )
+        .await
+    }
+
+    /// 真实代理路径使用的共享版本：Provider 链由 RequestContext 以 Arc 共享。
+    #[allow(clippy::too_many_arguments)]
+    pub async fn forward_with_retry_shared(
+        &self,
+        app_type: &AppType,
+        method: http::Method,
+        endpoint: &str,
+        body: impl Into<Arc<Value>>,
+        headers: axum::http::HeaderMap,
+        extensions: Extensions,
+        providers: &[SharedProvider],
+    ) -> Result<ForwardResult, ForwardError> {
         let body = body.into();
         if !self.routing_state_enabled() {
             return self
@@ -906,7 +937,7 @@ impl RequestForwarder {
         body: Arc<Value>,
         headers: axum::http::HeaderMap,
         extensions: Extensions,
-        providers: &[Provider],
+        providers: &[SharedProvider],
     ) -> Result<ForwardResult, ForwardError> {
         // 获取适配器
         let adapter = get_adapter(app_type).ok_or_else(|| ForwardError {
@@ -4937,6 +4968,7 @@ mod tests {
             let mut forwarder = test_forwarder(Duration::ZERO, Duration::ZERO);
             let mut provider = test_provider_with_type(Some("github_copilot"));
             provider.meta.as_mut().unwrap().api_format = Some("openai_chat".to_string());
+            let provider = Arc::new(provider);
             forwarder.current_provider_id_at_start = provider.id.clone();
             forwarder.status.write().await.total_requests = 1;
             let response = ProxyResponse::buffered(

@@ -4,15 +4,15 @@
 
 use crate::app_config::AppType;
 use crate::mode::stack::StackTarget;
-use crate::provider::Provider;
 use crate::proxy::{
     extract_session_id,
-    forwarder::RequestForwarder,
+    forwarder::{RequestForwarder, SharedProvider},
     server::ProxyState,
     types::{AppProxyConfig, CopilotOptimizerConfig, OptimizerConfig, RectifierConfig},
     ProxyError,
 };
 use axum::http::HeaderMap;
+use std::sync::Arc;
 use std::time::Instant;
 
 /// 流式超时配置
@@ -39,9 +39,9 @@ pub struct RequestContext {
     /// 应用级代理配置（per-app，包含重试次数和超时配置）
     pub app_config: AppProxyConfig,
     /// 选中的 Provider（故障转移链的第一个）
-    pub provider: Provider,
+    pub provider: SharedProvider,
     /// 完整的 Provider 列表（用于故障转移）
-    providers: Vec<Provider>,
+    providers: Vec<SharedProvider>,
     /// 请求开始时的"当前供应商"（用于判断是否需要同步 UI/托盘）
     ///
     /// 这里使用本地 settings 的设备级 current provider。
@@ -139,9 +139,9 @@ impl RequestContext {
                     target.upstream_model,
                     session_id
                 );
-                let provider = target.provider;
-                let providers = vec![provider.clone()];
-                let provider_id = provider.id;
+                let provider = Arc::new(target.provider);
+                let providers = vec![Arc::clone(&provider)];
+                let provider_id = provider.id.clone();
                 (
                     provider,
                     providers,
@@ -171,7 +171,9 @@ impl RequestContext {
                     && crate::mode::stack::stack_mode_now(&app_type);
                 let providers = if stack_mode {
                     app_config.auto_failover_enabled = false;
-                    vec![current_provider.ok_or(ProxyError::NoProvidersConfigured)?]
+                    vec![Arc::new(
+                        current_provider.ok_or(ProxyError::NoProvidersConfigured)?,
+                    )]
                 } else {
                     // 使用共享的 ProviderRouter 选择 Provider（熔断器状态跨请求保持）
                     // 注意：只在这里调用一次，结果传递给 forwarder，避免重复消耗 HalfOpen 名额
@@ -192,6 +194,9 @@ impl RequestContext {
                             }
                             _ => ProxyError::DatabaseError(e.to_string()),
                         })?
+                        .into_iter()
+                        .map(Arc::new)
+                        .collect::<Vec<_>>()
                 };
 
                 let provider = providers
@@ -304,7 +309,7 @@ impl RequestContext {
     /// 获取 Provider 列表（用于故障转移）
     ///
     /// 返回在创建上下文时已选择的 providers，避免重复调用 select_providers()
-    pub fn get_providers(&self) -> &[Provider] {
+    pub fn get_providers(&self) -> &[SharedProvider] {
         &self.providers
     }
 

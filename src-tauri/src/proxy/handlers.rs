@@ -342,7 +342,7 @@ async fn handle_messages_for_app(
     // 转发请求
     let forwarder = ctx.create_forwarder(&state);
     let mut result = match forwarder
-        .forward_with_retry_arc(
+        .forward_with_retry_shared(
             &app_type,
             method,
             endpoint,
@@ -938,7 +938,7 @@ pub async fn handle_chat_completions(
 
     let forwarder = ctx.create_forwarder(&state);
     let mut result = match forwarder
-        .forward_with_retry_arc(
+        .forward_with_retry_shared(
             &AppType::Codex,
             method,
             &endpoint,
@@ -1064,7 +1064,7 @@ async fn handle_responses_for_app(
 
     let forwarder = ctx.create_forwarder(&state);
     let mut result = match forwarder
-        .forward_with_retry_arc(
+        .forward_with_retry_shared(
             &app_type,
             method,
             &endpoint,
@@ -1297,7 +1297,7 @@ async fn handle_codex_standalone_passthrough(
 
     let forwarder = ctx.create_forwarder(&state);
     let mut result = match forwarder
-        .forward_with_retry_arc(
+        .forward_with_retry_shared(
             &AppType::Codex,
             method,
             &endpoint,
@@ -1395,7 +1395,7 @@ async fn handle_responses_compact_for_app(
 
     let forwarder = ctx.create_forwarder(&state);
     let mut result = match forwarder
-        .forward_with_retry_arc(
+        .forward_with_retry_shared(
             &app_type,
             method,
             &endpoint,
@@ -2482,7 +2482,7 @@ pub async fn handle_gemini(
 
     let forwarder = ctx.create_forwarder(&state);
     let mut result = match forwarder
-        .forward_with_retry_arc(
+        .forward_with_retry_shared(
             &AppType::Gemini,
             method,
             endpoint,
