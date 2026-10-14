@@ -4,7 +4,6 @@
 
 use crate::database::{lock_conn, Database};
 use crate::error::AppError;
-use crate::provider::Provider;
 use serde::{Deserialize, Serialize};
 
 /// 故障转移队列条目（简化版，用于前端展示）
@@ -46,11 +45,6 @@ impl Database {
             .map_err(|e| AppError::Database(e.to_string()))?;
 
         Ok(items)
-    }
-
-    /// 获取故障转移队列中的供应商（按队列顺序，不加载 endpoint）
-    pub fn get_failover_providers(&self, app_type: &str) -> Result<Vec<Provider>, AppError> {
-        self.get_failover_queue_providers(app_type)
     }
 
     /// 添加供应商到故障转移队列
