@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useCallback, useMemo, useState, useEffect } from "react";
 import {
   AlertTriangle,
   GripVertical,
@@ -295,6 +295,24 @@ export function ProviderCard({
     }
   }, [hasMultiplePlans]);
 
+  const handleEdit = useCallback(() => onEdit(provider), [onEdit, provider]);
+  const handleDelete = useCallback(
+    () => onDelete(provider),
+    [onDelete, provider],
+  );
+  const handleDuplicate = useCallback(
+    () => onDuplicate?.(provider),
+    [onDuplicate, provider],
+  );
+  const handleTest = useCallback(() => onTest?.(provider), [onTest, provider]);
+  const handleConfigureUsage = useCallback(
+    () => onConfigureUsage?.(provider),
+    [onConfigureUsage, provider],
+  );
+  const handleOpenTerminal = useCallback(
+    () => onOpenTerminal?.(provider),
+    [onOpenTerminal, provider],
+  );
   const handleOpenWebsite = () => {
     if (!isClickableUrl) {
       return;
@@ -530,14 +548,14 @@ export function ProviderCard({
           <ProviderCardActions
             providerName={provider.name}
             presentation={presentation}
-            onEdit={() => onEdit(provider)}
-            onDelete={() => onDelete(provider)}
-            onDuplicate={onDuplicate ? () => onDuplicate(provider) : undefined}
+            onEdit={handleEdit}
+            onDelete={handleDelete}
+            onDuplicate={onDuplicate ? handleDuplicate : undefined}
             onTest={
               // 连通检测对第三方/自定义/Copilot/Codex-OAuth 供应商开放。官方供应商一律不给：
               // 它们 base_url 故意留空、走客户端默认/OAuth 端点，没有可靠的探测目标。
               onTest && appId !== "mcode" && provider.category !== "official"
-                ? () => onTest(provider)
+                ? handleTest
                 : undefined
             }
             isTesting={isTesting}
@@ -549,12 +567,10 @@ export function ProviderCard({
                 (isCodexOauth && !isBoundCodexOfficial) ||
                 isXaiOauth
               )
-                ? () => onConfigureUsage(provider)
+                ? handleConfigureUsage
                 : undefined
             }
-            onOpenTerminal={
-              onOpenTerminal ? () => onOpenTerminal(provider) : undefined
-            }
+            onOpenTerminal={onOpenTerminal ? handleOpenTerminal : undefined}
           />
         </div>
       </div>

@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type * as React from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -75,7 +76,7 @@ interface ProviderCardActionsProps {
  * 配置用量查询、打开终端、删除。
  * 按钮一律纯图标 + HoverTip；有禁用原因时改由 DisabledReason 的说明卡报原因。
  */
-export function ProviderCardActions({
+export const ProviderCardActions = memo(function ProviderCardActions({
   providerName,
   presentation,
   onEdit,
@@ -226,7 +227,7 @@ export function ProviderCardActions({
       </DropdownMenu>
     </div>
   );
-}
+});
 
 /** 有禁用原因时只挂说明卡（报原因），否则挂 HoverTip（报名字），两者不叠。 */
 function IconAction({
