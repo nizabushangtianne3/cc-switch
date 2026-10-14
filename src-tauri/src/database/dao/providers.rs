@@ -162,6 +162,10 @@ impl Database {
         drop(provider_iter);
         drop(stmt);
 
+        if providers.is_empty() {
+            return Ok(providers);
+        }
+
         let mut endpoint_stmt = conn.prepare(
             "SELECT provider_id, url, added_at
              FROM provider_endpoints
