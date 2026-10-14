@@ -6534,7 +6534,8 @@ impl ProviderService {
         }
 
         // OMO Slim providers are switched through their own exclusive path.
-        if matches!(app_type, AppType::OpenCode) && provider.category.as_deref() == Some("omo-slim") {
+        if matches!(app_type, AppType::OpenCode) && provider.category.as_deref() == Some("omo-slim")
+        {
             return Self::switch_normal(state, app_type, id, &provider);
         }
 
