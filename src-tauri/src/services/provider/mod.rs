@@ -6534,7 +6534,9 @@ impl ProviderService {
         }
 
         // OMO Slim providers are switched through their own exclusive path.
-        if matches!(app_type, AppType::OpenCode) && provider.category.as_deref() == Some("omo-slim") {
+        if matches!(app_type, AppType::OpenCode)
+            && provider.category.as_deref() == Some("omo-slim")
+        {
             return Self::switch_normal(state, app_type, id, &provider);
         }
 
@@ -6759,14 +6761,15 @@ impl ProviderService {
             &AppType::Codex,
             crate::mode::current::Purpose::Direct,
         )?;
-        let owner = match current_id.as_deref() {
+        let owner_provider = match current_id.as_deref() {
             Some(id) => state
                 .db
-                .get_provider_by_id(id, AppType::Codex.as_str())?
-                .as_ref()
-                .map_or(codex_direct::Owner::None, codex_direct::Owner::Provider),
+                .get_provider_by_id(id, AppType::Codex.as_str())?,
             None => codex_direct::Owner::None,
         };
+        let owner = owner_provider
+            .as_ref()
+            .map_or(codex_direct::Owner::None, codex_direct::Owner::Provider);
         codex_direct::write_direct(
             state.db.as_ref(),
             &state.codex_oauth_manager,
