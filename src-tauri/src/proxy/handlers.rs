@@ -39,6 +39,7 @@ use super::{
         create_logged_passthrough_stream, create_usage_collector, process_response,
         read_decoded_body, strip_entity_headers_for_rebuilt_body,
         strip_hop_by_hop_response_headers, usage_logging_enabled, SseUsageCollector,
+        SseUsageLogContext,
     },
     server::ProxyState,
     sse::{strip_sse_field, take_sse_block},
@@ -588,19 +589,9 @@ async fn handle_claude_transform(
 
         // 创建使用量收集器；关闭 usage logging 时不要再解析转换后的 SSE。
         let usage_collector = if usage_logging_enabled(state) {
-            let state = state.clone();
-            let provider_id = ctx.provider.id.clone();
-            let request_model = ctx.request_model.clone();
-            // 上游/转换层未回显模型时，优先用映射后的出站模型兜底（路由接管真值），
-            // 其次才是客户端请求别名。空字符串视为缺失（转换器对无回显上游会合成 ""）。
-            let fallback_model = ctx
-                .outbound_model
-                .clone()
-                .unwrap_or_else(|| ctx.request_model.clone());
+            let context = Arc::new(SseUsageLogContext::new(ctx, state));
             let status_code = status.as_u16();
             let start_time = ctx.start_time;
-            let session_id = ctx.session_id.clone();
-            let api_key_id = ctx.api_key_id.clone();
             // 用 ctx 的 app_type：Claude Desktop 网关也走此转换路径，硬编码
             // "claude" 会把 claude-desktop 的行错记到 claude 名下
             let app_type_str = ctx.app_type_str;
@@ -614,30 +605,25 @@ async fn handle_claude_transform(
                             .model
                             .clone()
                             .filter(|m| !m.is_empty())
-                            .unwrap_or_else(|| fallback_model.clone());
+                            .unwrap_or_else(|| context.outbound_model.clone());
                         let latency_ms = start_time.elapsed().as_millis() as u64;
-                        let state = state.clone();
-                        let provider_id = provider_id.clone();
-                        let session_id = session_id.clone();
-                        let request_model = request_model.clone();
-                        let outbound_model = fallback_model.clone();
-                        let api_key_id = api_key_id.clone();
+                        let context = Arc::clone(&context);
 
                         tokio::spawn(async move {
                             log_usage(
-                                &state,
-                                &provider_id,
+                                &context.state,
+                                &context.provider_id,
                                 app_type_str,
                                 &model,
-                                &request_model,
-                                &outbound_model,
+                                &context.request_model,
+                                &context.outbound_model,
                                 usage,
                                 latency_ms,
                                 first_token_ms,
                                 true,
                                 status_code,
-                                Some(session_id),
-                                api_key_id.as_deref(),
+                                Some(context.session_id.clone()),
+                                context.api_key_id.as_deref(),
                             )
                             .await;
                         });
@@ -1699,18 +1685,9 @@ async fn handle_codex_chat_to_responses_transform(
         let sse_stream = record_responses_sse_stream(sse_stream, state.codex_chat_history.clone());
 
         let usage_collector = if usage_logging_enabled(state) {
-            let state = state.clone();
-            let provider_id = ctx.provider.id.clone();
-            let request_model = ctx.request_model.clone();
-            // 接管/模型覆写场景的归因兜底：出站真值优先于客户端请求别名
-            let fallback_model = ctx
-                .outbound_model
-                .clone()
-                .unwrap_or_else(|| ctx.request_model.clone());
+            let context = Arc::new(SseUsageLogContext::new(ctx, state));
             let app_type_str = ctx.app_type_str;
             let start_time = ctx.start_time;
-            let session_id = ctx.session_id.clone();
-            let api_key_id = ctx.api_key_id.clone();
 
             Some(SseUsageCollector::new(
                 start_time,
@@ -1731,31 +1708,26 @@ async fn handle_codex_chat_to_responses_transform(
                         .model
                         .clone()
                         .filter(|m| !m.is_empty())
-                        .unwrap_or_else(|| fallback_model.clone());
+                        .unwrap_or_else(|| context.outbound_model.clone());
                     let latency_ms = start_time.elapsed().as_millis() as u64;
 
-                    let state = state.clone();
-                    let provider_id = provider_id.clone();
-                    let request_model = request_model.clone();
-                    let outbound_model = fallback_model.clone();
-                    let session_id = session_id.clone();
-                    let api_key_id = api_key_id.clone();
+                    let context = Arc::clone(&context);
 
                     tokio::spawn(async move {
                         log_usage(
-                            &state,
-                            &provider_id,
+                            &context.state,
+                            &context.provider_id,
                             app_type_str,
                             &model,
-                            &request_model,
-                            &outbound_model,
+                            &context.request_model,
+                            &context.outbound_model,
                             usage,
                             latency_ms,
                             first_token_ms,
                             true,
                             status.as_u16(),
-                            Some(session_id),
-                            api_key_id.as_deref(),
+                            Some(context.session_id.clone()),
+                            context.api_key_id.as_deref(),
                         )
                         .await;
                     });
@@ -2086,17 +2058,9 @@ fn build_codex_anthropic_sse_response(
     connection_guard: Option<ActiveConnectionGuard>,
 ) -> Result<axum::response::Response, ProxyError> {
     let usage_collector = if usage_logging_enabled(state) {
-        let state = state.clone();
-        let provider_id = ctx.provider.id.clone();
-        let request_model = ctx.request_model.clone();
-        let fallback_model = ctx
-            .outbound_model
-            .clone()
-            .unwrap_or_else(|| ctx.request_model.clone());
+        let context = Arc::new(SseUsageLogContext::new(ctx, state));
         let app_type_str = ctx.app_type_str;
         let start_time = ctx.start_time;
-        let session_id = ctx.session_id.clone();
-        let api_key_id = ctx.api_key_id.clone();
 
         Some(SseUsageCollector::new(
             start_time,
@@ -2111,31 +2075,26 @@ fn build_codex_anthropic_sse_response(
                     .model
                     .clone()
                     .filter(|m| !m.is_empty())
-                    .unwrap_or_else(|| fallback_model.clone());
+                    .unwrap_or_else(|| context.outbound_model.clone());
                 let latency_ms = start_time.elapsed().as_millis() as u64;
 
-                let state = state.clone();
-                let provider_id = provider_id.clone();
-                let request_model = request_model.clone();
-                let outbound_model = fallback_model.clone();
-                let session_id = session_id.clone();
-                let api_key_id = api_key_id.clone();
+                let context = Arc::clone(&context);
 
                 tokio::spawn(async move {
                     log_usage(
-                        &state,
-                        &provider_id,
+                        &context.state,
+                        &context.provider_id,
                         app_type_str,
                         &model,
-                        &request_model,
-                        &outbound_model,
+                        &context.request_model,
+                        &context.outbound_model,
                         usage,
                         latency_ms,
                         first_token_ms,
                         true,
                         status.as_u16(),
-                        Some(session_id),
-                        api_key_id.as_deref(),
+                        Some(context.session_id.clone()),
+                        context.api_key_id.as_deref(),
                     )
                     .await;
                 });

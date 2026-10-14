@@ -358,13 +358,31 @@ type UsageCallbackWithTiming = Arc<dyn Fn(Vec<Value>, Option<u64>) + Send + Sync
 
 /// 流式用量日志在多个事件间不变的上下文。
 #[derive(Clone)]
-struct SseUsageLogContext {
-    state: ProxyState,
-    provider_id: String,
-    request_model: String,
-    outbound_model: String,
-    session_id: String,
-    api_key_id: Option<String>,
+pub(crate) struct SseUsageLogContext {
+    pub(crate) state: ProxyState,
+    pub(crate) provider_id: String,
+    pub(crate) request_model: String,
+    pub(crate) outbound_model: String,
+    pub(crate) session_id: String,
+    pub(crate) api_key_id: Option<String>,
+}
+
+impl SseUsageLogContext {
+    pub(crate) fn new(ctx: &RequestContext, state: &ProxyState) -> Self {
+        Self {
+            state: state.clone(),
+            provider_id: ctx.provider.id.clone(),
+            request_model: ctx.request_model.clone(),
+            // 流式事件缺失模型名时的归因兜底：映射后的出站模型（路由接管真值）
+            // 优先，其次才是客户端请求别名。
+            outbound_model: ctx
+                .outbound_model
+                .clone()
+                .unwrap_or_else(|| ctx.request_model.clone()),
+            session_id: ctx.session_id.clone(),
+            api_key_id: ctx.api_key_id.clone(),
+        }
+    }
 }
 
 /// SSE 使用量收集器
@@ -521,19 +539,7 @@ pub(crate) fn create_usage_collector(
         return None;
     }
 
-    let context = Arc::new(SseUsageLogContext {
-        state: state.clone(),
-        provider_id: ctx.provider.id.clone(),
-        request_model: ctx.request_model.clone(),
-        // 流式事件缺失模型名时的归因兜底：映射后的出站模型（路由接管真值）
-        // 优先，其次才是客户端请求别名。
-        outbound_model: ctx
-            .outbound_model
-            .clone()
-            .unwrap_or_else(|| ctx.request_model.clone()),
-        session_id: ctx.session_id.clone(),
-        api_key_id: ctx.api_key_id.clone(),
-    });
+    let context = Arc::new(SseUsageLogContext::new(ctx, state));
     // 用 ctx 的 app_type 而不是 parser_config 的：Claude Desktop 流式透传复用
     // CLAUDE_PARSER_CONFIG（app_type_str="claude"），按 parser_config 记账会把
     // claude-desktop 的行错记到 claude 名下，导致供应商计价覆盖解析不到。
