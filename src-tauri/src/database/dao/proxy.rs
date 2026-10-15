@@ -112,14 +112,10 @@ impl Database {
     pub async fn get_pricing_model_source(&self, app_type: &str) -> Result<String, AppError> {
         let result = {
             let conn = lock_conn!(self.conn);
-            let mut stmt = conn.prepare_cached(
-                "SELECT pricing_model_source FROM proxy_config WHERE app_type = ?1",
-            )
-            .map_err(|e| AppError::Database(e.to_string()))?;
-            stmt.query_row(
-                [app_type],
-                |row| row.get(0),
-            )
+            let mut stmt = conn
+                .prepare_cached("SELECT pricing_model_source FROM proxy_config WHERE app_type = ?1")
+                .map_err(|e| AppError::Database(e.to_string()))?;
+            stmt.query_row([app_type], |row| row.get(0))
         };
 
         match result {
@@ -173,25 +169,22 @@ impl Database {
                  FROM proxy_config WHERE app_type = ?1",
             )
             .map_err(|e| AppError::Database(e.to_string()))?;
-            stmt.query_row(
-                [app_type],
-                |row| {
-                    Ok(AppProxyConfig {
-                        app_type: row.get(0)?,
-                        enabled: row.get::<_, i32>(1)? != 0,
-                        auto_failover_enabled: row.get::<_, i32>(2)? != 0,
-                        max_retries: row.get::<_, i32>(3)? as u32,
-                        streaming_first_byte_timeout: row.get::<_, i32>(4)? as u32,
-                        streaming_idle_timeout: row.get::<_, i32>(5)? as u32,
-                        non_streaming_timeout: row.get::<_, i32>(6)? as u32,
-                        circuit_failure_threshold: row.get::<_, i32>(7)? as u32,
-                        circuit_success_threshold: row.get::<_, i32>(8)? as u32,
-                        circuit_timeout_seconds: row.get::<_, i32>(9)? as u32,
-                        circuit_error_rate_threshold: row.get(10)?,
-                        circuit_min_requests: row.get::<_, i32>(11)? as u32,
-                    })
-                },
-            )
+            stmt.query_row([app_type], |row| {
+                Ok(AppProxyConfig {
+                    app_type: row.get(0)?,
+                    enabled: row.get::<_, i32>(1)? != 0,
+                    auto_failover_enabled: row.get::<_, i32>(2)? != 0,
+                    max_retries: row.get::<_, i32>(3)? as u32,
+                    streaming_first_byte_timeout: row.get::<_, i32>(4)? as u32,
+                    streaming_idle_timeout: row.get::<_, i32>(5)? as u32,
+                    non_streaming_timeout: row.get::<_, i32>(6)? as u32,
+                    circuit_failure_threshold: row.get::<_, i32>(7)? as u32,
+                    circuit_success_threshold: row.get::<_, i32>(8)? as u32,
+                    circuit_timeout_seconds: row.get::<_, i32>(9)? as u32,
+                    circuit_error_rate_threshold: row.get(10)?,
+                    circuit_min_requests: row.get::<_, i32>(11)? as u32,
+                })
+            })
         };
         // conn 已在 block 结束时释放
 
@@ -252,25 +245,22 @@ impl Database {
                  FROM proxy_config WHERE app_type = ?1",
             )
             .map_err(|e| AppError::Database(e.to_string()))?;
-            let config = stmt.query_row(
-                [app_type],
-                |row| {
-                    Ok(AppProxyConfig {
-                        app_type: row.get(0)?,
-                        enabled: row.get::<_, i32>(1)? != 0,
-                        auto_failover_enabled: row.get::<_, i32>(2)? != 0,
-                        max_retries: row.get::<_, i32>(3)? as u32,
-                        streaming_first_byte_timeout: row.get::<_, i32>(4)? as u32,
-                        streaming_idle_timeout: row.get::<_, i32>(5)? as u32,
-                        non_streaming_timeout: row.get::<_, i32>(6)? as u32,
-                        circuit_failure_threshold: row.get::<_, i32>(7)? as u32,
-                        circuit_success_threshold: row.get::<_, i32>(8)? as u32,
-                        circuit_timeout_seconds: row.get::<_, i32>(9)? as u32,
-                        circuit_error_rate_threshold: row.get(10)?,
-                        circuit_min_requests: row.get::<_, i32>(11)? as u32,
-                    })
-                },
-            );
+            let config = stmt.query_row([app_type], |row| {
+                Ok(AppProxyConfig {
+                    app_type: row.get(0)?,
+                    enabled: row.get::<_, i32>(1)? != 0,
+                    auto_failover_enabled: row.get::<_, i32>(2)? != 0,
+                    max_retries: row.get::<_, i32>(3)? as u32,
+                    streaming_first_byte_timeout: row.get::<_, i32>(4)? as u32,
+                    streaming_idle_timeout: row.get::<_, i32>(5)? as u32,
+                    non_streaming_timeout: row.get::<_, i32>(6)? as u32,
+                    circuit_failure_threshold: row.get::<_, i32>(7)? as u32,
+                    circuit_success_threshold: row.get::<_, i32>(8)? as u32,
+                    circuit_timeout_seconds: row.get::<_, i32>(9)? as u32,
+                    circuit_error_rate_threshold: row.get(10)?,
+                    circuit_min_requests: row.get::<_, i32>(11)? as u32,
+                })
+            });
             (
                 config,
                 super::settings::proxy_runtime_configs_from_conn(&conn),
@@ -591,28 +581,26 @@ impl Database {
         let result = {
             let conn = lock_conn!(self.conn);
 
-            let mut stmt = conn.prepare_cached(
-                "SELECT provider_id, app_type, is_healthy, consecutive_failures,
+            let mut stmt = conn
+                .prepare_cached(
+                    "SELECT provider_id, app_type, is_healthy, consecutive_failures,
                         last_success_at, last_failure_at, last_error, updated_at
                  FROM provider_health
                  WHERE provider_id = ?1 AND app_type = ?2",
-            )
-            .map_err(|e| AppError::Database(e.to_string()))?;
-            stmt.query_row(
-                rusqlite::params![provider_id, app_type],
-                |row| {
-                    Ok(ProviderHealth {
-                        provider_id: row.get(0)?,
-                        app_type: row.get(1)?,
-                        is_healthy: row.get::<_, i64>(2)? != 0,
-                        consecutive_failures: row.get::<_, i64>(3)? as u32,
-                        last_success_at: row.get(4)?,
-                        last_failure_at: row.get(5)?,
-                        last_error: row.get(6)?,
-                        updated_at: row.get(7)?,
-                    })
-                },
-            )
+                )
+                .map_err(|e| AppError::Database(e.to_string()))?;
+            stmt.query_row(rusqlite::params![provider_id, app_type], |row| {
+                Ok(ProviderHealth {
+                    provider_id: row.get(0)?,
+                    app_type: row.get(1)?,
+                    is_healthy: row.get::<_, i64>(2)? != 0,
+                    consecutive_failures: row.get::<_, i64>(3)? as u32,
+                    last_success_at: row.get(4)?,
+                    last_failure_at: row.get(5)?,
+                    last_error: row.get(6)?,
+                    updated_at: row.get(7)?,
+                })
+            })
         };
 
         match result {
@@ -668,8 +656,9 @@ impl Database {
             (None, Some(now.clone()))
         };
 
-        let mut stmt = conn.prepare_cached(
-            "INSERT INTO provider_health
+        let mut stmt = conn
+            .prepare_cached(
+                "INSERT INTO provider_health
              (provider_id, app_type, is_healthy, consecutive_failures,
               last_success_at, last_failure_at, last_error, updated_at)
              VALUES (?1, ?2,
@@ -692,8 +681,8 @@ impl Database {
                      last_failure_at = excluded.last_failure_at,
                      last_error = excluded.last_error,
                      updated_at = excluded.updated_at",
-        )
-        .map_err(|e| AppError::Database(e.to_string()))?;
+            )
+            .map_err(|e| AppError::Database(e.to_string()))?;
         stmt.execute(rusqlite::params![
             provider_id,
             app_type,

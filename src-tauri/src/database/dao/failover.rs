@@ -114,10 +114,7 @@ impl Database {
             )
             .map_err(|e| AppError::Database(e.to_string()))?;
         let in_queue: bool = stmt
-            .query_row(
-                rusqlite::params![provider_id, app_type],
-                |row| row.get(0),
-            )
+            .query_row(rusqlite::params![provider_id, app_type], |row| row.get(0))
             .unwrap_or(false);
 
         Ok(in_queue)

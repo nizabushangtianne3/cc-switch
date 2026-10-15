@@ -336,23 +336,22 @@ mod tests {
                 None,
             );
             state.db.save_provider("claude", &db_current).unwrap();
-            state.db.set_current_provider("claude", "db-current").unwrap();
+            state
+                .db
+                .set_current_provider("claude", "db-current")
+                .unwrap();
             state.db.save_provider("claude", &local_current).unwrap();
 
             crate::settings::set_current_provider(&AppType::Claude, Some("local-current"));
-            let effective = crate::settings::get_effective_current_provider(
-                &state.db,
-                &AppType::Claude,
-            )
-            .unwrap();
+            let effective =
+                crate::settings::get_effective_current_provider(&state.db, &AppType::Claude)
+                    .unwrap();
             assert_eq!(effective.as_deref(), Some("local-current"));
 
             crate::settings::set_current_provider(&AppType::Claude, Some("missing"));
-            let fallback = crate::settings::get_effective_current_provider(
-                &state.db,
-                &AppType::Claude,
-            )
-            .unwrap();
+            let fallback =
+                crate::settings::get_effective_current_provider(&state.db, &AppType::Claude)
+                    .unwrap();
             assert_eq!(fallback.as_deref(), Some("db-current"));
         });
     }

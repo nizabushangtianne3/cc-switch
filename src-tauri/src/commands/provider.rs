@@ -88,8 +88,8 @@ pub async fn get_provider_state(
         let state = app_handle
             .try_state::<AppState>()
             .ok_or_else(|| "应用状态不可用".to_string())?;
-        let providers = ProviderService::list(state.inner(), app_type.clone())
-            .map_err(|e| e.to_string())?;
+        let providers =
+            ProviderService::list(state.inner(), app_type.clone()).map_err(|e| e.to_string())?;
         let current_provider_id =
             ProviderService::current(state.inner(), app_type).map_err(|e| e.to_string())?;
         Ok(ProviderState {

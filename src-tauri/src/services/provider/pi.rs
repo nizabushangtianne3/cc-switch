@@ -11,15 +11,13 @@ const PI_APP: &str = "pi";
 pub(super) fn list(state: &AppState) -> Result<IndexMap<String, Provider>, AppError> {
     let _guard = futures::executor::block_on(state.proxy_service.lock_switch_for_app(PI_APP));
     let providers = match crate::pi_config::read_pi_native_providers() {
-        Ok(native) => {
-            match sync_native_locked(state, &native) {
-                Ok((_, providers)) => providers,
-                Err(error) => {
-                    log::warn!("Failed to sync Pi providers from native config: {error}");
-                    state.db.get_all_providers(PI_APP)?
-                }
+        Ok(native) => match sync_native_locked(state, &native) {
+            Ok((_, providers)) => providers,
+            Err(error) => {
+                log::warn!("Failed to sync Pi providers from native config: {error}");
+                state.db.get_all_providers(PI_APP)?
             }
-        }
+        },
         Err(error) => {
             log::warn!("Failed to read Pi providers; showing saved catalog: {error}");
             state.db.get_all_providers(PI_APP)?

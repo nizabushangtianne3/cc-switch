@@ -288,7 +288,9 @@ impl Database {
     pub fn get_current_provider(&self, app_type: &str) -> Result<Option<String>, AppError> {
         let conn = lock_conn!(self.conn);
         let mut stmt = conn
-            .prepare_cached("SELECT id FROM providers WHERE app_type = ?1 AND is_current = 1 LIMIT 1")
+            .prepare_cached(
+                "SELECT id FROM providers WHERE app_type = ?1 AND is_current = 1 LIMIT 1",
+            )
             .map_err(|e| AppError::Database(e.to_string()))?;
 
         let mut rows = stmt
@@ -346,40 +348,38 @@ impl Database {
                  FROM providers WHERE id = ?1 AND app_type = ?2",
             )
             .map_err(|e| AppError::Database(e.to_string()))?;
-        let result = stmt.query_row(
-            params![id, app_type],
-            |row| {
-                let name: String = row.get(0)?;
-                let settings_config_str: String = row.get(1)?;
-                let website_url: Option<String> = row.get(2)?;
-                let category: Option<String> = row.get(3)?;
-                let created_at: Option<i64> = row.get(4)?;
-                let sort_index: Option<usize> = row.get(5)?;
-                let notes: Option<String> = row.get(6)?;
-                let icon: Option<String> = row.get(7)?;
-                let icon_color: Option<String> = row.get(8)?;
-                let meta_str: String = row.get(9)?;
-                let in_failover_queue: bool = row.get(10)?;
+        let result = stmt.query_row(params![id, app_type], |row| {
+            let name: String = row.get(0)?;
+            let settings_config_str: String = row.get(1)?;
+            let website_url: Option<String> = row.get(2)?;
+            let category: Option<String> = row.get(3)?;
+            let created_at: Option<i64> = row.get(4)?;
+            let sort_index: Option<usize> = row.get(5)?;
+            let notes: Option<String> = row.get(6)?;
+            let icon: Option<String> = row.get(7)?;
+            let icon_color: Option<String> = row.get(8)?;
+            let meta_str: String = row.get(9)?;
+            let in_failover_queue: bool = row.get(10)?;
 
-                let settings_config = serde_json::from_str(&settings_config_str).unwrap_or(serde_json::Value::Null);
-                let meta: ProviderMeta = serde_json::from_str(&meta_str).unwrap_or_default();
+            let settings_config =
+                serde_json::from_str(&settings_config_str).unwrap_or(serde_json::Value::Null);
+            let meta: ProviderMeta = serde_json::from_str(&meta_str).unwrap_or_default();
 
-                Ok(Provider {
-                    id: id.to_string(),
-                    name,
-                    settings_config,
-                    website_url,
-                    category,
-                    created_at,
-                    sort_index,
-                    notes,
-                    meta: Some(meta),
-                    icon,
-                    icon_color,
-                    in_failover_queue,
-                })
-            },
-        );
+            Ok(Provider {
+                id: id.to_string(),
+                name,
+                settings_config,
+                website_url,
+                category,
+                created_at,
+                sort_index,
+                notes,
+                meta: Some(meta),
+                icon,
+                icon_color,
+                in_failover_queue,
+            })
+        });
 
         match result {
             Ok(provider) => Ok(Some(provider)),
@@ -425,12 +425,9 @@ impl Database {
                  LIMIT 1",
             )
             .map_err(|e| AppError::Database(e.to_string()))?;
-        stmt.query_row(
-            params![app_type, preferred],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|e| AppError::Database(e.to_string()))
+        stmt.query_row(params![app_type, preferred], |row| row.get(0))
+            .optional()
+            .map_err(|e| AppError::Database(e.to_string()))
     }
 
     pub fn save_provider(&self, app_type: &str, provider: &Provider) -> Result<(), AppError> {

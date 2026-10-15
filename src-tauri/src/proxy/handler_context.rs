@@ -185,7 +185,6 @@ impl RequestContext {
                             }
                             _ => ProxyError::DatabaseError(e.to_string()),
                         })?
-                        .collect::<Vec<_>>()
                 };
 
                 let provider = providers

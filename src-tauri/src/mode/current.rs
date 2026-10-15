@@ -51,14 +51,18 @@ pub fn mode_state(app: &AppType) -> ModeState {
         }
     }
 
-    let result = state::mode_state(&DeviceStore::for_device(), app.as_str()).unwrap_or_else(|err| {
-        log::warn!("读取 {} 的模式状态失败，按直连处理: {err}", app.as_str());
-        ModeState::default()
-    });
+    let result =
+        state::mode_state(&DeviceStore::for_device(), app.as_str()).unwrap_or_else(|err| {
+            log::warn!("读取 {} 的模式状态失败，按直连处理: {err}", app.as_str());
+            ModeState::default()
+        });
 
     {
         let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
-        if guard.as_ref().is_none_or(|(at, _)| at.elapsed() >= CACHE_TTL) {
+        if guard
+            .as_ref()
+            .is_none_or(|(at, _)| at.elapsed() >= CACHE_TTL)
+        {
             *guard = Some((Instant::now(), HashMap::new()));
         }
         if let Some((_, states)) = guard.as_mut() {
