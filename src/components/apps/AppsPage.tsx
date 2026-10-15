@@ -570,7 +570,7 @@ function ToolRow({
   const canUninstall = Boolean(info?.version || broken || defaultInstall);
   const action: Exclude<ToolLifecycleAction, "uninstall"> | null =
     (busyAction !== "uninstall" ? busyAction : undefined) ??
-    ((isVersionLoading && !canUseCachedVersion) || broken
+    ((isVersionLoading && !canUseCachedVersion) || isBusy || broken
       ? null
       : !info?.version
         ? "install"
