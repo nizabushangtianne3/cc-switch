@@ -566,6 +566,7 @@ function ToolRow({
   const broken = Boolean(info?.installed_but_broken);
   const isBusy = tools.busyTools.has(tool);
   const busyAction = tools.busyTools.get(tool);
+  const isActionDisabled = (!canUseCachedVersion && isVersionLoading) || isBusy;
   const canUninstall = Boolean(info?.version || broken || defaultInstall);
   const action: Exclude<ToolLifecycleAction, "uninstall"> | null =
     (busyAction !== "uninstall" ? busyAction : undefined) ??
@@ -617,7 +618,7 @@ function ToolRow({
       variant="neutral"
       size="compact"
       onClick={() => void tools.handleRunToolAction([tool], action)}
-      disabled={isVersionLoading || isBusy}
+      disabled={isActionDisabled}
       aria-busy={isBusy}
     >
       {isBusy && busyAction !== "uninstall" ? (
@@ -671,7 +672,7 @@ function ToolRow({
           onValueChange={(value) =>
             void tools.handleToolShellChange(tool, value)
           }
-          disabled={isVersionLoading || isBusy}
+          disabled={isActionDisabled}
         >
           <SelectTrigger className="h-7 w-[82px] text-caption">
             <SelectValue />
@@ -691,7 +692,7 @@ function ToolRow({
           onValueChange={(value) =>
             void tools.handleToolShellFlagChange(tool, value)
           }
-          disabled={isVersionLoading || isBusy}
+          disabled={isActionDisabled}
         >
           <SelectTrigger className="h-7 w-[82px] text-caption">
             <SelectValue />
@@ -776,7 +777,7 @@ function ToolRow({
                   aria-label={t("appPage.moreActions", {
                     name: toolDisplayName(tool),
                   })}
-                  disabled={isVersionLoading || isBusy}
+                  disabled={isActionDisabled}
                   aria-busy={busyAction === "uninstall"}
                 >
                   {busyAction === "uninstall" ? (
