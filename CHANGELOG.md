@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Upstream v4.0.10-v4.0.12:** Synced deep-link import improvements, My Icons, tool uninstall flows, local inference presets, additional provider presets and related proxy/usage fixes.
 
+## [4.0.15] - 2026-10-16
+
+### Changed
+
+- **Performance:** Merged upstream v4.0.10-v4.0.12 features (deep link improvements, My Icons, tool uninstall, local inference presets, Turkish UI), added usage dashboard lazy filter loading, EXISTS-based empty state check, SQL statement caching, shared provider chain, and provider state IPC batching.
+
 ## [4.0.14] - 2026-10-15
 
 ### Changed

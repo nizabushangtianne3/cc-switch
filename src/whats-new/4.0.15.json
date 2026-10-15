@@ -1,0 +1,19 @@
+{
+  "version": "4.0.15",
+  "items": [
+    {
+      "type": "improve",
+      "zh": "合并上游 v4.0.10-v4.0.12 功能并大幅优化性能",
+      "zh-TW": "合併上游 v4.0.10-v4.0.12 功能並大幅最佳化效能",
+      "en": "Merged upstream v4.0.10-v4.0.12 features and significantly improved performance",
+      "ja": "アップストリーム v4.0.10-v4.0.12 機能を統合しパフォーマンスを大幅に改善"
+    },
+    {
+      "type": "new",
+      "zh": "新增自定义图标、工具卸载、本地推理预设和土耳其语",
+      "zh-TW": "新增自訂圖示、工具解除安裝、本地推理預設和土耳其語",
+      "en": "Added custom icons, tool uninstall, local inference presets and Turkish",
+      "ja": "カスタムアイコン、ツールアンインストール、ローカル推論プリセット、トルコ語を追加"
+    }
+  ]
+}
