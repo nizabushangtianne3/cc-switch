@@ -35,9 +35,7 @@ pub struct ProviderRouter {
     circuit_breakers: Arc<RwLock<HashMap<String, Arc<CircuitBreaker>>>>,
     /// Key 池轮询游标 - key 格式: "app_type:provider_id"
     key_cursors: Arc<RwLock<HashMap<String, usize>>>,
-    /// 故障转移队列短期缓存（TTL 1 秒），避免并发请求重复读库
-    #[allow(clippy::type_complexity)]
-    failover_cache: Arc<RwLock<HashMap<String, (std::time::Instant, Arc<Vec<Arc<Provider>>>)>>>,
+
 }
 
 impl ProviderRouter {
@@ -47,40 +45,10 @@ impl ProviderRouter {
             db,
             circuit_breakers: Arc::new(RwLock::new(HashMap::new())),
             key_cursors: Arc::new(RwLock::new(HashMap::new())),
-            failover_cache: Arc::new(RwLock::new(HashMap::new())),
+
         }
     }
 
-    /// 获取故障转移队列（带 1 秒 TTL 缓存），避免并发请求重复读库和反序列化 JSON。
-    async fn get_failover_queue_cached(
-        &self,
-        app_type: &str,
-    ) -> Result<Arc<Vec<Arc<Provider>>>, AppError> {
-        const CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(1);
-
-        {
-            let cache = self.failover_cache.read().await;
-            if let Some((cached_at, providers)) = cache.get(app_type) {
-                if cached_at.elapsed() < CACHE_TTL {
-                    return Ok(Arc::clone(providers));
-                }
-            }
-        }
-
-        let providers = self.db.get_failover_queue_providers(app_type)?;
-        let shared: Arc<Vec<Arc<Provider>>> =
-            Arc::new(providers.into_iter().map(Arc::new).collect());
-
-        {
-            let mut cache = self.failover_cache.write().await;
-            cache.insert(
-                app_type.to_string(),
-                (std::time::Instant::now(), Arc::clone(&shared)),
-            );
-        }
-
-        Ok(shared)
-    }
 
     /// 选择可用的供应商（支持故障转移）
     ///
@@ -130,8 +98,7 @@ impl ProviderRouter {
             result.push(Arc::new(current_provider.expect("checked above")));
         } else if auto_failover_enabled {
             // 故障转移开启：仅按队列顺序依次尝试（P1 → P2 → ...）
-            let queue_providers = self.get_failover_queue_cached(app_type).await?;
-            for provider in queue_providers.iter() {
+            for provider in self.db.get_failover_queue_providers(app_type)? {
                 if !provider_supports_failover(app_type, provider) {
                     continue;
                 }
@@ -141,7 +108,7 @@ impl ProviderRouter {
                 let breaker = self.get_or_create_circuit_breaker(&circuit_key).await;
 
                 if breaker.is_available().await {
-                    result.push(Arc::clone(provider));
+                    result.push(Arc::new(provider));
                 } else {
                     circuit_open_count += 1;
                 }
