@@ -346,7 +346,7 @@ export function useToolManagement() {
         const tool = toolVersionByName.get(toolName);
         return (
           !busyTools.has(toolName) &&
-          !loadingTools[toolName] &&
+          (!loadingTools[toolName] || toolVersionByName.has(toolName)) &&
           !tool?.update_blocked_by_node &&
           isUpdateAvailable(tool?.version, tool?.latest_version)
         );
