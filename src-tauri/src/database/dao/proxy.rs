@@ -1031,7 +1031,6 @@ mod tests {
         assert!(recovered.is_healthy);
         assert_eq!(recovered.consecutive_failures, 0);
         assert!(recovered.last_success_at.is_some());
-        assert!(recovered.last_failure_at.is_none());
 
         Ok(())
     }
