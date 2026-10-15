@@ -1,3 +1,4 @@
+// TODO(upstream-merge): fix fork compatibility with upstream v4.0.12 UI changes
 import { renderHook, act } from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { useSettings } from "@/hooks/useSettings";

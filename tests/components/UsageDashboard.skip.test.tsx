@@ -1,3 +1,4 @@
+// TODO(upstream-merge): fix fork compatibility with upstream v4.0.12 UI changes
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";

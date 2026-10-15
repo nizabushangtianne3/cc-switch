@@ -1,3 +1,4 @@
+// TODO(upstream-merge): fix fork compatibility with upstream v4.0.12 UI changes
 import { Suspense, type ComponentType } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
