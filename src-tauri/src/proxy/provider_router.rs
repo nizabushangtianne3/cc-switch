@@ -36,6 +36,7 @@ pub struct ProviderRouter {
     /// Key 池轮询游标 - key 格式: "app_type:provider_id"
     key_cursors: Arc<RwLock<HashMap<String, usize>>>,
     /// 故障转移队列短期缓存（TTL 1 秒），避免并发请求重复读库
+    #[allow(clippy::type_complexity)]
     failover_cache: Arc<RwLock<HashMap<String, (std::time::Instant, Arc<Vec<Arc<Provider>>>)>>>,
 }
 
@@ -131,7 +132,7 @@ impl ProviderRouter {
             // 故障转移开启：仅按队列顺序依次尝试（P1 → P2 → ...）
             let queue_providers = self.get_failover_queue_cached(app_type).await?;
             for provider in queue_providers.iter() {
-                if !provider_supports_failover(app_type, &provider) {
+                if !provider_supports_failover(app_type, provider) {
                     continue;
                 }
                 total_providers += 1;

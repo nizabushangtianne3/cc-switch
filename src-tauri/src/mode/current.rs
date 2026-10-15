@@ -18,6 +18,7 @@ use std::time::Instant;
 /// 模式状态短期缓存（500ms TTL），消除代理热路径每请求读 live-state.json。
 /// 模式切换由 mode::controller 写入文件，最迟 500ms 后缓存自动过期。
 fn mode_state_cache() -> &'static Mutex<Option<(Instant, HashMap<String, ModeState>)>> {
+    #[allow(clippy::type_complexity)]
     static CACHE: OnceLock<Mutex<Option<(Instant, HashMap<String, ModeState>)>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(None))
 }
