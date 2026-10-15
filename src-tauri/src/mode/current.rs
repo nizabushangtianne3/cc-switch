@@ -11,6 +11,16 @@ use crate::live::engine::DeviceStore;
 use crate::provider::Provider;
 
 use super::state::{self, ModeState};
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+use std::time::Instant;
+
+/// 模式状态短期缓存（500ms TTL），消除代理热路径每请求读 live-state.json。
+/// 模式切换由 mode::controller 写入文件，最迟 500ms 后缓存自动过期。
+fn mode_state_cache() -> &'static Mutex<Option<(Instant, HashMap<String, ModeState>)>> {
+    static CACHE: OnceLock<Mutex<Option<(Instant, HashMap<String, ModeState>)>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(None))
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Purpose {
@@ -26,10 +36,37 @@ pub fn mode_state(app: &AppType) -> ModeState {
     if !app.supports_local_proxy() {
         return ModeState::default();
     }
-    state::mode_state(&DeviceStore::for_device(), app.as_str()).unwrap_or_else(|err| {
+
+    const CACHE_TTL: std::time::Duration = std::time::Duration::from_millis(500);
+    let cache = mode_state_cache();
+
+    {
+        let guard = cache.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((cached_at, states)) = guard.as_ref() {
+            if cached_at.elapsed() < CACHE_TTL {
+                if let Some(state) = states.get(app.as_str()) {
+                    return state.clone();
+                }
+            }
+        }
+    }
+
+    let result = state::mode_state(&DeviceStore::for_device(), app.as_str()).unwrap_or_else(|err| {
         log::warn!("读取 {} 的模式状态失败，按直连处理: {err}", app.as_str());
         ModeState::default()
-    })
+    });
+
+    {
+        let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
+        if guard.as_ref().is_none_or(|(at, _)| at.elapsed() >= CACHE_TTL) {
+            *guard = Some((Instant::now(), HashMap::new()));
+        }
+        if let Some((_, states)) = guard.as_mut() {
+            states.insert(app.as_str().to_string(), result.clone());
+        }
+    }
+
+    result
 }
 
 pub fn is_proxy(app: &AppType) -> bool {

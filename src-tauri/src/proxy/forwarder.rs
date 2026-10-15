@@ -1705,7 +1705,7 @@ impl RequestForwarder {
             body.clone()
         } else {
             let (mapped_body, _original_model, _mapped_model) =
-                super::model_mapper::apply_model_mapping(body.clone(), provider);
+                super::model_mapper::apply_model_mapping(body, provider);
             mapped_body
         };
 

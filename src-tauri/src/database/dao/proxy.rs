@@ -6,6 +6,23 @@ use crate::error::AppError;
 use crate::proxy::types::*;
 
 use super::super::{lock_conn, Database};
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+use std::time::Instant;
+
+type ProxyRequestConfigTuple = (
+    AppProxyConfig,
+    RectifierConfig,
+    OptimizerConfig,
+    CopilotOptimizerConfig,
+);
+
+/// 代理请求配置短期缓存（1s TTL），消除并发请求重复读库。
+fn proxy_config_cache() -> &'static Mutex<HashMap<String, (Instant, ProxyRequestConfigTuple)>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, (Instant, ProxyRequestConfigTuple)>>> =
+        OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 pub(crate) const PRICING_SOURCE_RESPONSE: &str = "response";
 pub(crate) const PRICING_SOURCE_REQUEST: &str = "request";
@@ -202,7 +219,7 @@ impl Database {
         }
     }
 
-    /// 一次锁内读取代理请求热路径的全部配置。
+    /// 一次锁内读取代理请求热路径的全部配置（带 1s TTL 缓存）。
     pub async fn get_proxy_request_configs(
         &self,
         app_type: &str,
@@ -215,6 +232,16 @@ impl Database {
         ),
         AppError,
     > {
+        const CONFIG_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(1);
+        {
+            let cache = proxy_config_cache();
+            let guard = cache.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some((at, cached)) = guard.get(app_type) {
+                if at.elapsed() < CONFIG_CACHE_TTL {
+                    return Ok(cached.clone());
+                }
+            }
+        }
         let result = {
             let conn = lock_conn!(self.conn);
             let mut stmt = conn.prepare_cached(
@@ -251,6 +278,17 @@ impl Database {
         };
 
         let (config, runtime_configs) = result;
+        if let (Ok(app_config), Ok((rect, opt, cop))) = (&config, &runtime_configs) {
+            let cache = proxy_config_cache();
+            let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
+            guard.insert(
+                app_type.to_string(),
+                (
+                    Instant::now(),
+                    (app_config.clone(), rect.clone(), opt.clone(), cop.clone()),
+                ),
+            );
+        }
         match config {
             Err(rusqlite::Error::QueryReturnedNoRows) => {
                 self.init_proxy_config_rows().await?;
