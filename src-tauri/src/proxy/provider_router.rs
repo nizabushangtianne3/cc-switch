@@ -35,7 +35,6 @@ pub struct ProviderRouter {
     circuit_breakers: Arc<RwLock<HashMap<String, Arc<CircuitBreaker>>>>,
     /// Key 池轮询游标 - key 格式: "app_type:provider_id"
     key_cursors: Arc<RwLock<HashMap<String, usize>>>,
-
 }
 
 impl ProviderRouter {
@@ -45,7 +44,6 @@ impl ProviderRouter {
             db,
             circuit_breakers: Arc::new(RwLock::new(HashMap::new())),
             key_cursors: Arc::new(RwLock::new(HashMap::new())),
-
         }
     }
 
