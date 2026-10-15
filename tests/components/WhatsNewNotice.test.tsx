@@ -181,7 +181,7 @@ describe("WhatsNewNotice", () => {
       firstRunNoticeConfirmed: true,
       whatsNewSeenVersion: "4.0.1",
     };
-    mocks.getAll.mockResolvedValue({});
+    mocks.hasAnyProvider.mockResolvedValue(false);
     renderNotice();
     expect(await screen.findByText("whatsNew.updatedTo")).toBeInTheDocument();
   });

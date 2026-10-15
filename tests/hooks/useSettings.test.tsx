@@ -14,6 +14,7 @@ const syncCurrentProvidersLiveMock = vi.fn();
 const updateTrayMenuMock = vi.fn();
 const getCurrentMock = vi.fn();
 const getAllMock = vi.fn();
+const getStateMock = vi.fn();
 const getQueryDataMock = vi.fn();
 const invalidatePiDirectoryCachesMock = vi.fn();
 const toastErrorMock = vi.fn();
@@ -82,6 +83,7 @@ vi.mock("@/lib/api", () => ({
     updateTrayMenu: (...args: unknown[]) => updateTrayMenuMock(...args),
     getCurrent: (...args: unknown[]) => getCurrentMock(...args),
     getAll: (...args: unknown[]) => getAllMock(...args),
+    getState: (...args: unknown[]) => getStateMock(...args),
   },
 }));
 
@@ -156,6 +158,10 @@ describe("useSettings hook", () => {
     invalidatePiDirectoryCachesMock.mockReset();
     getCurrentMock.mockReset();
     getAllMock.mockReset();
+    getStateMock.mockReset().mockResolvedValue({
+      providers: {},
+      currentProviderId: "",
+    });
     getQueryDataMock.mockReset();
     toastErrorMock.mockReset();
     toastSuccessMock.mockReset();

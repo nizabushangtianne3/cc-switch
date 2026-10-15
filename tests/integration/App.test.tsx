@@ -716,19 +716,25 @@ describe("App integration with MSW", () => {
     let liveConfigManaged = true;
     let providerRequests = 0;
     server.use(
-      http.post("http://tauri.local/get_providers", async ({ request }) => {
-        const { app } = (await request.json()) as { app: string };
-        if (app !== "mcode") return;
-        providerRequests += 1;
-        return HttpResponse.json({
-          custom: {
-            id: "custom",
-            name: "Custom MiniMax Code",
-            settingsConfig: {},
-            meta: { liveConfigManaged },
-          },
-        });
-      }),
+      http.post(
+        "http://tauri.local/get_provider_state",
+        async ({ request }) => {
+          const { app } = (await request.json()) as { app: string };
+          if (app !== "mcode") return;
+          providerRequests += 1;
+          return HttpResponse.json({
+            providers: {
+              custom: {
+                id: "custom",
+                name: "Custom MiniMax Code",
+                settingsConfig: {},
+                meta: { liveConfigManaged },
+              },
+            },
+            currentProviderId: "custom",
+          });
+        },
+      ),
       http.post(
         "http://tauri.local/remove_provider_from_live_config",
         async ({ request }) => {

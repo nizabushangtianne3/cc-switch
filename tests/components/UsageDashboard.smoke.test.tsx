@@ -84,7 +84,7 @@ describe("UsageDashboard (smoke)", () => {
         totalCacheReadTokens: 1_640_000,
       },
     ]);
-    usageApiMock.getProviderStats.mockResolvedValue([
+    usageApiMock.getProviderStats.mockReset().mockResolvedValue([
       {
         providerId: "p1",
         appType: "claude",
@@ -98,7 +98,7 @@ describe("UsageDashboard (smoke)", () => {
         speedGenerationMs: 1_000_000,
       },
     ]);
-    usageApiMock.getModelStats.mockResolvedValue([
+    usageApiMock.getModelStats.mockReset().mockResolvedValue([
       {
         model: "kimi-k2.6",
         requestCount: 980,
