@@ -559,6 +559,8 @@ function ToolRow({
   const isVersionLoading =
     Boolean(tools.loadingTools[tool]) ||
     (tools.isLoadingTools && !tools.toolVersionByName.has(tool));
+  // 过期缓存后台重查时仍沿用已知的版本信息；真正需要禁用的是执行中的工具。
+  const canUseCachedVersion = info !== undefined;
   const isOutdated = isUpdateAvailable(info?.version, info?.latest_version);
   const nodeGap = isOutdated ? info?.update_blocked_by_node : null;
   const broken = Boolean(info?.installed_but_broken);
@@ -567,7 +569,7 @@ function ToolRow({
   const canUninstall = Boolean(info?.version || broken || defaultInstall);
   const action: Exclude<ToolLifecycleAction, "uninstall"> | null =
     (busyAction !== "uninstall" ? busyAction : undefined) ??
-    (isVersionLoading || broken
+    ((isVersionLoading && !canUseCachedVersion) || broken
       ? null
       : !info?.version
         ? "install"

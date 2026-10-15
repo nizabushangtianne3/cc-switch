@@ -330,6 +330,7 @@ export function useProviderStats(
         effective.model,
       );
     },
+    enabled: options?.enabled ?? true,
     placeholderData: keepPreviousData,
     refetchInterval: options?.refetchInterval ?? DEFAULT_REFETCH_INTERVAL_MS,
     refetchIntervalInBackground: options?.refetchIntervalInBackground ?? false,
@@ -360,6 +361,7 @@ export function useModelStats(
         effective.model,
       );
     },
+    enabled: options?.enabled ?? true,
     placeholderData: keepPreviousData,
     refetchInterval: options?.refetchInterval ?? DEFAULT_REFETCH_INTERVAL_MS,
     refetchIntervalInBackground: options?.refetchIntervalInBackground ?? false,
@@ -391,6 +393,7 @@ export function useApiKeyStats(
         effective.apiKeyId,
       );
     },
+    enabled: options?.enabled ?? true,
     placeholderData: keepPreviousData,
     refetchInterval: options?.refetchInterval ?? DEFAULT_REFETCH_INTERVAL_MS,
     refetchIntervalInBackground: options?.refetchIntervalInBackground ?? false,
