@@ -11,6 +11,7 @@ import type { WhatsNewEntry } from "@/lib/whatsNew";
 
 const mocks = vi.hoisted(() => ({
   getAll: vi.fn(),
+  hasAnyProvider: vi.fn(),
   save: vi.fn(),
   openExternal: vi.fn(),
   version: "4.0.4",
@@ -25,7 +26,10 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/api", () => ({
-  providersApi: { getAll: mocks.getAll },
+  providersApi: {
+    getAll: mocks.getAll,
+    hasAnyProvider: mocks.hasAnyProvider,
+  },
   settingsApi: { save: mocks.save, openExternal: mocks.openExternal },
 }));
 vi.mock("@/lib/query", () => ({
@@ -91,6 +95,7 @@ describe("WhatsNewNotice", () => {
     mocks.save.mockReset().mockResolvedValue(true);
     mocks.openExternal.mockReset().mockResolvedValue(undefined);
     mocks.getAll.mockReset().mockResolvedValue({ p1: { id: "p1" } });
+    mocks.hasAnyProvider.mockReset().mockResolvedValue(true);
   });
 
   it("lists every version since the last one seen and records the current version", async () => {
@@ -165,7 +170,7 @@ describe("WhatsNewNotice", () => {
       whatsNewSeenVersion: "4.0.1",
     };
     renderNotice();
-    await waitFor(() => expect(mocks.getAll).toHaveBeenCalled());
+    await waitFor(() => expect(mocks.hasAnyProvider).toHaveBeenCalled());
     await settle();
     expect(title()).not.toBeInTheDocument();
     expect(mocks.save).not.toHaveBeenCalled();

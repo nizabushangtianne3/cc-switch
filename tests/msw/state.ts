@@ -338,6 +338,16 @@ export const getProviders = (appType: AppId) =>
 
 export const getCurrentProviderId = (appType: AppId) => current[appType] ?? "";
 
+export const getProviderState = (appType: AppId) => ({
+  providers: getProviders(appType),
+  currentProviderId: getCurrentProviderId(appType),
+});
+
+export const hasAnyProvider = () =>
+  Object.values(providers).some((appProviders) =>
+    Object.keys(appProviders).some(Boolean),
+  );
+
 export const getLiveProviderIds = (
   appType: "opencode" | "openclaw" | "hermes",
 ) => [...liveProviderIds[appType]];

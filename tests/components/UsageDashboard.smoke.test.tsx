@@ -11,6 +11,7 @@ import { emitTauriEvent } from "../msw/tauriMocks";
 
 const usageApiMock = vi.hoisted(() => ({
   getUsageSummary: vi.fn(),
+  hasUsageData: vi.fn(),
   getUsageSummaryByApp: vi.fn(),
   getUsageTrends: vi.fn(),
   getProviderStats: vi.fn(),
@@ -67,6 +68,7 @@ describe("UsageDashboard (smoke)", () => {
       errors: [],
     });
     usageApiMock.getUsageSummary.mockResolvedValue(summary);
+    usageApiMock.hasUsageData.mockResolvedValue(true);
     usageApiMock.getUsageSummaryByApp.mockResolvedValue([
       { appType: "claude", summary },
     ]);
@@ -182,21 +184,24 @@ describe("UsageDashboard (smoke)", () => {
       </QueryClientProvider>,
     );
     await act(() => vi.advanceTimersByTimeAsync(10));
-    const queries = [
-      usageApiMock.getUsageSummary,
+    const activeQueries = [
       usageApiMock.getUsageSummaryByApp,
       usageApiMock.getUsageTrends,
-      usageApiMock.getProviderStats,
-      usageApiMock.getModelStats,
+      usageApiMock.hasUsageData,
       usageApiMock.getRequestLogs,
     ];
-    const counts = queries.map((query) => query.mock.calls.length);
+    const counts = activeQueries.map((query) => query.mock.calls.length);
     expect(counts.every((count) => count > 0)).toBe(true);
+    // 筛选选项懒加载：没打开下拉前不预取供应商和模型聚合。
+    expect(usageApiMock.getProviderStats).not.toHaveBeenCalled();
+    expect(usageApiMock.getModelStats).not.toHaveBeenCalled();
     // 没有新用量：扫描不触发重查，只有「今天」这类范围每分钟重算一次
     await act(() => vi.advanceTimersByTimeAsync(59000));
-    expect(queries.map((query) => query.mock.calls.length)).toEqual(counts);
+    expect(activeQueries.map((query) => query.mock.calls.length)).toEqual(
+      counts,
+    );
     await act(() => vi.advanceTimersByTimeAsync(1000));
-    expect(queries.map((query) => query.mock.calls.length)).toEqual(
+    expect(activeQueries.map((query) => query.mock.calls.length)).toEqual(
       counts.map((count) => count + 1),
     );
     expect(usageApiMock.syncSessionUsage).toHaveBeenCalledTimes(13);

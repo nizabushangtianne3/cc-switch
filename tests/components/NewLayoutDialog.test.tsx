@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getAll: vi.fn(),
+  hasAnyProvider: vi.fn(),
   save: vi.fn(),
   openExternal: vi.fn(),
   settings: undefined as
@@ -12,7 +13,10 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/api", () => ({
-  providersApi: { getAll: mocks.getAll },
+  providersApi: {
+    getAll: mocks.getAll,
+    hasAnyProvider: mocks.hasAnyProvider,
+  },
   settingsApi: { save: mocks.save, openExternal: mocks.openExternal },
 }));
 vi.mock("@/lib/query", () => ({
@@ -45,6 +49,7 @@ describe("NewLayoutDialog", () => {
       .mockImplementation(async (app: string) =>
         app === "codex" ? { p1: { id: "p1" } } : {},
       );
+    mocks.hasAnyProvider.mockReset().mockResolvedValue(true);
   });
 
   it("shows to returning users and records the confirmation", async () => {
@@ -96,21 +101,21 @@ describe("NewLayoutDialog", () => {
       newLayoutNoticeConfirmed: true,
     };
     renderDialog();
-    expect(mocks.getAll).not.toHaveBeenCalled();
+    expect(mocks.hasAnyProvider).not.toHaveBeenCalled();
     expect(screen.queryByText("newLayoutNotice.title")).not.toBeInTheDocument();
   });
 
   it("stays closed when no app has providers", async () => {
-    mocks.getAll.mockResolvedValue({});
+    mocks.hasAnyProvider.mockResolvedValue(false);
     renderDialog();
-    await waitFor(() => expect(mocks.getAll).toHaveBeenCalledTimes(10));
+    await waitFor(() => expect(mocks.hasAnyProvider).toHaveBeenCalledOnce());
     expect(screen.queryByText("newLayoutNotice.title")).not.toBeInTheDocument();
   });
 
   it("never shows to a fresh install that is seeing the welcome dialog", async () => {
     mocks.settings = { firstRunNoticeConfirmed: undefined };
     renderDialog();
-    expect(mocks.getAll).not.toHaveBeenCalled();
+    expect(mocks.hasAnyProvider).not.toHaveBeenCalled();
     expect(screen.queryByText("newLayoutNotice.title")).not.toBeInTheDocument();
   });
 });

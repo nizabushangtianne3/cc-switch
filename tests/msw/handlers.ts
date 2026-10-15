@@ -8,6 +8,8 @@ import {
   deleteSession,
   getCurrentProviderId,
   getLiveProviderIds,
+  getProviderState,
+  hasAnyProvider,
   getSessionMessages,
   getProviders,
   listProviders,
@@ -62,6 +64,15 @@ export const handlers = [
     const { app } = await withJson<{ app: AppId }>(request);
     return success(getCurrentProviderId(app));
   }),
+
+  http.post(`${TAURI_ENDPOINT}/get_provider_state`, async ({ request }) => {
+    const { app } = await withJson<{ app: AppId }>(request);
+    return success(getProviderState(app));
+  }),
+
+  http.post(`${TAURI_ENDPOINT}/has_any_provider`, () =>
+    success(hasAnyProvider()),
+  ),
 
   http.post(
     `${TAURI_ENDPOINT}/update_providers_sort_order`,
