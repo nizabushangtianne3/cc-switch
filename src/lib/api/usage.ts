@@ -67,6 +67,10 @@ export const usageApi = {
     });
   },
 
+  hasUsageData: async (): Promise<boolean> => {
+    return invoke("has_usage_data");
+  },
+
   getSessionUsageSummary: async (
     appType: string,
     sessionId: string,

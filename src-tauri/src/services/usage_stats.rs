@@ -1756,6 +1756,21 @@ impl Database {
         Ok(first.map(|day| day.format("%Y-%m-%d").to_string()))
     }
 
+    /// 检查是否存在任何用量数据（明细或日聚合），用于空状态判断。
+    /// 比全量聚合轻得多：只检查是否存在至少一行，不做 COUNT/SUM。
+    pub fn has_usage_data(&self) -> Result<bool, AppError> {
+        let conn = lock_conn!(self.conn);
+        let exists: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM proxy_request_logs)
+                  OR EXISTS(SELECT 1 FROM usage_daily_rollups)",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        Ok(exists)
+    }
+
     /// 获取 Provider 统计
     pub fn get_provider_stats(
         &self,

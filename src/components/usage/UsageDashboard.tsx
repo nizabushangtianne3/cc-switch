@@ -185,6 +185,9 @@ export function UsageDashboard({
   const [showRebuildConfirm, setShowRebuildConfirm] = useState(false);
   const [rebuildingCodex, setRebuildingCodex] = useState(false);
   const [syncingSession, setSyncingSession] = useState(false);
+  const [providerFilterOpened, setProviderFilterOpened] = useState(false);
+  const [modelFilterOpened, setModelFilterOpened] = useState(false);
+  const [keyFilterOpened, setKeyFilterOpened] = useState(false);
   const [lastManualSyncAt, setLastManualSyncAt] = useState(
     lastManualSessionSyncAt,
   );
@@ -330,28 +333,29 @@ export function UsageDashboard({
   const refetch = {
     refetchInterval: false as const,
   };
+  // 筛选选项只在用户首次打开对应下拉时才加载，避免页面打开时并发跑三组聚合。
   const { data: providerOptionsData } = useProviderStats(
     range,
     { appType },
-    refetch,
+    { ...refetch, enabled: providerFilterOpened },
   );
   const { data: modelOptionsData } = useModelStats(
     range,
     { appType, providerName },
-    refetch,
+    { ...refetch, enabled: modelFilterOpened },
   );
   const { data: apiKeyOptionsData } = useApiKeyStats(
     range,
     { appType, providerName, model },
-    refetch,
+    { ...refetch, enabled: keyFilterOpened },
   );
-  // 有没有任何用量（不分时间范围）：一条都没有时显示空状态
-  const { data: allTimeSummary } = useQuery({
-    queryKey: [...usageKeys.all, "all-time-summary"],
-    queryFn: () => usageApi.getUsageSummary(),
+  // 有没有任何用量（不分时间范围）：用 EXISTS 代替全量聚合
+  const { data: hasUsageData } = useQuery({
+    queryKey: [...usageKeys.all, "has-usage-data"],
+    queryFn: () => usageApi.hasUsageData(),
     refetchInterval: refetch.refetchInterval,
   });
-  const isEmpty = allTimeSummary != null && allTimeSummary.totalRequests === 0;
+  const isEmpty = hasUsageData === false;
 
   const providerOptions = useMemo(() => {
     const counts = new Map<string, number>();
@@ -570,7 +574,9 @@ export function UsageDashboard({
         ))}
       </div>
       <div className="min-w-2 flex-1" />
-      <DropdownMenu>
+      <DropdownMenu
+        onOpenChange={(open) => open && setProviderFilterOpened(true)}
+      >
         <DropdownMenuTrigger asChild>
           <Button
             type="button"
@@ -621,7 +627,7 @@ export function UsageDashboard({
           })}
         </DropdownMenuContent>
       </DropdownMenu>
-      <DropdownMenu>
+      <DropdownMenu onOpenChange={(open) => open && setModelFilterOpened(true)}>
         <DropdownMenuTrigger asChild>
           <Button
             type="button"
@@ -671,7 +677,7 @@ export function UsageDashboard({
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
-      <DropdownMenu>
+      <DropdownMenu onOpenChange={(open) => open && setKeyFilterOpened(true)}>
         <DropdownMenuTrigger asChild>
           <Button
             type="button"
