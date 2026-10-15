@@ -96,7 +96,7 @@ impl ProviderRouter {
         } else if auto_failover_enabled {
             // 故障转移开启：仅按队列顺序依次尝试（P1 → P2 → ...）
             for provider in self.db.get_failover_queue_providers(app_type)? {
-                if !provider_supports_failover(app_type, provider) {
+                if !provider_supports_failover(app_type, &provider) {
                     continue;
                 }
                 total_providers += 1;
