@@ -267,9 +267,9 @@ export function AppsPage() {
               disabled={tools.isLoadingTools || tools.isAnyBusy}
               onClick={() => {
                 setIsManualChecking(true);
-                void tools.checkForUpdates().finally(() =>
-                  setIsManualChecking(false),
-                );
+                void tools
+                  .checkForUpdates()
+                  .finally(() => setIsManualChecking(false));
               }}
             >
               <RefreshCw
