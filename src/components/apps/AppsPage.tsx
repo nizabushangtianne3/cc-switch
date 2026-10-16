@@ -200,12 +200,17 @@ export function AppsPage() {
   // 检查更新时各工具逐个进入加载，可升级列表会先清零再逐个回来；页头沿用检查前的数，
   // 检查完再一次性更新，免得「全部升级」闪没又出现、数字逐个跳。
   const settledUpdatableCount = useRef(0);
+  const settledUpdatableNames = useRef<ToolName[]>([]);
   if (!tools.isLoadingTools) {
+    settledUpdatableNames.current = [...tools.updatableToolNames];
     settledUpdatableCount.current = tools.updatableToolNames.length;
   }
   const updatableCount = tools.isLoadingTools
     ? settledUpdatableCount.current
     : tools.updatableToolNames.length;
+  const batchUpdatableToolNames = tools.isLoadingTools
+    ? settledUpdatableNames.current
+    : tools.updatableToolNames;
 
   const lastChecked = tools.lastCheckedAt
     ? t("appsPage.lastChecked", {
@@ -236,7 +241,7 @@ export function AppsPage() {
                 aria-busy={Boolean(tools.batchAction)}
                 onClick={() =>
                   void tools.handleRunToolAction(
-                    tools.updatableToolNames,
+                    batchUpdatableToolNames,
                     "update",
                     { fromBatchEntry: true },
                   )
