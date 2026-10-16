@@ -143,6 +143,7 @@ export function AppsPage() {
   const [expanded, setExpanded] = useState<Partial<Record<ToolName, boolean>>>(
     {},
   );
+  const [isManualChecking, setIsManualChecking] = useState(false);
   // 「诊断安装冲突」（和升级后的自动补诊）有结果的行自动展开，否则点了诊断看起来没反应
   const diagnosedTools = useMemo(
     () => Object.keys(tools.toolDiagnostics) as ToolName[],
@@ -238,6 +239,7 @@ export function AppsPage() {
                 variant="neutral"
                 size="regular"
                 disabled={
+                  isManualChecking ||
                   (tools.isLoadingTools &&
                     tools.toolVersionByName.size === 0) ||
                   Boolean(tools.batchAction)
@@ -263,7 +265,12 @@ export function AppsPage() {
               variant="neutral"
               size="regular"
               disabled={tools.isLoadingTools || tools.isAnyBusy}
-              onClick={() => void tools.checkForUpdates()}
+              onClick={() => {
+                setIsManualChecking(true);
+                void tools.checkForUpdates().finally(() =>
+                  setIsManualChecking(false),
+                );
+              }}
             >
               <RefreshCw
                 className={cn(
