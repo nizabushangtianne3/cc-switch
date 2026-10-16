@@ -237,7 +237,11 @@ export function AppsPage() {
               <Button
                 variant="neutral"
                 size="regular"
-                disabled={tools.isLoadingTools || Boolean(tools.batchAction)}
+                disabled={
+                  (tools.isLoadingTools &&
+                    tools.toolVersionByName.size === 0) ||
+                  Boolean(tools.batchAction)
+                }
                 aria-busy={Boolean(tools.batchAction)}
                 onClick={() =>
                   void tools.handleRunToolAction(
