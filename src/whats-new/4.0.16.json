@@ -1,0 +1,33 @@
+{
+  "version": "4.0.16",
+  "items": [
+    {
+      "type": "improve",
+      "zh": "同步上游 v4.0.13-v4.0.15，保留 Key 池与用量统计",
+      "zh-TW": "同步上游 v4.0.13-v4.0.15，保留 Key 池與用量統計",
+      "en": "Synced upstream v4.0.13-v4.0.15, kept the fork key pool and usage stats",
+      "ja": "アップストリーム v4.0.13-v4.0.15 を統合、Key プールと用量統計は保持"
+    },
+    {
+      "type": "new",
+      "zh": "托盘换成玻璃面板，点图标直接弹出",
+      "zh-TW": "托盤換成玻璃面板，點圖示直接彈出",
+      "en": "The tray menu is now a glass panel that opens from the icon",
+      "ja": "トレイメニューをガラスパネル化し、アイコンから直接開く"
+    },
+    {
+      "type": "new",
+      "zh": "用量趋势图可选柱形图或曲线面积图",
+      "zh-TW": "用量趨勢圖可選長條圖或曲線面積圖",
+      "en": "Usage trend chart can switch between bar and area styles",
+      "ja": "利用推移グラフを棒グラフと面グラフで切替可能に"
+    },
+    {
+      "type": "fix",
+      "zh": "修复 Claude Code 会话识别与 DeepSeek 400",
+      "zh-TW": "修正 Claude Code 工作階段識別與 DeepSeek 400",
+      "en": "Fixed Claude Code session identity and DeepSeek 400 errors",
+      "ja": "Claude Code のセッション認識と DeepSeek の 400 を修正"
+    }
+  ]
+}

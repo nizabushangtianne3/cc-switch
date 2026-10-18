@@ -5,11 +5,21 @@ All notable changes to CC Switch will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - Upstream sync
+## [4.0.16] - 2026-10-18
 
 ### Added
 
 - **Upstream v4.0.13-v4.0.15:** Synced the glass tray panel, usage trend chart styles and display settings, Claude Desktop model fetching for managed OAuth providers, WSL Hermes live WAL reads, hardened settings save/load, payload-scaled WebDAV/S3 transfer timeouts, provider drag sorting, and related proxy, i18n and preset updates. The fork's multi-key pools, key-level usage statistics and single-key persistence are unchanged.
+
+### Changed
+
+- **Tray:** The native tray menu is replaced by a glass panel on macOS and Windows; Linux (AppIndicator) keeps the native menu with an entry that opens the panel. The panel is a separate build entry and is excluded from window-state persistence.
+- **Usage page:** The trend chart can be drawn as bars or an area, display settings live in a Settings tab (currency, sidebar Today items, request log columns), and the app icon on macOS gets a white rounded-square background.
+
+### Fixed
+
+- **Proxy:** Routing recognizes Claude Code JSON session ids again, replays DeepSeek tool history without a 400, keeps the Codex beta marker in aggregation, and preserves Claude Desktop session identity.
+- **Settings:** Windows settings no longer reset to defaults after an update, and a partially readable `settings.json` is backed up instead of silently overwritten.
 
 ## [4.0.15] - 2026-10-17
 
