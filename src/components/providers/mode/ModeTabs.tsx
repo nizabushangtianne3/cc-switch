@@ -52,6 +52,8 @@ interface ModeTabsProps {
     onChange: (enabled: boolean) => void;
   };
   onOpenRouteSettings?: () => void;
+  /** Codex 聚合页签上的「聚合设置」（子代理模型、经典子代理） */
+  onOpenStackSettings?: () => void;
   /** 供应商搜索框挂在状态行右侧（由列表通过 portal 渲染进来） */
   searchSlotRef?: (node: HTMLDivElement | null) => void;
 }
@@ -69,6 +71,7 @@ export const ModeTabs = memo(function ModeTabs({
   status,
   failover,
   onOpenRouteSettings,
+  onOpenStackSettings,
   searchSlotRef,
 }: ModeTabsProps) {
   const { t } = useTranslation();
@@ -179,6 +182,19 @@ export const ModeTabs = memo(function ModeTabs({
             className="h-8 w-8 shrink-0 px-0"
             aria-label={t("mode.routeSettings")}
             onClick={onOpenRouteSettings}
+          >
+            <Settings2 className="h-4 w-4" strokeWidth={1.75} />
+          </Button>
+        </HoverTip>
+      )}
+      {onOpenStackSettings && (
+        <HoverTip content={t("mode.stackSettings.title")}>
+          <Button
+            variant="quiet"
+            size="compact"
+            className="h-8 w-8 shrink-0 px-0"
+            aria-label={t("mode.stackSettings.title")}
+            onClick={onOpenStackSettings}
           >
             <Settings2 className="h-4 w-4" strokeWidth={1.75} />
           </Button>

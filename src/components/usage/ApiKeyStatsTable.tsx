@@ -6,11 +6,11 @@ import { TablePagination, useClientPagination } from "./TablePagination";
 import { cn } from "@/lib/utils";
 import {
   fmtInt,
-  fmtUsd,
   formatTokensCompact,
   getLocaleFromLanguage,
   getResolvedLang,
 } from "./format";
+import { useMoneyFormat } from "@/hooks/useMoneyFormat";
 import { usageTable } from "./usageTable";
 import { getUsageProviderLabel } from "./providerLabel";
 import { SuccessSpeedCells, SuccessSpeedHeaders } from "./statsColumns";
@@ -50,6 +50,7 @@ export function ApiKeyStatsTable({
 }: ApiKeyStatsTableProps) {
   const { t, i18n } = useTranslation();
   const locale = getLocaleFromLanguage(getResolvedLang(i18n));
+  const { money, moneyTitle } = useMoneyFormat();
   const { data: stats, isLoading } = useApiKeyStats(
     range,
     { appType, providerName, model, apiKeyId },
@@ -129,9 +130,9 @@ export function ApiKeyStatsTable({
                     </td>
                     <td
                       className={cn(usageTable.td, "font-medium")}
-                      title={fmtUsd(stat.totalCost, 6)}
+                      title={moneyTitle(stat.totalCost, 6)}
                     >
-                      {fmtUsd(stat.totalCost, 2)}
+                      {money(stat.totalCost, 2)}
                     </td>
                     <SuccessSpeedCells stat={stat} />
                   </tr>

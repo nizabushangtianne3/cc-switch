@@ -1,5 +1,5 @@
 import { CSS } from "@dnd-kit/utilities";
-import { DndContext, closestCenter } from "@dnd-kit/core";
+import { DndContext, closestCenter, type Modifier } from "@dnd-kit/core";
 import {
   SortableContext,
   useSortable,
@@ -51,7 +51,6 @@ import { usePiCurrentState } from "@/lib/query/pi";
 import { isHermesReadOnlyProvider } from "@/config/hermesProviderPresets";
 import {
   buildAdditiveSections,
-  buildDesktopSections,
   buildSwitchSections,
   type CardPresentation,
   type ProviderSection,
@@ -60,6 +59,10 @@ import {
 
 /** 切换式应用（Claude Code / Codex / Gemini CLI / Grok Build）的模式状态和动作，由供应商页传入。 */
 export type SwitchModeProps = Omit<SwitchModeInput, "app" | "t" | "providers">;
+
+const verticalDragModifiers: Modifier[] = [
+  ({ transform }) => ({ ...transform, x: 0 }),
+];
 
 interface ProviderListProps {
   providers: Record<string, Provider>;
@@ -333,14 +336,6 @@ function ProviderListComponent({
         queue: switchMode.queue.filter((id) => known.has(id)),
       });
     }
-    if (appId === "claude-desktop") {
-      return buildDesktopSections({
-        t,
-        providers: filteredProviders,
-        currentId: currentProviderId,
-        onSwitch,
-      });
-    }
     const defaultPrimary = openclawDefaultModel?.primary ?? "";
     const slash = defaultPrimary.indexOf("/");
     return buildAdditiveSections({
@@ -589,6 +584,7 @@ function ProviderListComponent({
       ) : (
         <DndContext
           sensors={sensors}
+          modifiers={verticalDragModifiers}
           collisionDetection={closestCenter}
           onDragEnd={handleDragEnd}
         >
@@ -652,8 +648,10 @@ const SortableProviderCard = memo(function SortableProviderCard(
   } = useSortable({ id: props.provider.id });
 
   const style: CSSProperties = {
-    transform: CSS.Transform.toString(transform),
+    transform: CSS.Translate.toString(transform),
     transition,
+    position: "relative",
+    zIndex: isDragging ? 10 : undefined,
   };
 
   return (
