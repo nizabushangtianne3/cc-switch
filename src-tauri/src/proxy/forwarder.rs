@@ -9095,10 +9095,10 @@ mod tests {
                         &AppType::ClaudeDesktop,
                         http::Method::POST,
                         "/v1/messages",
-                        body,
+                        &body,
                         HeaderMap::new(),
                         Extensions::new(),
-                        vec![kimi],
+                        &[kimi],
                     )
                     .await
                     .map_err(|e| e.error)

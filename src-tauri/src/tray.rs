@@ -2598,19 +2598,6 @@ pub fn refresh_tray_menu(app: &tauri::AppHandle) {
     crate::tray_panel::notify_changed(app);
 }
 
-pub fn update_menu(app: &tauri::AppHandle, state: &AppState) {
-    match create_tray_menu(app, state) {
-        Ok(new_menu) => {
-            if let Some(tray) = app.tray_by_id(TRAY_ID) {
-                if let Err(e) = tray.set_menu(Some(new_menu)) {
-                    log::error!("刷新托盘菜单失败: {e}");
-                }
-            }
-        }
-        Err(e) => log::error!("创建托盘菜单失败: {e}"),
-    }
-}
-
 /// 悬停到托盘图标时：问题区该出现 / 该消失了（路由服务停了、又起来了）、反馈行显示过了或到点了，
 /// 就重建菜单。只在变了时重建，菜单还没打开，不会被关掉。
 pub fn refresh_tray_if_problems_changed(app: &tauri::AppHandle) {
