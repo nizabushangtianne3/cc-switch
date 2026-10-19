@@ -1857,6 +1857,16 @@ pub(crate) fn chat_completion_to_response_with_context(
         .ok_or_else(|| ProxyError::TransformError("No message in chat choice".to_string()))?;
 
     let response_id = response_id_from_chat_id(body.get("id").and_then(|v| v.as_str()));
+    let mut message = message.clone();
+    let dsml_calls = super::deepseek_dsml::merge_dsml_tool_calls_into_message(
+        &mut message,
+        &format!("call_dsml_{response_id}_"),
+    );
+    if dsml_calls > 0 {
+        log::debug!("[DSML] recovered {dsml_calls} tool call(s) from Chat message text");
+    }
+    let message = &message;
+
     let model = body.get("model").and_then(|v| v.as_str()).unwrap_or("");
     let created_at = body.get("created").and_then(|v| v.as_u64()).unwrap_or(0);
     let finish_reason = choice.get("finish_reason").and_then(|v| v.as_str());

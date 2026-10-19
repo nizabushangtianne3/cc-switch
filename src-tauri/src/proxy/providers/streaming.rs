@@ -2,6 +2,7 @@
 //!
 //! 实现 OpenAI SSE → Anthropic SSE 格式转换
 
+use super::deepseek_dsml::{DsmlStreamOutput, DsmlStreamSplitter};
 use super::inline_think::InlineThinkSplitter;
 use crate::proxy::sse::{strip_sse_field, take_sse_block};
 use bytes::Bytes;
@@ -238,6 +239,142 @@ fn open_block_stop_events(
     events
 }
 
+fn close_anthropic_block(index: u32) -> String {
+    sse_event_string(json!({
+        "type": "content_block_stop",
+        "index": index
+    }))
+}
+
+fn close_open_tool_blocks(open_tool_block_indices: &mut HashSet<u32>) -> Vec<String> {
+    let mut indices: Vec<u32> = open_tool_block_indices.iter().copied().collect();
+    indices.sort_unstable();
+    open_tool_block_indices.clear();
+    indices
+        .into_iter()
+        .map(close_anthropic_block)
+        .collect::<Vec<_>>()
+}
+
+/// Convert DSML-filtered text and recovered tool calls into Anthropic SSE
+/// events. A recovered tool call is emitted as a complete tool_use block.
+#[allow(clippy::too_many_arguments)]
+fn dsml_output_events(
+    output: DsmlStreamOutput,
+    text_block_type: &'static str,
+    next_content_index: &mut u32,
+    current_non_tool_block_type: &mut Option<&'static str>,
+    current_non_tool_block_index: &mut Option<u32>,
+    open_tool_block_indices: &mut HashSet<u32>,
+    dsml_call_counter: &mut usize,
+    response_id: &str,
+) -> Vec<String> {
+    let mut events = Vec::new();
+    if let Some(text) = output.text {
+        events.extend(non_tool_block_events(
+            text_block_type,
+            &text,
+            next_content_index,
+            current_non_tool_block_type,
+            current_non_tool_block_index,
+        ));
+    }
+    for call in output.tool_calls {
+        if let Some(index) = current_non_tool_block_index.take() {
+            events.push(close_anthropic_block(index));
+        }
+        *current_non_tool_block_type = None;
+        events.extend(close_open_tool_blocks(open_tool_block_indices));
+
+        let index = *next_content_index;
+        *next_content_index += 1;
+        let call_id = format!("call_dsml_{response_id}_{}", *dsml_call_counter);
+        *dsml_call_counter += 1;
+        events.push(sse_event_string(json!({
+            "type": "content_block_start",
+            "index": index,
+            "content_block": {
+                "type": "tool_use",
+                "id": call_id,
+                "name": call.name
+            }
+        })));
+        if !call.arguments.is_empty() {
+            events.push(sse_event_string(json!({
+                "type": "content_block_delta",
+                "index": index,
+                "delta": {
+                    "type": "input_json_delta",
+                    "partial_json": call.arguments
+                }
+            })));
+        }
+        events.push(close_anthropic_block(index));
+    }
+    events
+}
+
+/// Boundary flush shared by finish_reason, [DONE], stream end and stream
+/// errors: inline thinking first, then both DSML splitters.
+#[allow(clippy::too_many_arguments)]
+fn flush_inline_and_dsml_events(
+    inline_think: &mut InlineThinkSplitter,
+    dsml_content: &mut DsmlStreamSplitter,
+    dsml_reasoning: &mut DsmlStreamSplitter,
+    next_content_index: &mut u32,
+    current_non_tool_block_type: &mut Option<&'static str>,
+    current_non_tool_block_index: &mut Option<u32>,
+    open_tool_block_indices: &mut HashSet<u32>,
+    dsml_call_counter: &mut usize,
+    response_id: &str,
+) -> Vec<String> {
+    let mut events = Vec::new();
+    let (thinking, text) = inline_think.flush();
+    if let Some(thinking) = thinking {
+        events.extend(non_tool_block_events(
+            "thinking",
+            &thinking,
+            next_content_index,
+            current_non_tool_block_type,
+            current_non_tool_block_index,
+        ));
+    }
+    if let Some(text) = text {
+        let output = dsml_content.push(&text);
+        events.extend(dsml_output_events(
+            output,
+            "text",
+            next_content_index,
+            current_non_tool_block_type,
+            current_non_tool_block_index,
+            open_tool_block_indices,
+            dsml_call_counter,
+            response_id,
+        ));
+    }
+    events.extend(dsml_output_events(
+        dsml_content.flush(),
+        "text",
+        next_content_index,
+        current_non_tool_block_type,
+        current_non_tool_block_index,
+        open_tool_block_indices,
+        dsml_call_counter,
+        response_id,
+    ));
+    events.extend(dsml_output_events(
+        dsml_reasoning.flush(),
+        "thinking",
+        next_content_index,
+        current_non_tool_block_type,
+        current_non_tool_block_index,
+        open_tool_block_indices,
+        dsml_call_counter,
+        response_id,
+    ));
+    events
+}
+
 /// 创建 Anthropic SSE 流
 pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
     stream: impl Stream<Item = Result<Bytes, E>> + Send + 'static,
@@ -261,6 +398,9 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
         let mut current_non_tool_block_type: Option<&'static str> = None;
         let mut current_non_tool_block_index: Option<u32> = None;
         let mut inline_think = InlineThinkSplitter::default();
+        let mut dsml_content = DsmlStreamSplitter::default();
+        let mut dsml_reasoning = DsmlStreamSplitter::default();
+        let mut dsml_call_counter = 0usize;
         let mut tool_blocks_by_index: HashMap<usize, ToolBlockState> = HashMap::new();
         let mut open_tool_block_indices: HashSet<u32> = HashSet::new();
 
@@ -283,21 +423,20 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
 
                                     // 流结束边界：冲刷 inline think 残留（幂等，通常已在前面的
                                     // finish_reason 边界冲刷过）。
-                                    let (thinking, text) = inline_think.flush();
-                                    for (block_type, delta) in
-                                        [("thinking", thinking), ("text", text)]
-                                    {
-                                        if let Some(delta) = &delta {
-                                            for sse_data in non_tool_block_events(
-                                                block_type,
-                                                delta,
-                                                &mut next_content_index,
-                                                &mut current_non_tool_block_type,
-                                                &mut current_non_tool_block_index,
-                                            ) {
-                                                yield Ok(Bytes::from(sse_data));
-                                            }
-                                        }
+                                    let response_id =
+                                        message_id.as_deref().unwrap_or("ccswitch");
+                                    for sse_data in flush_inline_and_dsml_events(
+                                        &mut inline_think,
+                                        &mut dsml_content,
+                                        &mut dsml_reasoning,
+                                        &mut next_content_index,
+                                        &mut current_non_tool_block_type,
+                                        &mut current_non_tool_block_index,
+                                        &mut open_tool_block_indices,
+                                        &mut dsml_call_counter,
+                                        response_id,
+                                    ) {
+                                        yield Ok(Bytes::from(sse_data));
                                     }
 
                                     // [DONE] 边界：补关仍开着的块。finish_reason 缺失
@@ -401,12 +540,18 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                             .as_ref()
                                             .filter(|r| !r.is_empty())
                                         {
-                                            for sse_data in non_tool_block_events(
+                                            let output = dsml_reasoning.push(reasoning);
+                                            let response_id =
+                                                message_id.as_deref().unwrap_or("ccswitch");
+                                            for sse_data in dsml_output_events(
+                                                output,
                                                 "thinking",
-                                                reasoning,
                                                 &mut next_content_index,
                                                 &mut current_non_tool_block_type,
                                                 &mut current_non_tool_block_index,
+                                                &mut open_tool_block_indices,
+                                                &mut dsml_call_counter,
+                                                response_id,
                                             ) {
                                                 yield Ok(Bytes::from(sse_data));
                                             }
@@ -418,19 +563,33 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                         if let Some(content) = &choice.delta.content {
                                             if !content.is_empty() {
                                                 let (thinking, text) = inline_think.push(content);
-                                                for (block_type, delta) in
-                                                    [("thinking", thinking), ("text", text)]
-                                                {
-                                                    if let Some(delta) = &delta {
-                                                        for sse_data in non_tool_block_events(
-                                                            block_type,
-                                                            delta,
-                                                            &mut next_content_index,
-                                                            &mut current_non_tool_block_type,
-                                                            &mut current_non_tool_block_index,
-                                                        ) {
-                                                            yield Ok(Bytes::from(sse_data));
-                                                        }
+                                                if let Some(thinking) = thinking {
+                                                    for sse_data in non_tool_block_events(
+                                                        "thinking",
+                                                        &thinking,
+                                                        &mut next_content_index,
+                                                        &mut current_non_tool_block_type,
+                                                        &mut current_non_tool_block_index,
+                                                    ) {
+                                                        yield Ok(Bytes::from(sse_data));
+                                                    }
+                                                }
+                                                if let Some(text) = text {
+                                                    let output = dsml_content.push(&text);
+                                                    let response_id = message_id
+                                                        .as_deref()
+                                                        .unwrap_or("ccswitch");
+                                                    for sse_data in dsml_output_events(
+                                                        output,
+                                                        "text",
+                                                        &mut next_content_index,
+                                                        &mut current_non_tool_block_type,
+                                                        &mut current_non_tool_block_index,
+                                                        &mut open_tool_block_indices,
+                                                        &mut dsml_call_counter,
+                                                        response_id,
+                                                    ) {
+                                                        yield Ok(Bytes::from(sse_data));
                                                     }
                                                 }
                                             }
@@ -442,21 +601,20 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                                 // 工具调用边界：先冲刷 inline think 残留再关块。
                                                 // 拖到 finish_reason 才下发的话，这些内容会在
                                                 // 工具块打开之后才开块，顺序颠倒且块交叠。
-                                                let (thinking, text) = inline_think.flush();
-                                                for (block_type, delta) in
-                                                    [("thinking", thinking), ("text", text)]
-                                                {
-                                                    if let Some(delta) = &delta {
-                                                        for sse_data in non_tool_block_events(
-                                                            block_type,
-                                                            delta,
-                                                            &mut next_content_index,
-                                                            &mut current_non_tool_block_type,
-                                                            &mut current_non_tool_block_index,
-                                                        ) {
-                                                            yield Ok(Bytes::from(sse_data));
-                                                        }
-                                                    }
+                                                let response_id =
+                                                    message_id.as_deref().unwrap_or("ccswitch");
+                                                for sse_data in flush_inline_and_dsml_events(
+                                                    &mut inline_think,
+                                                    &mut dsml_content,
+                                                    &mut dsml_reasoning,
+                                                    &mut next_content_index,
+                                                    &mut current_non_tool_block_type,
+                                                    &mut current_non_tool_block_index,
+                                                    &mut open_tool_block_indices,
+                                                    &mut dsml_call_counter,
+                                                    response_id,
+                                                ) {
+                                                    yield Ok(Bytes::from(sse_data));
                                                 }
 
                                                 if let Some(index) = current_non_tool_block_index.take() {
@@ -629,21 +787,20 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
 
                                             // finish_reason 边界：冲刷 inline think 残留
                                             // （未闭合的 think 块按思考内容下发），再统一关块。
-                                            let (thinking, text) = inline_think.flush();
-                                            for (block_type, delta) in
-                                                [("thinking", thinking), ("text", text)]
-                                            {
-                                                if let Some(delta) = &delta {
-                                                    for sse_data in non_tool_block_events(
-                                                        block_type,
-                                                        delta,
-                                                        &mut next_content_index,
-                                                        &mut current_non_tool_block_type,
-                                                        &mut current_non_tool_block_index,
-                                                    ) {
-                                                        yield Ok(Bytes::from(sse_data));
-                                                    }
-                                                }
+                                            let response_id =
+                                                message_id.as_deref().unwrap_or("ccswitch");
+                                            for sse_data in flush_inline_and_dsml_events(
+                                                &mut inline_think,
+                                                &mut dsml_content,
+                                                &mut dsml_reasoning,
+                                                &mut next_content_index,
+                                                &mut current_non_tool_block_type,
+                                                &mut current_non_tool_block_index,
+                                                &mut open_tool_block_indices,
+                                                &mut dsml_call_counter,
+                                                response_id,
+                                            ) {
+                                                yield Ok(Bytes::from(sse_data));
                                             }
 
                                             if let Some(index) = current_non_tool_block_index.take() {
@@ -749,19 +906,19 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                     stream_ended_with_error = true;
                     // 错误路径同样冲刷 inline think 残留：先下发已收到的载荷，
                     // 再以 error 事件收尾，不伪造成功终止事件。
-                    let (thinking, text) = inline_think.flush();
-                    for (block_type, delta) in [("thinking", thinking), ("text", text)] {
-                        if let Some(delta) = &delta {
-                            for sse_data in non_tool_block_events(
-                                block_type,
-                                delta,
-                                &mut next_content_index,
-                                &mut current_non_tool_block_type,
-                                &mut current_non_tool_block_index,
-                            ) {
-                                yield Ok(Bytes::from(sse_data));
-                            }
-                        }
+                    let response_id = message_id.as_deref().unwrap_or("ccswitch");
+                    for sse_data in flush_inline_and_dsml_events(
+                        &mut inline_think,
+                        &mut dsml_content,
+                        &mut dsml_reasoning,
+                        &mut next_content_index,
+                        &mut current_non_tool_block_type,
+                        &mut current_non_tool_block_index,
+                        &mut open_tool_block_indices,
+                        &mut dsml_call_counter,
+                        response_id,
+                    ) {
+                        yield Ok(Bytes::from(sse_data));
                     }
                     let error_event = json!({
                         "type": "error",
@@ -780,19 +937,19 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
 
         // 流自然结束（含上游截断、无 finish_reason/[DONE]）也冲刷 inline think
         // 残留：已收到的内容必须下发，不得整段留在缓冲区丢弃。
-        let (thinking, text) = inline_think.flush();
-        for (block_type, delta) in [("thinking", thinking), ("text", text)] {
-            if let Some(delta) = &delta {
-                for sse_data in non_tool_block_events(
-                    block_type,
-                    delta,
-                    &mut next_content_index,
-                    &mut current_non_tool_block_type,
-                    &mut current_non_tool_block_index,
-                ) {
-                    yield Ok(Bytes::from(sse_data));
-                }
-            }
+        let response_id = message_id.as_deref().unwrap_or("ccswitch");
+        for sse_data in flush_inline_and_dsml_events(
+            &mut inline_think,
+            &mut dsml_content,
+            &mut dsml_reasoning,
+            &mut next_content_index,
+            &mut current_non_tool_block_type,
+            &mut current_non_tool_block_index,
+            &mut open_tool_block_indices,
+            &mut dsml_call_counter,
+            response_id,
+        ) {
+            yield Ok(Bytes::from(sse_data));
         }
 
         // 流自然结束但未收到 [DONE] 时，确保发送缓存的 message_delta 和 message_stop。
@@ -2166,5 +2323,67 @@ mod tests {
         )
         .await
         .expect("a terminal response must not await another upstream chunk");
+    }
+
+    fn v41_dsml_block(name: &str, key: &str, value: &str) -> String {
+        let pipe = "｜";
+        let open = |body: &str| format!("<{pipe}DSML{pipe}{body}>");
+        let close = |body: &str| format!("<\u{2F}{pipe}DSML{pipe}{body}>");
+        format!(
+            "{}\n{}\n{}\n{}{}\n{}\n{}",
+            open(" calls"),
+            open(&format!(" invoke name=\"{name}\"")),
+            open(&format!(" parameter name=\"{key}\" string=\"true\"")),
+            value,
+            close(" parameter"),
+            close(" invoke"),
+            close(" calls"),
+        )
+    }
+
+    #[tokio::test]
+    async fn recovers_dsml_tool_call_from_content() {
+        let block = v41_dsml_block("exec_command", "cmd", "ls -la");
+        let split_at = block.len() / 2;
+        let (first, second) = block.split_at(split_at);
+        let first_chunk = json!({
+            "id": "chatcmpl_dsml",
+            "model": "deepseek-ai/deepseek-v4.1-flash",
+            "choices": [{"delta": {"content": first}}]
+        });
+        let second_chunk = json!({
+            "id": "chatcmpl_dsml",
+            "model": "deepseek-ai/deepseek-v4.1-flash",
+            "choices": [{"delta": {"content": second}, "finish_reason": "tool_calls"}]
+        });
+        let input = format!(
+            "data: {}\n\ndata: {}\n\ndata: [DONE]\n\n",
+            serde_json::to_string(&first_chunk).unwrap(),
+            serde_json::to_string(&second_chunk).unwrap(),
+        );
+        let events = collect_anthropic_events(&input).await;
+
+        let visible_text: String = events
+            .iter()
+            .filter(|event| event["type"] == "content_block_delta")
+            .filter_map(|event| event["delta"]["text"].as_str())
+            .collect();
+        assert!(!visible_text.contains("｜DSML｜"));
+        assert!(!visible_text.contains("DSML"));
+
+        let tool_start = events
+            .iter()
+            .find(|event| {
+                event["type"] == "content_block_start"
+                    && event["content_block"]["type"] == "tool_use"
+            })
+            .expect("complete DSML must become a tool_use block");
+        assert_eq!(tool_start["content_block"]["name"], "exec_command");
+        let partial_json: String = events
+            .iter()
+            .filter(|event| event["type"] == "content_block_delta")
+            .filter_map(|event| event["delta"]["partial_json"].as_str())
+            .collect();
+        assert!(partial_json.contains("ls -la"));
     }
 }

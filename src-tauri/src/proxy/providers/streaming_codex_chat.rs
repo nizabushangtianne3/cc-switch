@@ -4,6 +4,10 @@ use super::codex_responses_sse as sse;
 use super::{
     codex_chat_common::{extract_reasoning_field_text, tool_call_extra_content},
     codex_compaction,
+    deepseek_dsml::{
+        looks_like_reasoning_continuation_start, reasoning_is_open, DsmlStreamOutput,
+        DsmlStreamSplitter, DsmlToolCall,
+    },
     inline_think::InlineThinkSplitter,
     transform_codex_chat::{
         chat_usage_to_responses_usage, custom_tool_input_from_chat_arguments,
@@ -18,6 +22,10 @@ use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
+
+/// Content longer than this that continues an unfinished DeepSeek reasoning
+/// stream is treated as reasoning instead of a visible message.
+const REASONING_LEAK_THRESHOLD: usize = 600;
 
 #[derive(Debug, Default)]
 struct TextItemState {
@@ -62,6 +70,14 @@ struct ChatToResponsesState {
     text: TextItemState,
     reasoning: ReasoningItemState,
     inline_think: InlineThinkSplitter,
+    dsml_content: DsmlStreamSplitter,
+    dsml_reasoning: DsmlStreamSplitter,
+    /// DSML tool calls recovered from content/reasoning text.
+    dsml_tool_calls: usize,
+    /// Held content while deciding whether it continues an unfinished reasoning stream.
+    pending_content: String,
+    /// Once a content fragment is classified as reasoning, keep it there for this turn.
+    content_reasoning_continuation: bool,
     tools: BTreeMap<usize, ToolCallState>,
     next_tool_index_to_add: usize,
     output_items: Vec<(u32, Value)>,
@@ -84,6 +100,11 @@ impl Default for ChatToResponsesState {
             text: TextItemState::default(),
             reasoning: ReasoningItemState::default(),
             inline_think: InlineThinkSplitter::default(),
+            dsml_content: DsmlStreamSplitter::default(),
+            dsml_reasoning: DsmlStreamSplitter::default(),
+            dsml_tool_calls: 0,
+            pending_content: String::new(),
+            content_reasoning_continuation: false,
             tools: BTreeMap::new(),
             next_tool_index_to_add: 0,
             output_items: Vec::new(),
@@ -134,8 +155,7 @@ impl ChatToResponsesState {
 
         if let Some(delta) = choice.get("delta") {
             if let Some(reasoning) = chat_delta_reasoning_text(delta) {
-                events.extend(self.push_reasoning_delta(&reasoning));
-                self.append_reasoning_to_active_tools(&reasoning);
+                events.extend(self.push_reasoning_text(&reasoning));
             }
 
             if let Some(content) = delta.get("content").and_then(|v| v.as_str()) {
@@ -145,7 +165,7 @@ impl ChatToResponsesState {
             }
 
             if let Some(tool_calls) = delta.get("tool_calls").and_then(|v| v.as_array()) {
-                events.extend(self.flush_inline_think_at_boundary());
+                events.extend(self.flush_content_boundary(true));
                 let reasoning_for_tool_call = self.current_reasoning_text();
                 events.extend(self.finalize_reasoning());
                 for tool_call in tool_calls {
@@ -168,11 +188,6 @@ impl ChatToResponsesState {
         self.emit_inline_think_parts(parts)
     }
 
-    fn flush_inline_think_at_boundary(&mut self) -> Vec<Bytes> {
-        let parts = self.inline_think.flush();
-        self.emit_inline_think_parts(parts)
-    }
-
     /// 思考片段逐个追加到同一个 reasoning item；只有正文开始时才收尾，
     /// 否则第二个片段到达时 item 已经 done。
     fn emit_inline_think_parts(
@@ -185,8 +200,179 @@ impl ChatToResponsesState {
         }
         if let Some(text) = text {
             events.extend(self.finalize_reasoning());
-            events.extend(self.push_text_delta(&text));
+            events.extend(self.handle_content_text_chunk(&text));
         }
+        events
+    }
+
+    /// Route upstream `reasoning_content` through the DSML filter before it
+    /// reaches the reasoning item.
+    fn push_reasoning_text(&mut self, delta: &str) -> Vec<Bytes> {
+        let output = self.dsml_reasoning.push(delta);
+        self.emit_dsml_reasoning_output(output)
+    }
+
+    fn emit_dsml_reasoning_output(&mut self, output: DsmlStreamOutput) -> Vec<Bytes> {
+        let mut events = Vec::new();
+        if let Some(text) = output.text {
+            events.extend(self.push_reasoning_delta(&text));
+            self.append_reasoning_to_active_tools(&text);
+        }
+        for call in output.tool_calls {
+            events.extend(self.push_dsml_tool_call(call));
+        }
+        events
+    }
+
+    /// DSML-filtered visible content. The optional reasoning-leak guard keeps
+    /// DeepSeek V4.x reasoning fragments that upstream misroutes into
+    /// `content` inside the reasoning item instead of the visible message.
+    fn handle_content_text_chunk(&mut self, text: &str) -> Vec<Bytes> {
+        let output = self.dsml_content.push(text);
+        self.emit_dsml_content_output(output)
+    }
+
+    fn handle_filtered_content_text(&mut self, text: &str) -> Vec<Bytes> {
+        if self.content_reasoning_continuation {
+            let events = self.push_reasoning_delta(text);
+            self.append_reasoning_to_active_tools(text);
+            return events;
+        }
+
+        if self.should_watch_reasoning_leak()
+            && (looks_like_reasoning_continuation_start(&self.pending_content)
+                || looks_like_reasoning_continuation_start(text))
+        {
+            self.pending_content.push_str(text);
+            if self.pending_content.len() >= REASONING_LEAK_THRESHOLD
+                && looks_like_reasoning_continuation_start(&self.pending_content)
+            {
+                self.content_reasoning_continuation = true;
+                let pending = std::mem::take(&mut self.pending_content);
+                let events = self.push_reasoning_delta(&pending);
+                self.append_reasoning_to_active_tools(&pending);
+                return events;
+            }
+            return Vec::new();
+        }
+
+        if !self.pending_content.is_empty() {
+            let pending = std::mem::take(&mut self.pending_content);
+            let mut events = self.push_text_delta(&pending);
+            events.extend(self.push_text_delta(text));
+            return events;
+        }
+
+        self.push_text_delta(text)
+    }
+
+    fn should_watch_reasoning_leak(&self) -> bool {
+        self.model.to_ascii_lowercase().contains("deepseek")
+            && !self.reasoning.text.is_empty()
+            && reasoning_is_open(&self.reasoning.text)
+    }
+
+    fn emit_dsml_content_output(&mut self, output: DsmlStreamOutput) -> Vec<Bytes> {
+        let mut events = Vec::new();
+        if let Some(text) = output.text {
+            events.extend(self.handle_filtered_content_text(&text));
+        }
+        for call in output.tool_calls {
+            if !self.pending_content.is_empty() {
+                let pending = std::mem::take(&mut self.pending_content);
+                events.extend(self.push_text_delta(&pending));
+            }
+            events.extend(self.push_dsml_tool_call(call));
+        }
+        events
+    }
+
+    fn flush_content_boundary(&mut self, tool_turn: bool) -> Vec<Bytes> {
+        let parts = self.inline_think.flush();
+        let mut events = self.emit_inline_think_parts(parts);
+        let content_tail = self.dsml_content.flush();
+        events.extend(self.emit_dsml_content_output(content_tail));
+        let reasoning_tail = self.dsml_reasoning.flush();
+        events.extend(self.emit_dsml_reasoning_output(reasoning_tail));
+
+        if !self.pending_content.is_empty() {
+            let pending = std::mem::take(&mut self.pending_content);
+            let reclassify = self.content_reasoning_continuation
+                || (tool_turn
+                    && pending.len() >= REASONING_LEAK_THRESHOLD
+                    && looks_like_reasoning_continuation_start(&pending));
+            if reclassify {
+                self.content_reasoning_continuation = true;
+                events.extend(self.push_reasoning_delta(&pending));
+                self.append_reasoning_to_active_tools(&pending);
+            } else {
+                events.extend(self.push_text_delta(&pending));
+            }
+        }
+
+        events
+    }
+
+    /// Directly materialize a complete DSML tool call as a completed Responses
+    /// item. DSML blocks already contain the full name and arguments, so there
+    /// is no reason to run them through the upstream delta state machine.
+    fn push_dsml_tool_call(&mut self, call: DsmlToolCall) -> Vec<Bytes> {
+        let call_id = format!("call_dsml_{}_{}", self.response_id, self.dsml_tool_calls);
+        self.dsml_tool_calls += 1;
+        let arguments = canonicalize_tool_arguments_str(&call.arguments);
+        let output_index = self.next_output_index();
+        let item_id =
+            response_tool_call_item_id_from_chat_name(&call_id, &call.name, &self.tool_context);
+        let reasoning = self.current_reasoning_text();
+        let in_progress_item = response_tool_call_item_from_chat_name(
+            &item_id,
+            "in_progress",
+            &call_id,
+            &call.name,
+            "",
+            reasoning.as_deref(),
+            &self.tool_context,
+        );
+        let completed_item = response_tool_call_item_from_chat_name(
+            &item_id,
+            "completed",
+            &call_id,
+            &call.name,
+            &arguments,
+            reasoning.as_deref(),
+            &self.tool_context,
+        );
+        let is_custom_tool = self.tool_context.is_custom_tool_chat_name(&call.name);
+
+        let mut events = vec![sse::output_item_added(output_index, &in_progress_item)];
+        if is_custom_tool {
+            let input = custom_tool_input_from_chat_arguments(&arguments);
+            if !input.is_empty() {
+                events.push(sse::custom_tool_call_input_delta(
+                    output_index,
+                    &item_id,
+                    &input,
+                ));
+            }
+            events.push(sse::custom_tool_call_input_done(
+                output_index,
+                &item_id,
+                &input,
+            ));
+        } else {
+            events.push(sse::function_call_arguments_delta(
+                output_index,
+                &item_id,
+                &arguments,
+            ));
+            events.push(sse::function_call_arguments_done(
+                output_index,
+                &item_id,
+                &arguments,
+            ));
+        }
+        events.push(sse::output_item_done(output_index, &completed_item));
+        self.output_items.push((output_index, completed_item));
         events
     }
 
@@ -437,6 +623,9 @@ impl ChatToResponsesState {
         !self.text.text.trim().is_empty()
             || !self.reasoning.text.trim().is_empty()
             || self.inline_think.has_pending_content()
+            || self.dsml_content.has_pending()
+            || self.dsml_reasoning.has_pending()
+            || !self.pending_content.trim().is_empty()
             || !self.output_items.is_empty()
             || self.tools.values().any(|state| {
                 state.added
@@ -463,7 +652,11 @@ impl ChatToResponsesState {
         }
 
         let mut events = self.ensure_response_started();
-        events.extend(self.flush_inline_think_at_boundary());
+        let tool_turn = matches!(
+            self.finish_reason.as_deref(),
+            Some("tool_calls" | "function_call")
+        );
+        events.extend(self.flush_content_boundary(tool_turn));
         events.extend(self.finalize_reasoning());
         events.extend(self.finalize_text());
         events.extend(self.finalize_tools());
@@ -1748,5 +1941,116 @@ mod tests {
         let expected = terminal_special_output(false, prefix, false).await;
         assert_eq!(expected.matches("event: response.failed").count(), 1);
         assert_eq!(terminal_special_output(false, prefix, true).await, expected);
+    }
+
+    fn dsml_content_chunk(id: &str, content: &str, finish_reason: Option<&str>) -> String {
+        let mut choice = json!({"delta": {"content": content}});
+        if let Some(reason) = finish_reason {
+            choice["finish_reason"] = json!(reason);
+        }
+        let chunk = json!({
+            "id": id,
+            "model": "deepseek-ai/deepseek-v4.1-flash",
+            "choices": [choice]
+        });
+        format!("data: {}\n\n", serde_json::to_string(&chunk).unwrap())
+    }
+
+    fn dsml_reasoning_chunk(id: &str, reasoning: &str) -> String {
+        let chunk = json!({
+            "id": id,
+            "model": "deepseek-ai/deepseek-v4.1-flash",
+            "choices": [{"delta": {"reasoning_content": reasoning}}]
+        });
+        format!("data: {}\n\n", serde_json::to_string(&chunk).unwrap())
+    }
+
+    fn v41_dsml_block(name: &str, key: &str, value: &str) -> String {
+        let pipe = "｜";
+        let open = |body: &str| format!("<{pipe}DSML{pipe}{body}>");
+        let close = |body: &str| format!("<\u{2F}{pipe}DSML{pipe}{body}>");
+        format!(
+            "{}\n{}\n{}\n{}{}\n{}\n{}",
+            open(" calls"),
+            open(&format!(" invoke name=\"{name}\"")),
+            open(&format!(" parameter name=\"{key}\" string=\"true\"")),
+            value,
+            close(" parameter"),
+            close(" invoke"),
+            close(" calls"),
+        )
+    }
+
+    #[tokio::test]
+    async fn recovers_complete_dsml_block_from_content() {
+        let block = v41_dsml_block("exec_command", "cmd", "ls -la");
+        let split_at = block.len() / 2;
+        let (first, second) = block.split_at(split_at);
+        let first = dsml_content_chunk("chatcmpl_dsml", first, None);
+        let second = dsml_content_chunk("chatcmpl_dsml", second, Some("stop"));
+        let output = collect(vec![first.as_str(), second.as_str(), "data: [DONE]\n\n"]).await;
+
+        assert!(!output.contains("｜DSML｜"), "output={output}");
+        assert!(!output.contains("DSML"), "output={output}");
+        assert!(output.contains("event: response.function_call_arguments.done"));
+        assert!(output.contains("\"name\":\"exec_command\""));
+        let events = parse_sse_events(&output);
+        let completed = events
+            .iter()
+            .find(|event| event["type"] == "response.completed")
+            .unwrap();
+        assert_eq!(completed["response"]["output"][0]["type"], "function_call");
+    }
+
+    #[tokio::test]
+    async fn strips_stray_dsml_opener_from_content() {
+        let pipe = "｜";
+        let content = format!("\n\n<{pipe}DSML{pipe} calls>\n");
+        let chunk = dsml_content_chunk("chatcmpl_stray", &content, Some("stop"));
+        let output = collect(vec![chunk.as_str(), "data: [DONE]\n\n"]).await;
+        assert!(!output.contains("｜DSML｜"), "output={output}");
+        assert!(!output.contains("DSML"), "output={output}");
+    }
+
+    #[tokio::test]
+    async fn push_content_delta_strips_stray_dsml_opener_directly() {
+        let mut state = ChatToResponsesState::with_tool_context(CodexToolContext::default());
+        state.model = "deepseek-ai/deepseek-v4.1-flash".to_string();
+        let pipe = "｜";
+        let content = format!("\n\n<{pipe}DSML{pipe} calls>\n");
+        let events = state.push_content_delta(&content);
+        let output = events
+            .into_iter()
+            .map(|bytes| String::from_utf8(bytes.to_vec()).unwrap())
+            .collect::<Vec<_>>()
+            .concat();
+        assert!(!output.contains("｜DSML｜"), "output={output}");
+    }
+
+    #[tokio::test]
+    async fn reclassifies_deepseek_reasoning_leak_before_visible_text() {
+        let reasoning = dsml_reasoning_chunk("chatcmpl_leak", "Let's inspect...");
+        let leaked = format!("<DSML>`{}", "x".repeat(700));
+        let content = dsml_content_chunk("chatcmpl_leak", &leaked, Some("tool_calls"));
+        let output = collect(vec![
+            reasoning.as_str(),
+            content.as_str(),
+            "data: [DONE]\n\n",
+        ])
+        .await;
+        let events = parse_sse_events(&output);
+        let visible: String = events
+            .iter()
+            .filter(|event| event["type"] == "response.output_text.delta")
+            .filter_map(|event| event["delta"].as_str())
+            .collect();
+        let reasoning_text: String = events
+            .iter()
+            .filter(|event| event["type"] == "response.reasoning_summary_text.delta")
+            .filter_map(|event| event["delta"].as_str())
+            .collect();
+
+        assert!(!visible.contains('x'));
+        assert!(reasoning_text.contains('x'));
     }
 }

@@ -608,6 +608,14 @@ pub fn openai_to_anthropic(body: Value) -> Result<Value, ProxyError> {
         .get("message")
         .ok_or_else(|| ProxyError::TransformError("No message in choice".to_string()))?;
 
+    let mut message = message.clone();
+    let dsml_prefix = format!(
+        "call_dsml_{}_",
+        body.get("id").and_then(Value::as_str).unwrap_or("ccswitch")
+    );
+    super::deepseek_dsml::merge_dsml_tool_calls_into_message(&mut message, &dsml_prefix);
+    let message = &message;
+
     let mut content = Vec::new();
     let mut has_tool_use = false;
 
