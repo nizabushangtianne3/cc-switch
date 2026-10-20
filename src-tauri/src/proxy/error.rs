@@ -286,4 +286,122 @@ mod tests {
         assert!(text.starts_with("error sending request: "), "{text}");
         assert!(!text.contains("secret-token"), "{text}");
     }
+
+    #[test]
+    fn into_response_maps_every_variant_to_the_right_status() {
+        use axum::response::IntoResponse;
+
+        let cases: Vec<(ProxyError, StatusCode)> = vec![
+            (ProxyError::ResponseBodyTooLarge(1), StatusCode::BAD_GATEWAY),
+            (ProxyError::AlreadyRunning, StatusCode::CONFLICT),
+            (ProxyError::NotRunning, StatusCode::SERVICE_UNAVAILABLE),
+            (
+                ProxyError::BindFailed("x".into()),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+            (ProxyError::StopTimeout, StatusCode::INTERNAL_SERVER_ERROR),
+            (
+                ProxyError::StopFailed("x".into()),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+            (
+                ProxyError::ForwardFailed("x".into()),
+                StatusCode::BAD_GATEWAY,
+            ),
+            (
+                ProxyError::NoAvailableProvider,
+                StatusCode::SERVICE_UNAVAILABLE,
+            ),
+            (
+                ProxyError::AllProvidersCircuitOpen,
+                StatusCode::SERVICE_UNAVAILABLE,
+            ),
+            (
+                ProxyError::NoProvidersConfigured,
+                StatusCode::SERVICE_UNAVAILABLE,
+            ),
+            (
+                ProxyError::ProviderUnhealthy("x".into()),
+                StatusCode::SERVICE_UNAVAILABLE,
+            ),
+            (
+                ProxyError::MaxRetriesExceeded,
+                StatusCode::SERVICE_UNAVAILABLE,
+            ),
+            (
+                ProxyError::DatabaseError("x".into()),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+            (ProxyError::ConfigError("x".into()), StatusCode::BAD_REQUEST),
+            (
+                ProxyError::TransformError("x".into()),
+                StatusCode::UNPROCESSABLE_ENTITY,
+            ),
+            (
+                ProxyError::InvalidRequest("x".into()),
+                StatusCode::BAD_REQUEST,
+            ),
+            (ProxyError::Timeout("x".into()), StatusCode::GATEWAY_TIMEOUT),
+            (
+                ProxyError::StreamIdleTimeout(5),
+                StatusCode::GATEWAY_TIMEOUT,
+            ),
+            (ProxyError::AuthError("x".into()), StatusCode::UNAUTHORIZED),
+            (
+                ProxyError::Internal("x".into()),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+            (
+                ProxyError::UpstreamError {
+                    status: 404,
+                    body: None,
+                },
+                StatusCode::NOT_FOUND,
+            ),
+            (
+                // 非法状态码回退 502
+                ProxyError::UpstreamError {
+                    status: 99,
+                    body: None,
+                },
+                StatusCode::BAD_GATEWAY,
+            ),
+        ];
+
+        for (error, expected) in cases {
+            let debug = format!("{error:?}");
+            let response = error.into_response();
+            assert_eq!(response.status(), expected, "{debug}");
+        }
+    }
+
+    #[test]
+    fn upstream_error_body_passes_json_through_and_wraps_plain_text() {
+        use axum::response::IntoResponse;
+        use http_body_util::BodyExt;
+
+        // JSON body 原样透传
+        let response = ProxyError::UpstreamError {
+            status: 400,
+            body: Some(r#"{"error":{"message":"upstream says"}}"#.into()),
+        }
+        .into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        // 非 JSON body 包装为 upstream_error 信封
+        let response = ProxyError::UpstreamError {
+            status: 502,
+            body: Some("plain upstream text".into()),
+        }
+        .into_response();
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+
+        // 无 body 时合成默认错误消息
+        let response = ProxyError::UpstreamError {
+            status: 503,
+            body: None,
+        }
+        .into_response();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
 }

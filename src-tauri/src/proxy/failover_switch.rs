@@ -121,3 +121,45 @@ impl FailoverSwitchManager {
         Ok(switched)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn unknown_app_type_is_not_switched() {
+        let manager = FailoverSwitchManager::new();
+        let switched = manager
+            .try_switch(None, "not-an-app", "p1", "Provider 1")
+            .await
+            .expect("try_switch");
+        assert!(!switched, "无法解析的应用类型不得触发切换");
+    }
+
+    #[tokio::test]
+    async fn non_proxy_mode_is_not_switched() {
+        let manager = FailoverSwitchManager::new();
+        // 测试环境里 claude 不处于路由模式（无 mode state）：do_switch 直接跳过。
+        let switched = manager
+            .try_switch(None, "claude", "p1", "Provider 1")
+            .await
+            .expect("try_switch");
+        assert!(!switched, "非路由模式不得触发切换");
+    }
+
+    #[tokio::test]
+    async fn same_switch_in_flight_is_deduplicated() {
+        let manager = FailoverSwitchManager::new();
+        // 直接操纵 pending 集合模拟在途切换：不需要 Tauri AppHandle。
+        manager
+            .pending_switches
+            .write()
+            .await
+            .insert("claude:p1".to_string());
+        let switched = manager
+            .try_switch(None, "claude", "p1", "Provider 1")
+            .await
+            .expect("try_switch");
+        assert!(!switched, "同一在途切换必须去重跳过");
+    }
+}

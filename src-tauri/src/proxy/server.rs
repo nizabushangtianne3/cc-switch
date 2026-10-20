@@ -1775,4 +1775,170 @@ mod tests {
         proxy.stop().await.expect("stop test proxy");
         mock_handle.abort();
     }
+
+    /// Claude→OpenAI 转换端到端：Anthropic 请求进、OpenAI Chat 出、
+    /// 响应再转回 Anthropic 格式给客户端（OpenRouter 等中转的核心场景）。
+    #[tokio::test]
+    async fn claude_openai_chat_transform_round_trips() {
+        let captured = Arc::new(Mutex::new(Vec::<CapturedRequest>::new()));
+        let capture_handler = {
+            let captured = captured.clone();
+            move |request: axum::extract::Request| {
+                let captured = captured.clone();
+                async move {
+                    let (parts, body) = request.into_parts();
+                    let body = axum::body::to_bytes(body, 1024 * 1024)
+                        .await
+                        .expect("read mock request body");
+                    captured.lock().await.push(CapturedRequest {
+                        path_and_query: parts
+                            .uri
+                            .path_and_query()
+                            .map(|value| value.as_str().to_string())
+                            .unwrap_or_else(|| parts.uri.path().to_string()),
+                        authorization: parts
+                            .headers
+                            .get(header::AUTHORIZATION)
+                            .and_then(|value| value.to_str().ok())
+                            .map(ToString::to_string),
+                        body: serde_json::from_slice(&body).unwrap_or(Value::Null),
+                    });
+
+                    let completion = serde_json::json!({
+                        "id": "chatcmpl-test",
+                        "object": "chat.completion",
+                        "choices": [{
+                            "index": 0,
+                            "message": { "role": "assistant", "content": "transformed hello" },
+                            "finish_reason": "stop"
+                        }],
+                        "usage": { "prompt_tokens": 10, "completion_tokens": 5 }
+                    });
+                    (
+                        StatusCode::OK,
+                        [(header::CONTENT_TYPE, "application/json")],
+                        completion.to_string(),
+                    )
+                }
+            }
+        };
+        let mock_app = Router::new().route("/v1/chat/completions", post(capture_handler));
+        let mock_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind mock upstream");
+        let mock_addr = mock_listener.local_addr().expect("mock addr");
+        let mock_handle = tokio::spawn(async move {
+            axum::serve(mock_listener, mock_app)
+                .await
+                .expect("serve mock");
+        });
+
+        let db = Arc::new(Database::memory().expect("memory database"));
+        let provider = Provider::with_id(
+            "claude-openai".to_string(),
+            "Claude via OpenAI".to_string(),
+            json!({
+                "env": {
+                    "ANTHROPIC_BASE_URL": format!("http://{mock_addr}"),
+                    "ANTHROPIC_AUTH_TOKEN": "sk-test-transform"
+                },
+                "api_format": "openai_chat"
+            }),
+            None,
+        );
+        db.save_provider("claude", &provider)
+            .expect("save claude-openai provider");
+        db.set_current_provider("claude", &provider.id)
+            .expect("select claude-openai provider");
+
+        let proxy = ProxyServer::new(
+            ProxyConfig {
+                listen_port: 0,
+                ..ProxyConfig::default()
+            },
+            db.clone(),
+            None,
+        );
+        let proxy_info = proxy.start().await.expect("start test proxy");
+        let client = reqwest::Client::new();
+
+        let response = client
+            .post(format!("http://127.0.0.1:{}/v1/messages", proxy_info.port))
+            .json(&json!({
+                "model": "claude-3-5-haiku-20241022",
+                "max_tokens": 64,
+                "messages": [{ "role": "user", "content": "hi" }]
+            }))
+            .send()
+            .await
+            .expect("send claude transform request");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: Value = response.json().await.expect("read anthropic response");
+        // 响应已从 OpenAI chat.completion 转回 Anthropic message 格式
+        assert_eq!(body["content"][0]["text"], "transformed hello");
+        assert_eq!(body["stop_reason"], "end_turn");
+
+        // 上游收到的是 OpenAI Chat 格式（模型名 + messages + max_tokens 映射）
+        let requests = captured.lock().await;
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].path_and_query, "/v1/chat/completions");
+        assert_eq!(requests[0].body["model"], "claude-3-5-haiku-20241022");
+        assert_eq!(
+            requests[0].body["messages"][0]["content"],
+            serde_json::Value::String("hi".into())
+        );
+        drop(requests);
+
+        proxy.stop().await.expect("stop test proxy");
+        mock_handle.abort();
+    }
+
+    /// 缺少 OriginalHeaderCases 时走 hyper-util Client 回退路径（连接池化前
+    /// 的老通道），请求仍应成功。
+    #[tokio::test]
+    async fn send_request_without_original_cases_falls_back_to_hyper_util() {
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind loopback");
+        let addr = listener.local_addr().expect("local addr");
+        let mock_handle = tokio::spawn(async move {
+            let app = Router::new().route(
+                "/v1/messages",
+                post(|| async {
+                    (
+                        StatusCode::OK,
+                        [(header::CONTENT_TYPE, "application/json")],
+                        "{\"ok\":true}",
+                    )
+                }),
+            );
+            axum::serve(listener, app).await.expect("serve mock");
+        });
+
+        let uri: http::Uri = format!("http://{addr}/v1/messages")
+            .parse()
+            .expect("parse uri");
+        let mut headers = http::HeaderMap::new();
+        headers.insert(
+            http::header::HOST,
+            http::HeaderValue::from_static("upstream"),
+        );
+        let extensions = http::Extensions::new();
+
+        let response = crate::proxy::hyper_client::send_request(
+            uri,
+            "test",
+            &http::Method::POST,
+            headers,
+            &extensions,
+            b"{}".to_vec(),
+            std::time::Duration::from_secs(10),
+            None,
+        )
+        .await
+        .expect("fallback request");
+        assert_eq!(response.status(), http::StatusCode::OK);
+
+        mock_handle.abort();
+    }
 }
