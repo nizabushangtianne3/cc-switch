@@ -5,6 +5,12 @@ All notable changes to CC Switch will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.17] - 2026-10-20
+
+### Fixed
+
+- **Proxy:** DeepSeek through Chat upstreams no longer leaks DSML tool-call scaffolding into replies. The v4.1 spaced opener (`<｜｜DSML｜｜ calls>`), parser-constant fragments such as `_INVOKE_PREFIX = '`, and complete DSML blocks are stripped or converted back into real tool calls on both the Codex Responses and Claude Anthropic paths; DeepSeek reasoning that upstream misroutes into `content` stays in the reasoning channel instead of appearing as a visible message.
+
 ## [4.0.16] - 2026-10-18
 
 ### Added

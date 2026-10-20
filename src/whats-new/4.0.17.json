@@ -1,0 +1,19 @@
+{
+  "version": "4.0.17",
+  "items": [
+    {
+      "type": "fix",
+      "zh": "修复 NVIDIA DeepSeek 把 DSML 标记漏进回复",
+      "zh-TW": "修正 NVIDIA DeepSeek 把 DSML 標記漏進回覆",
+      "en": "Fixed NVIDIA DeepSeek leaking DSML tool markers into replies",
+      "ja": "NVIDIA DeepSeek が DSML ツールマーカーを応答に漏らす問題を修正"
+    },
+    {
+      "type": "fix",
+      "zh": "修复 DeepSeek 思考过程被当成正文输出",
+      "zh-TW": "修正 DeepSeek 思考過程被當成正文輸出",
+      "en": "Fixed DeepSeek reasoning being printed as visible reply text",
+      "ja": "DeepSeek の思考過程が本文として出力される問題を修正"
+    }
+  ]
+}
