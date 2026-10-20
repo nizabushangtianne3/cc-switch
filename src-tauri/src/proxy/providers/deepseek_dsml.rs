@@ -423,19 +423,25 @@ pub(crate) fn parse_dsml_tool_calls(text: &str) -> DsmlParseResult {
 
         match (opener, removable) {
             (None, None) => {
-                result.content.push_str(remaining);
+                result.content.push_str(&scrub_diverged_markers(remaining));
                 break;
             }
             (None, Some((index, len))) => {
-                result.content.push_str(&remaining[..index]);
+                result
+                    .content
+                    .push_str(&scrub_diverged_markers(&remaining[..index]));
                 remaining = &remaining[index + len..];
             }
             (Some(opener), Some((index, len))) if index < opener.index => {
-                result.content.push_str(&remaining[..index]);
+                result
+                    .content
+                    .push_str(&scrub_diverged_markers(&remaining[..index]));
                 remaining = &remaining[index + len..];
             }
             (Some(opener), _) => {
-                result.content.push_str(&remaining[..opener.index]);
+                result
+                    .content
+                    .push_str(&scrub_diverged_markers(&remaining[..opener.index]));
                 let after_opener = &remaining[opener.index + opener.len..];
                 match opener.kind {
                     OpenerKind::Wrapper => {
@@ -445,6 +451,11 @@ pub(crate) fn parse_dsml_tool_calls(text: &str) -> DsmlParseResult {
                                 "[DSML] dropped unterminated tool_calls block ({} bytes)",
                                 after_opener.len()
                             );
+                            parse_invokes(after_opener, &mut result.tool_calls);
+                            let salvaged = salvage_unterminated_block(after_opener);
+                            if let Some(text) = salvaged.text {
+                                result.content.push_str(&text);
+                            }
                             break;
                         };
                         parse_invokes(&after_opener[..index], &mut result.tool_calls);
@@ -467,6 +478,10 @@ pub(crate) fn parse_dsml_tool_calls(text: &str) -> DsmlParseResult {
                                 "[DSML] dropped unterminated invoke block ({} bytes)",
                                 body.len()
                             );
+                            let salvaged = salvage_unterminated_block(body);
+                            if let Some(text) = salvaged.text {
+                                result.content.push_str(&text);
+                            }
                             break;
                         };
                         let name = name.trim();
@@ -621,6 +636,118 @@ fn is_partial_colon_marker(suffix: &str) -> bool {
     false
 }
 
+/// Minimum bytes a `<` fragment must match before it counts as a truncated
+/// DSML marker. Keeps ordinary prose with a stray `<` untouched.
+const MIN_MARKER_PREFIX_BYTES: usize = 8;
+
+/// Longest common byte prefix between a fragment and any known marker.
+fn longest_marker_prefix(fragment: &str) -> usize {
+    let mut best = 0usize;
+    let consider = |marker: &str, best: &mut usize| {
+        let mut len = 0usize;
+        for (marker_byte, fragment_byte) in marker.bytes().zip(fragment.bytes()) {
+            if marker_byte != fragment_byte {
+                break;
+            }
+            len += 1;
+        }
+        if len > *best {
+            *best = len;
+        }
+    };
+    for marker in WRAPPER_OPENERS
+        .iter()
+        .chain(WRAPPER_CLOSERS.iter())
+        .chain(INVOKE_OPEN_PREFIXES.iter())
+        .chain(INVOKE_CLOSERS.iter())
+        .chain(PARAM_OPEN_PREFIXES.iter())
+        .chain(PARAM_CLOSERS.iter())
+        .chain(SCAFFOLDING_TOKENS.iter())
+    {
+        consider(marker, &mut best);
+    }
+    for pipe in PIPE_VARIANTS {
+        consider(&format!("<{pipe}DSML{pipe}:"), &mut best);
+        consider(&format!("{CLOSE_START}{pipe}DSML{pipe}:"), &mut best);
+    }
+    best
+}
+
+/// Length of a truncated DSML marker fragment that starts here. Only fires
+/// when the fragment matched a marker long enough to be sure it is scaffolding
+/// and then diverged, so it can never become a marker.
+fn diverged_marker_span(fragment: &str) -> Option<usize> {
+    let prefix_len = longest_marker_prefix(fragment);
+    if prefix_len < MIN_MARKER_PREFIX_BYTES || prefix_len >= fragment.len() {
+        return None;
+    }
+    let mut span = prefix_len;
+    for ch in fragment[prefix_len..].chars() {
+        if ch == '\n' || ch == '\r' {
+            break;
+        }
+        span += ch.len_utf8();
+    }
+    Some(span)
+}
+
+/// Drop truncated DSML fragments that can never complete (NIM truncates the
+/// opener mid-tag and then continues with normal text).
+fn scrub_diverged_markers(text: &str) -> String {
+    if !text.contains("DSML") && !text.contains("dsml") {
+        return text.to_string();
+    }
+    let mut output = String::new();
+    let mut rest = text;
+    loop {
+        let cut = rest
+            .char_indices()
+            .find(|(_, ch)| *ch == '<')
+            .and_then(|(index, _)| diverged_marker_span(&rest[index..]).map(|span| (index, span)));
+        match cut {
+            Some((index, span)) => {
+                output.push_str(&rest[..index]);
+                rest = &rest[index + span..];
+            }
+            None => {
+                output.push_str(rest);
+                break;
+            }
+        }
+    }
+    output
+}
+
+/// Salvage an unterminated block: drop scaffolding lines, keep any real text.
+fn salvage_unterminated_block(block: &str) -> DsmlStreamOutput {
+    let mut output = DsmlStreamOutput::default();
+    let mut text = String::new();
+    for line in block.split_inclusive('\n') {
+        if line_contains_dsml_marker(line) {
+            log::warn!(
+                "[DSML] dropped unterminated tool call fragment ({} bytes)",
+                line.len()
+            );
+            continue;
+        }
+        text.push_str(line);
+    }
+    let cleaned = scrub_diverged_markers(&text);
+    if cleaned.trim().is_empty() {
+        log::warn!(
+            "[DSML] dropped unterminated streaming block ({} bytes) with no salvageable text",
+            block.len()
+        );
+    } else {
+        push_text(&mut output, &cleaned);
+    }
+    output
+}
+
+fn line_contains_dsml_marker(line: &str) -> bool {
+    find_next_opener(line).is_some() || find_next_removable(line).is_some()
+}
+
 fn partial_marker_suffix_len(buffer: &str) -> usize {
     let max_len = buffer.len().min(64);
     for len in (1..=max_len).rev() {
@@ -666,11 +793,13 @@ impl DsmlStreamSplitter {
                 push_text(&mut output, &tail);
             }
         } else {
-            log::warn!(
-                "[DSML] dropped unterminated streaming block ({} bytes)",
-                self.buffer.len()
-            );
-            self.buffer.clear();
+            let block = std::mem::take(&mut self.buffer);
+            let salvaged_calls = parse_dsml_tool_calls(&block).tool_calls;
+            output.tool_calls.extend(salvaged_calls);
+            let salvaged = salvage_unterminated_block(&block);
+            if let Some(text) = salvaged.text {
+                push_text(&mut output, &text);
+            }
             self.mode = DsmlStreamMode::Text;
         }
         output
@@ -706,9 +835,12 @@ impl DsmlStreamSplitter {
                         }
                         (None, None) => {
                             let holdback = partial_marker_suffix_len(&self.buffer);
-                            let emit_len = self.buffer.len() - holdback;
-                            push_text(&mut output, &self.buffer[..emit_len]);
-                            self.buffer.drain(..emit_len);
+                            let holdback_end = self.buffer.len() - holdback;
+                            push_text(
+                                &mut output,
+                                &scrub_diverged_markers(&self.buffer[..holdback_end]),
+                            );
+                            self.buffer.drain(..holdback_end);
                             break;
                         }
                     }
@@ -985,5 +1117,86 @@ mod tests {
         assert!(!looks_like_reasoning_continuation_start(
             "Here is the answer"
         ));
+    }
+
+    #[test]
+    fn strips_truncated_marker_that_never_completes() {
+        let pipe = "｜";
+        let input = format!("\n\n<{pipe}DSML{pipe} calls\n后续正常内容");
+        let parsed = parse_dsml_tool_calls(&input);
+        assert!(
+            !parsed.content.contains("DSML"),
+            "content={:?}",
+            parsed.content
+        );
+        assert!(parsed.content.contains("后续正常内容"));
+        assert!(parsed.tool_calls.is_empty());
+    }
+
+    #[test]
+    fn keeps_prose_with_a_lone_angle_bracket() {
+        let parsed = parse_dsml_tool_calls("如果 a < b 且 b < c 就继续");
+        assert_eq!(parsed.content, "如果 a < b 且 b < c 就继续");
+        assert!(parsed.tool_calls.is_empty());
+    }
+
+    #[test]
+    fn stream_splitter_drops_truncated_marker_chunked_like_nim() {
+        let pipe = "｜";
+        let mut splitter = DsmlStreamSplitter::default();
+        let mut text = String::new();
+        for chunk in [
+            format!("\n\n<{pipe}DSML{pipe}"),
+            " calls".to_string(),
+            "\n".to_string(),
+        ] {
+            let output = splitter.push(&chunk);
+            if let Some(part) = output.text {
+                text.push_str(&part);
+            }
+        }
+        let output = splitter.flush();
+        if let Some(part) = output.text {
+            text.push_str(&part);
+        }
+        assert!(text.trim().is_empty(), "text={text:?}");
+    }
+
+    #[test]
+    fn unterminated_block_keeps_real_text_and_drops_scaffolding() {
+        let pipe = "｜";
+        let block = format!(
+            "<{pipe}DSML{pipe} calls>\n真实的回答内容\n<{pipe}DSML{pipe} invoke name=\"exec_command\">\n"
+        );
+        let salvaged = salvage_unterminated_block(&block);
+        let text = salvaged.text.unwrap_or_default();
+        assert!(text.contains("真实的回答内容"), "text={text:?}");
+        assert!(!text.contains("invoke name"), "text={text:?}");
+        assert!(!text.contains("DSML"), "text={text:?}");
+    }
+
+    #[test]
+    fn unterminated_wrapper_still_converts_complete_invoke() {
+        let pipe = "｜";
+        let close = |body: &str| format!("{CLOSE_START}{pipe}DSML{pipe}{body}>");
+        let close_invoke = close(" invoke");
+        let block = format!(
+            "<{pipe}DSML{pipe} calls>\n<{pipe}DSML{pipe} invoke name=\"exec_command\">\n<{pipe}DSML{pipe} parameter name=\"cmd\" string=\"true\">ls{}\n{}\n",
+            close(" parameter"),
+            close_invoke
+        );
+        let parsed = parse_dsml_tool_calls(&block);
+        assert_eq!(parsed.tool_calls.len(), 1, "calls={:?}", parsed.tool_calls);
+        assert_eq!(parsed.tool_calls[0].name, "exec_command");
+        assert!(
+            !parsed.content.contains("DSML"),
+            "content={:?}",
+            parsed.content
+        );
+        assert!(
+            !parsed.content.contains("parameter"),
+            "content={:?}",
+            parsed.content
+        );
     }
 }

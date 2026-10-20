@@ -2054,6 +2054,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn drops_truncated_dsml_marker_chunked_like_nim() {
+        let pipe = "｜";
+        let first = content_chunk_for_model(
+            "z-ai/glm-5.3",
+            "chatcmpl_trunc",
+            &format!("\n\n<{pipe}DSML{pipe}"),
+            None,
+        );
+        let second = content_chunk_for_model("z-ai/glm-5.3", "chatcmpl_trunc", " calls", None);
+        let third =
+            content_chunk_for_model("z-ai/glm-5.3", "chatcmpl_trunc", "\n", Some("tool_calls"));
+        let output = collect(vec![
+            first.as_str(),
+            second.as_str(),
+            third.as_str(),
+            "data: [DONE]\n\n",
+        ])
+        .await;
+        assert!(!output.contains("｜DSML｜"), "output={output}");
+        assert!(!output.contains("DSML"), "output={output}");
+    }
+
+    #[tokio::test]
+    async fn unterminated_dsml_block_keeps_real_answer_text() {
+        let pipe = "｜";
+        let content = format!(
+            "<{pipe}DSML{pipe} calls>\n真实的回答内容\n<{pipe}DSML{pipe} invoke name=\"exec_command\">"
+        );
+        let chunk =
+            content_chunk_for_model("z-ai/glm-5.3", "chatcmpl_salvage", &content, Some("stop"));
+        let output = collect(vec![chunk.as_str(), "data: [DONE]\n\n"]).await;
+        assert!(output.contains("真实的回答内容"), "output={output}");
+        assert!(!output.contains("invoke name"), "output={output}");
+        assert!(!output.contains("｜DSML｜"), "output={output}");
+    }
+
+    #[tokio::test]
     async fn reclassifies_deepseek_reasoning_leak_before_visible_text() {
         let reasoning = dsml_reasoning_chunk("chatcmpl_leak", "Let's inspect...");
         let leaked = format!("<DSML>`{}", "x".repeat(700));
