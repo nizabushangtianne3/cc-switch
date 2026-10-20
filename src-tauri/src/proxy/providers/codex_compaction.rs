@@ -21,6 +21,7 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
 use serde_json::{json, Value};
+use std::borrow::Cow;
 
 pub(crate) const CCSWITCH_COMPACTION_PREFIX: &str = "ccswitch-compaction-v1:";
 
@@ -190,16 +191,25 @@ pub(crate) fn compaction_incomplete_reason(finish_reason: Option<&str>) -> Optio
 ///
 /// 别的压缩条目看不出来源，可能正是这家自己签发、能正常解开的，原样发出；上游明确拒绝后
 /// 由 `opaque_state_rectifier` 换成文字重试。请求里没有前两类条目时一个字节都不动。
-pub(crate) fn prepare_native_third_party_request(body: &mut Value) -> bool {
-    let Some(items) = body.get("input").and_then(Value::as_array) else {
-        return false;
-    };
-    if !items
-        .iter()
-        .any(|item| is_compaction_trigger(item) || own_compaction_summary(item).is_some())
-    {
+pub(crate) fn prepare_native_third_party_request(body: &mut Cow<'_, Value>) -> bool {
+    // 先只读探测：绝大多数请求没有 CC Switch 产出的压缩条目，
+    // 这时保持借用，一个字节都不拷贝。
+    let needs_rewrite = body
+        .get("input")
+        .and_then(Value::as_array)
+        .is_some_and(|items| {
+            items
+                .iter()
+                .any(|item| is_compaction_trigger(item) || own_compaction_summary(item).is_some())
+        });
+    if !needs_rewrite {
         return false;
     }
+
+    let body = body.to_mut();
+    let Some(items) = body.get_mut("input").and_then(Value::as_array_mut) else {
+        return false;
+    };
 
     let mut compaction = false;
     let rewritten: Vec<Value> = items
@@ -267,16 +277,44 @@ fn expected_item_id_prefix(item_type: &str) -> Option<&'static str> {
 /// id 前缀和条目类型对不上（转换器产出的、别家签发的）就去掉 id，返回是否去掉了。
 /// id 在输入里可省略，调用和结果靠 `call_id` 对应。
 pub(crate) fn strip_mismatched_item_id(item: &mut Value, item_type: &str) -> bool {
-    let Some(prefix) = expected_item_id_prefix(item_type) else {
-        return false;
-    };
-    let bad_id = item
-        .get("id")
-        .is_some_and(|id| !id.as_str().is_some_and(|id| id.starts_with(prefix)));
-    bad_id
+    has_mismatched_item_id(item, item_type)
         && item
             .as_object_mut()
             .is_some_and(|obj| obj.remove("id").is_some())
+}
+
+fn has_mismatched_item_id(item: &Value, item_type: &str) -> bool {
+    expected_item_id_prefix(item_type).is_some_and(|prefix| {
+        item.get("id")
+            .is_some_and(|id| !id.as_str().is_some_and(|id| id.starts_with(prefix)))
+    })
+}
+
+/// 发往官方前是否需要清理（[`scrub_ccswitch_state_for_official`] 会改写什么，
+/// 这里就探测什么）。官方线程里这些情况都不出现，出站管道用这个只读探测
+/// 决定要不要为改写拷贝请求体；两个入口由测试保证同进同出。
+pub(crate) fn official_scrub_needed(body: &Value) -> bool {
+    let stored = body.get("store").and_then(Value::as_bool) == Some(true);
+    let Some(items) = body.get("input").and_then(Value::as_array) else {
+        return false;
+    };
+
+    items.iter().any(|item| {
+        if own_compaction_summary(item).is_some() {
+            return true;
+        }
+        let item_type = item.get("type").and_then(Value::as_str).unwrap_or_default();
+        if item_type == "reasoning" {
+            let foreign = match compaction_encrypted_content(item) {
+                Some(encrypted_content) => is_ccswitch_envelope(encrypted_content),
+                None => !stored,
+            };
+            if foreign {
+                return true;
+            }
+        }
+        has_mismatched_item_id(item, item_type)
+    })
 }
 
 /// 发往官方（ChatGPT 登录直通）前，清理同一线程里第三方回合留下、官方一定会拒的东西：
@@ -530,21 +568,22 @@ mod tests {
 
     #[test]
     fn native_request_without_compaction_items_is_untouched() {
-        let mut body = json!({
+        let body = json!({
             "model": "kimi-k3",
             "input": [{ "type": "message", "role": "user", "content": "hi" }],
             "tools": [{ "type": "function", "name": "shell" }]
         });
         let before = body.clone();
-        assert!(!prepare_native_third_party_request(&mut body));
-        assert_eq!(body, before);
+        let mut cow = Cow::Owned(body);
+        assert!(!prepare_native_third_party_request(&mut cow));
+        assert_eq!(cow.into_owned(), before);
     }
 
     #[test]
     fn native_request_keeps_unrecognized_compaction_blobs_byte_identical() {
         // 同一家原生 Responses 上游自己签发的压缩密文：看不出来源，原样发出，
         // 被拒后再由 opaque_state_rectifier 处理。
-        let mut body = json!({
+        let body = json!({
             "model": "gpt-5.5",
             "input": [
                 { "type": "message", "role": "user", "content": "hi" },
@@ -555,13 +594,14 @@ mod tests {
             "tools": [{ "type": "function", "name": "shell" }]
         });
         let before = body.clone();
-        assert!(!prepare_native_third_party_request(&mut body));
-        assert_eq!(body, before);
+        let mut cow = Cow::Owned(body);
+        assert!(!prepare_native_third_party_request(&mut cow));
+        assert_eq!(cow.into_owned(), before);
     }
 
     #[test]
     fn native_compaction_request_becomes_summary_turn() {
-        let mut body = json!({
+        let body = json!({
             "model": "kimi-k3",
             "input": [
                 { "type": "message", "role": "user", "content": "hi" },
@@ -575,8 +615,9 @@ mod tests {
             "parallel_tool_calls": true,
             "text": { "format": { "type": "json_schema" }, "verbosity": "low" }
         });
-        assert!(prepare_native_third_party_request(&mut body));
-        let input = body["input"].as_array().unwrap();
+        let mut cow = Cow::Owned(body);
+        assert!(prepare_native_third_party_request(&mut cow));
+        let input = cow["input"].as_array().unwrap();
         assert_eq!(input.len(), 5);
         assert_eq!(
             input[1],
@@ -589,12 +630,12 @@ mod tests {
         );
         assert_eq!(input[4]["content"][0]["text"], COMPACT_PROMPT);
         assert_eq!(
-            body["tools"],
+            cow["tools"],
             json!([{ "type": "function", "name": "shell" }])
         );
-        assert_eq!(body["tool_choice"], "none");
-        assert_eq!(body["parallel_tool_calls"], true);
-        assert_eq!(body["text"], json!({ "verbosity": "low" }));
+        assert_eq!(cow["tool_choice"], "none");
+        assert_eq!(cow["parallel_tool_calls"], true);
+        assert_eq!(cow["text"], json!({ "verbosity": "low" }));
     }
 
     #[test]
@@ -616,10 +657,11 @@ mod tests {
             ],
             "tools": [{ "type": "web_search" }]
         });
-        assert!(prepare_native_third_party_request(&mut body));
-        assert_eq!(body["tools"], json!([{ "type": "web_search" }]));
-        assert_eq!(body["tool_choice"], "none");
-        let input = body["input"].as_array().unwrap();
+        let mut cow = Cow::Owned(body);
+        assert!(prepare_native_third_party_request(&mut cow));
+        assert_eq!(cow["tools"], json!([{ "type": "web_search" }]));
+        assert_eq!(cow["tool_choice"], "none");
+        let input = cow["input"].as_array().unwrap();
         assert_eq!(input[1]["type"], "web_search_call");
         assert_eq!(input[2]["content"][0]["text"], COMPACT_PROMPT);
     }
@@ -636,10 +678,11 @@ mod tests {
             "tool_choice": "auto",
             "parallel_tool_calls": true
         });
-        assert!(prepare_native_third_party_request(&mut body));
-        assert!(body.get("tools").is_none());
-        assert!(body.get("tool_choice").is_none());
-        assert!(body.get("parallel_tool_calls").is_none());
+        let mut cow = Cow::Owned(body);
+        assert!(prepare_native_third_party_request(&mut cow));
+        assert!(cow.get("tools").is_none());
+        assert!(cow.get("tool_choice").is_none());
+        assert!(cow.get("parallel_tool_calls").is_none());
     }
 
     #[test]
@@ -770,5 +813,69 @@ mod tests {
         )
         .await;
         assert_eq!(empty.last().unwrap()["type"], "response.failed");
+    }
+
+    #[test]
+    fn official_scrub_predicate_matches_the_scrub_result() {
+        // 谓词决定要不要为改写拷贝请求体，scrub 决定实际改写什么：
+        // 两者必须同进同出，否则要么白拷贝、要么漏清理。
+        let own_summary = json!({
+            "type": "compaction",
+            "encrypted_content": encode_compaction_summary("the summary")
+        });
+        let foreign_reasoning_blob = json!({
+            "type": "reasoning",
+            "encrypted_content": "gAAAAABopenai-blob"
+        });
+        let plain_reasoning_without_payload = json!({ "type": "reasoning" });
+        let mismatched_id = json!({ "type": "message", "id": "resp_1_msg" });
+        let well_formed_message = json!({ "type": "message", "id": "msg_1" });
+
+        let cases = vec![
+            (true, json!({ "input": [own_summary] })),
+            (true, json!({ "input": [plain_reasoning_without_payload] })),
+            (true, json!({ "input": [mismatched_id] })),
+            (false, json!({ "input": [well_formed_message] })),
+            // store:true 时官方能按 id 查回推理条目，别家密文也保留。
+            (
+                false,
+                json!({ "store": true, "input": [foreign_reasoning_blob] }),
+            ),
+            (
+                false,
+                json!({ "store": true, "input": [plain_reasoning_without_payload] }),
+            ),
+            // compaction_trigger 只属于第三方侧的 prepare 重写，官方清洗不动它。
+            (
+                false,
+                json!({ "input": [{ "type": "compaction_trigger" }] }),
+            ),
+        ];
+
+        for (expected, body) in cases {
+            assert_eq!(official_scrub_needed(&body), expected, "body: {body}");
+            let mut scrubbed = body.clone();
+            assert_eq!(scrub_ccswitch_state_for_official(&mut scrubbed), expected);
+        }
+    }
+
+    #[test]
+    fn native_third_party_rewrite_keeps_borrowed_bodies_when_nothing_to_rewrite() {
+        let owned = json!({ "input": [{ "type": "message" }] });
+        let mut body = Cow::Borrowed(&owned);
+        assert!(!prepare_native_third_party_request(&mut body));
+        assert!(matches!(body, Cow::Borrowed(_)));
+
+        let compaction_body = json!({
+            "input": [
+                {
+                    "type": "context_compaction",
+                    "encrypted_content": encode_compaction_summary("prior work")
+                }
+            ]
+        });
+        let mut body = Cow::Borrowed(&compaction_body);
+        assert!(prepare_native_third_party_request(&mut body));
+        assert_eq!(body["input"][0]["type"], "message");
     }
 }

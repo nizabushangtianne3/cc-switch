@@ -1,10 +1,15 @@
 //! 模型映射模块
 //!
-//! 在请求转发前，根据 Provider 配置替换请求中的模型名称
+//! 在请求转发前，根据 Provider 配置替换请求中的模型名称。
+//!
+//! 每个请求都会走到这里，所以接口按 Copy-on-write 设计：模型名真的
+//! 被改写时才克隆整份请求体，其余情况（没配置映射、映射后不变、
+//! 不带 `[1m]` 标记）保持借用，不产生任何拷贝。
 
 use crate::claude_desktop_config::ONE_M_CONTEXT_MARKER;
 use crate::provider::Provider;
 use serde_json::Value;
+use std::borrow::Cow;
 
 /// 模型映射配置
 pub struct ModelMapping {
@@ -113,35 +118,26 @@ impl ModelMapping {
     }
 }
 
-/// 对请求体应用模型映射
+/// 应用模型映射。
 ///
-/// 返回 (映射后的请求体, 原始模型名, 映射后模型名)
-pub fn apply_model_mapping(
-    mut body: Value,
-    provider: &Provider,
-) -> (Value, Option<String>, Option<String>) {
+/// 返回 `Some(映射后的请求体)` 表示模型名真的被改写（此时才克隆整份请求体）；
+/// 没配置映射、或映射后模型不变时返回 `None`，调用方继续借用原请求体。
+pub fn apply_model_mapping(body: &Value, provider: &Provider) -> Option<Value> {
     let mapping = ModelMapping::from_provider(provider);
-
-    // 如果没有配置映射，直接返回
     if !mapping.has_mapping() {
-        let original = body.get("model").and_then(|m| m.as_str()).map(String::from);
-        return (body, original, None);
+        return None;
     }
 
-    // 提取原始模型名
-    let original_model = body.get("model").and_then(|m| m.as_str()).map(String::from);
-
-    if let Some(ref original) = original_model {
-        let mapped = mapping.map_model(original);
-
-        if mapped != *original {
-            log::debug!("[ModelMapper] 模型映射: {original} → {mapped}");
-            body["model"] = serde_json::json!(mapped);
-            return (body, Some(original.clone()), Some(mapped));
-        }
+    let original_model = body.get("model").and_then(|m| m.as_str())?;
+    let mapped_model = mapping.map_model(original_model);
+    if mapped_model == original_model {
+        return None;
     }
 
-    (body, original_model, None)
+    log::debug!("[ModelMapper] 模型映射: {original_model} → {mapped_model}");
+    let mut mapped_body = body.clone();
+    mapped_body["model"] = Value::String(mapped_model);
+    Some(mapped_body)
 }
 
 /// Claude Code 通过 `[1M]` 后缀声明 100 万上下文能力；上游 API
@@ -158,17 +154,21 @@ pub fn strip_one_m_suffix_for_upstream(model: &str) -> &str {
     model
 }
 
-pub fn strip_one_m_suffix_for_upstream_from_body(mut body: Value) -> Value {
+/// 就地剥离请求体模型名上的 `[1m]` 标记，返回是否真的剥离过。
+///
+/// 只有带标记时才让借用中的请求体落成 Owned；没有标记时零拷贝。
+pub fn strip_one_m_suffix_for_upstream_from_body(body: &mut Cow<'_, Value>) -> bool {
     let Some(model) = body.get("model").and_then(Value::as_str) else {
-        return body;
+        return false;
     };
-
     let stripped = strip_one_m_suffix_for_upstream(model);
-    if stripped != model {
-        log::debug!("[ModelMapper] 去除本地 1M 标记: {model} → {stripped}");
-        body["model"] = serde_json::json!(stripped);
+    if stripped == model {
+        return false;
     }
-    body
+
+    log::debug!("[ModelMapper] 去除本地 1M 标记: {model} → {stripped}");
+    body.to_mut()["model"] = Value::String(stripped.to_string());
+    true
 }
 
 #[cfg(test)]
@@ -222,37 +222,32 @@ mod tests {
     fn test_sonnet_mapping() {
         let provider = create_provider_with_mapping();
         let body = json!({"model": "claude-sonnet-4-5-20250929"});
-        let (result, original, mapped) = apply_model_mapping(body, &provider);
+        let result = apply_model_mapping(&body, &provider).expect("mapped");
         assert_eq!(result["model"], "sonnet-mapped");
-        assert_eq!(original, Some("claude-sonnet-4-5-20250929".to_string()));
-        assert_eq!(mapped, Some("sonnet-mapped".to_string()));
     }
 
     #[test]
     fn test_haiku_mapping() {
         let provider = create_provider_with_mapping();
         let body = json!({"model": "claude-haiku-4-5"});
-        let (result, _, mapped) = apply_model_mapping(body, &provider);
+        let result = apply_model_mapping(&body, &provider).expect("mapped");
         assert_eq!(result["model"], "haiku-mapped");
-        assert_eq!(mapped, Some("haiku-mapped".to_string()));
     }
 
     #[test]
     fn test_opus_mapping() {
         let provider = create_provider_with_mapping();
         let body = json!({"model": "claude-opus-4-5"});
-        let (result, _, mapped) = apply_model_mapping(body, &provider);
+        let result = apply_model_mapping(&body, &provider).expect("mapped");
         assert_eq!(result["model"], "opus-mapped");
-        assert_eq!(mapped, Some("opus-mapped".to_string()));
     }
 
     #[test]
     fn test_fable_mapping() {
         let provider = create_provider_with_mapping();
         let body = json!({"model": "claude-fable-5"});
-        let (result, _, mapped) = apply_model_mapping(body, &provider);
+        let result = apply_model_mapping(&body, &provider).expect("mapped");
         assert_eq!(result["model"], "fable-mapped");
-        assert_eq!(mapped, Some("fable-mapped".to_string()));
     }
 
     #[test]
@@ -260,9 +255,8 @@ mod tests {
         // Claude Code 实际会发 claude-fable-5[1m] 形态（issue #3980）
         let provider = create_provider_with_mapping();
         let body = json!({"model": "claude-fable-5[1m]"});
-        let (result, _, mapped) = apply_model_mapping(body, &provider);
+        let result = apply_model_mapping(&body, &provider).expect("mapped");
         assert_eq!(result["model"], "fable-mapped");
-        assert_eq!(mapped, Some("fable-mapped".to_string()));
     }
 
     #[test]
@@ -275,9 +269,8 @@ mod tests {
             }
         });
         let body = json!({"model": "claude-fable-5"});
-        let (result, _, mapped) = apply_model_mapping(body, &provider);
+        let result = apply_model_mapping(&body, &provider).expect("mapped");
         assert_eq!(result["model"], "opus-mapped");
-        assert_eq!(mapped, Some("opus-mapped".to_string()));
     }
 
     #[test]
@@ -289,9 +282,8 @@ mod tests {
             }
         });
         let body = json!({"model": "claude-fable-5"});
-        let (result, _, mapped) = apply_model_mapping(body, &provider);
+        let result = apply_model_mapping(&body, &provider).expect("mapped");
         assert_eq!(result["model"], "default-model");
-        assert_eq!(mapped, Some("default-model".to_string()));
     }
 
     #[test]
@@ -302,9 +294,8 @@ mod tests {
             "model": "claude-sonnet-4-5",
             "thinking": {"type": "enabled"}
         });
-        let (result, _, mapped) = apply_model_mapping(body, &provider);
+        let result = apply_model_mapping(&body, &provider).expect("mapped");
         assert_eq!(result["model"], "sonnet-mapped");
-        assert_eq!(mapped, Some("sonnet-mapped".to_string()));
     }
 
     #[test]
@@ -315,9 +306,8 @@ mod tests {
             "model": "claude-sonnet-4-5",
             "thinking": {"type": "adaptive"}
         });
-        let (result, _, mapped) = apply_model_mapping(body, &provider);
+        let result = apply_model_mapping(&body, &provider).expect("mapped");
         assert_eq!(result["model"], "sonnet-mapped");
-        assert_eq!(mapped, Some("sonnet-mapped".to_string()));
     }
 
     #[test]
@@ -327,18 +317,16 @@ mod tests {
             "model": "claude-sonnet-4-5",
             "thinking": {"type": "disabled"}
         });
-        let (result, _, mapped) = apply_model_mapping(body, &provider);
+        let result = apply_model_mapping(&body, &provider).expect("mapped");
         assert_eq!(result["model"], "sonnet-mapped");
-        assert_eq!(mapped, Some("sonnet-mapped".to_string()));
     }
 
     #[test]
     fn test_unknown_model_uses_default() {
         let provider = create_provider_with_mapping();
         let body = json!({"model": "some-unknown-model"});
-        let (result, _, mapped) = apply_model_mapping(body, &provider);
+        let result = apply_model_mapping(&body, &provider).expect("mapped");
         assert_eq!(result["model"], "default-model");
-        assert_eq!(mapped, Some("default-model".to_string()));
     }
 
     #[test]
@@ -352,11 +340,10 @@ mod tests {
         });
 
         let body = json!({"model": "gpt-5.4-mini"});
-        let (result, original, mapped) = apply_model_mapping(body, &provider);
 
-        assert_eq!(result["model"], "gpt-5.4-mini");
-        assert_eq!(original, Some("gpt-5.4-mini".to_string()));
-        assert!(mapped.is_none());
+        // 子代理模型与映射表同档时保持原样：不产生拷贝、不改写。
+        assert!(apply_model_mapping(&body, &provider).is_none());
+        assert_eq!(body["model"], "gpt-5.4-mini");
     }
 
     #[test]
@@ -370,36 +357,39 @@ mod tests {
         });
 
         let body = json!({"model": "gpt-5.4-mini[1M]"});
-        let (result, original, mapped) = apply_model_mapping(body, &provider);
 
-        assert_eq!(result["model"], "gpt-5.4-mini[1M]");
-        assert_eq!(original, Some("gpt-5.4-mini[1M]".to_string()));
-        assert!(mapped.is_none());
+        assert!(apply_model_mapping(&body, &provider).is_none());
+        assert_eq!(body["model"], "gpt-5.4-mini[1M]");
     }
 
     #[test]
     fn test_no_mapping_configured() {
         let provider = create_provider_without_mapping();
         let body = json!({"model": "claude-sonnet-4-5"});
-        let (result, original, mapped) = apply_model_mapping(body, &provider);
-        assert_eq!(result["model"], "claude-sonnet-4-5");
-        assert_eq!(original, Some("claude-sonnet-4-5".to_string()));
-        assert!(mapped.is_none());
+
+        assert!(apply_model_mapping(&body, &provider).is_none());
+        assert_eq!(body["model"], "claude-sonnet-4-5");
     }
 
     #[test]
     fn test_case_insensitive() {
         let provider = create_provider_with_mapping();
         let body = json!({"model": "Claude-SONNET-4-5"});
-        let (result, _, mapped) = apply_model_mapping(body, &provider);
+        let result = apply_model_mapping(&body, &provider).expect("mapped");
         assert_eq!(result["model"], "sonnet-mapped");
-        assert_eq!(mapped, Some("sonnet-mapped".to_string()));
+    }
+
+    /// 测试辅助：按值进来、就地剥离后交回去，保持断言的写法。
+    fn stripped(body: Value) -> Value {
+        let mut cow = Cow::Owned(body);
+        strip_one_m_suffix_for_upstream_from_body(&mut cow);
+        cow.into_owned()
     }
 
     #[test]
     fn strips_one_m_suffix_before_upstream() {
         let body = json!({"model": "deepseek-v4-pro[1M]"});
-        let result = strip_one_m_suffix_for_upstream_from_body(body);
+        let result = stripped(body);
         assert_eq!(result["model"], "deepseek-v4-pro");
     }
 
@@ -413,8 +403,8 @@ mod tests {
         });
 
         let body = json!({"model": "claude-sonnet-4-6"});
-        let (mapped, _, _) = apply_model_mapping(body, &provider);
-        let result = strip_one_m_suffix_for_upstream_from_body(mapped);
+        let mapped = apply_model_mapping(&body, &provider).expect("mapped");
+        let result = stripped(mapped);
 
         assert_eq!(result["model"], "deepseek-v4-pro");
     }
@@ -422,7 +412,25 @@ mod tests {
     #[test]
     fn keeps_model_without_one_m_suffix() {
         let body = json!({"model": "deepseek-v4-pro"});
-        let result = strip_one_m_suffix_for_upstream_from_body(body);
+        let result = stripped(body);
         assert_eq!(result["model"], "deepseek-v4-pro");
+    }
+
+    #[test]
+    fn borrowed_body_without_marker_is_never_cloned() {
+        // `[1m]` 剥离是绝大多数请求都会过的分支：没有标记时必须保持借用，
+        // 否则整份请求体会被无谓拷贝一份。
+        let owned = json!({"model": "deepseek-v4-pro"});
+        let mut cow = Cow::Borrowed(&owned);
+        assert!(!strip_one_m_suffix_for_upstream_from_body(&mut cow));
+        assert!(matches!(cow, Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn borrowed_body_with_marker_is_materialized_once() {
+        let owned = json!({"model": "deepseek-v4-pro[1M]"});
+        let mut cow = Cow::Borrowed(&owned);
+        assert!(strip_one_m_suffix_for_upstream_from_body(&mut cow));
+        assert_eq!(cow["model"], "deepseek-v4-pro");
     }
 }

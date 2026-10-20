@@ -39,6 +39,7 @@ use futures::StreamExt;
 use http::Extensions;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use std::borrow::Cow;
 use std::sync::Arc;
 use tauri::Manager;
 use tokio::sync::RwLock;
@@ -407,12 +408,16 @@ impl RequestForwarder {
     /// 受 `enabled && request_media_fallback` 管辖；其中"启发式模型名单预测"
     /// 再受 `request_media_heuristic` 单独管辖（显式声明 text-only 始终生效）。
     /// 返回被替换的图片块数量（0 = 未触发或开关关闭）。
-    fn apply_media_prevention(&self, body: &mut Value, provider: &Provider) -> usize {
+    fn apply_media_prevention(&self, body: &mut Cow<'_, Value>, provider: &Provider) -> usize {
         if !(self.rectifier_config.enabled && self.rectifier_config.request_media_fallback) {
             return 0;
         }
+        // 只读先扫一遍：纯文本请求（绝大多数）没有图片块可换，保持借用不拷贝。
+        if !super::media_sanitizer::contains_image_blocks(body) {
+            return 0;
+        }
         let replaced_images = super::media_sanitizer::replace_images_for_text_only_model(
-            body,
+            body.to_mut(),
             provider,
             self.rectifier_config.request_media_heuristic,
         );
@@ -856,31 +861,6 @@ impl RequestForwarder {
         extensions: Extensions,
         providers: &[Provider],
     ) -> Result<ForwardResult, ForwardError> {
-        self.forward_with_retry_arc(
-            app_type,
-            method,
-            endpoint,
-            Arc::new(body.clone()),
-            headers,
-            extensions,
-            providers,
-        )
-        .await
-    }
-
-    /// `forward_with_retry` 的所有权版本：调用方已有请求体时直接共享，避免复制。
-    #[cfg(test)]
-    #[allow(clippy::too_many_arguments)]
-    pub async fn forward_with_retry_arc(
-        &self,
-        app_type: &AppType,
-        method: http::Method,
-        endpoint: &str,
-        body: impl Into<Arc<Value>>,
-        headers: axum::http::HeaderMap,
-        extensions: Extensions,
-        providers: &[Provider],
-    ) -> Result<ForwardResult, ForwardError> {
         let shared_providers: Vec<SharedProvider> = providers
             .iter()
             .map(|provider| Arc::new(provider.clone()))
@@ -889,7 +869,7 @@ impl RequestForwarder {
             app_type,
             method,
             endpoint,
-            body,
+            Arc::new(body.clone()),
             headers,
             extensions,
             &shared_providers,
@@ -1697,19 +1677,22 @@ impl RequestForwarder {
         // Claude Desktop proxy 模式必须先把 Desktop 可见的 claude-* route
         // 映射成真实上游模型名，并且未知 route 要直接报错，不能使用默认模型兜底。
         // 聚合模型的请求已经解出了上游名，不再查映射表（查不到会报错，按档位回落会发错模型）。
-        let mut mapped_body = if matches!(app_type, AppType::ClaudeDesktop) {
-            if self.keeps_resolved_model() {
+        // 请求体是 Arc 共享的，故障转移的每次尝试都要用它。这里的每一步都按
+        // Copy-on-write 处理：模型映射没改写、[1m] 标记不存在时保持借用，
+        // 原样转发的大请求体（数百 KB 很常见）全程零拷贝。
+        let mut mapped_body: Cow<'_, Value> = if matches!(app_type, AppType::ClaudeDesktop) {
+            Cow::Owned(if self.keeps_resolved_model() {
                 crate::claude_desktop_config::normalize_upstream_request(body.clone(), provider)
             } else {
                 crate::claude_desktop_config::map_proxy_request_model(body.clone(), provider)
                     .map_err(|e| ProxyError::InvalidRequest(e.to_string()))?
-            }
+            })
         } else if self.keeps_resolved_model() {
-            body.clone()
+            Cow::Borrowed(body)
         } else {
-            let (mapped_body, _original_model, _mapped_model) =
-                super::model_mapper::apply_model_mapping(body.clone(), provider);
-            mapped_body
+            super::model_mapper::apply_model_mapping(body, provider)
+                .map(Cow::Owned)
+                .unwrap_or_else(|| Cow::Borrowed(body))
         };
 
         let is_copilot_codex_responses = matches!(app_type, AppType::Codex)
@@ -1749,13 +1732,16 @@ impl RequestForwarder {
         // Route requests to the provider's real upstream model before applying
         // the optional Responses -> Chat/Anthropic bridge.
         if matches!(app_type, AppType::GrokBuild) {
-            super::providers::apply_codex_upstream_model(provider, &mut mapped_body);
+            super::providers::apply_codex_upstream_model(provider, mapped_body.to_mut());
         }
 
         if is_copilot_claude_body {
-            mapped_body =
-                super::providers::copilot_model_map::apply_copilot_model_normalization(mapped_body);
-            self.apply_copilot_live_model_resolution(provider, &mut mapped_body)
+            mapped_body = Cow::Owned(
+                super::providers::copilot_model_map::apply_copilot_model_normalization(
+                    mapped_body.into_owned(),
+                ),
+            );
+            self.apply_copilot_live_model_resolution(provider, mapped_body.to_mut())
                 .await;
             // Strip the [1M] context marker after Copilot normalization/resolve.
             // A user's mapped value (e.g. "gpt-5.6-sol[1M]") carries [1M] as a
@@ -1764,15 +1750,13 @@ impl RequestForwarder {
             // rewrites claude-xxx[1M] into the "-1m" dash form Copilot accepts, and
             // the strip helper only touches the "[1m]" bracket form, so "-1m"
             // variants pass through unchanged.
-            mapped_body =
-                super::model_mapper::strip_one_m_suffix_for_upstream_from_body(mapped_body);
+            super::model_mapper::strip_one_m_suffix_for_upstream_from_body(&mut mapped_body);
         } else if !is_copilot_codex_responses && !codex_responses_to_anthropic {
             // Skip on the Codex→Anthropic path: stripping [1m] here would break both the
             // model-catalog match (apply_codex_upstream_model) and the transform's own
             // strip+`context-1m` beta detection. The marker is stripped later, on the
             // final anthropic_body.
-            mapped_body =
-                super::model_mapper::strip_one_m_suffix_for_upstream_from_body(mapped_body);
+            super::model_mapper::strip_one_m_suffix_for_upstream_from_body(&mut mapped_body);
         }
 
         // --- Copilot 优化器：分类 + 请求体优化（在格式转换之前执行） ---
@@ -1804,17 +1788,23 @@ impl RequestForwarder {
 
             // 2. 孤立 tool_result 清理 — 分类完成后再清洗
             //    防止上游 API 因不匹配的 tool_result 报错导致重试/重复计费
-            mapped_body = super::copilot_optimizer::sanitize_orphan_tool_results(mapped_body);
+            mapped_body = Cow::Owned(super::copilot_optimizer::sanitize_orphan_tool_results(
+                mapped_body.into_owned(),
+            ));
 
             // 3. Tool result 合并 — 将 [tool_result, text] 变为 [tool_result(含text)]
             if self.copilot_optimizer_config.tool_result_merging {
-                mapped_body = super::copilot_optimizer::merge_tool_results(mapped_body);
+                mapped_body = Cow::Owned(super::copilot_optimizer::merge_tool_results(
+                    mapped_body.into_owned(),
+                ));
             }
 
             // 3.5. 主动剥离 thinking block — Copilot 走 OpenAI 兼容端点不识别该块
             //      避免上游拒绝后由 rectifier 反应式重试（首次请求已消耗 quota）
             if self.copilot_optimizer_config.strip_thinking {
-                mapped_body = super::copilot_optimizer::strip_thinking_blocks(mapped_body);
+                mapped_body = Cow::Owned(super::copilot_optimizer::strip_thinking_blocks(
+                    mapped_body.into_owned(),
+                ));
             }
 
             // 4. Warmup 小模型降级
@@ -1823,7 +1813,7 @@ impl RequestForwarder {
                     "[Copilot] Warmup 请求降级到模型: {}",
                     self.copilot_optimizer_config.warmup_model
                 );
-                mapped_body["model"] =
+                mapped_body.to_mut()["model"] =
                     serde_json::json!(&self.copilot_optimizer_config.warmup_model);
             }
 
@@ -1891,7 +1881,7 @@ impl RequestForwarder {
             let resolved = self
                 .resolve_codex_copilot_model(provider, &mapped_body, api_format)
                 .await?;
-            let transport = apply_codex_copilot_model(&mut mapped_body, resolved, api_format)?;
+            let transport = apply_codex_copilot_model(mapped_body.to_mut(), resolved, api_format)?;
             copilot_endpoint_override = Some(transport.endpoint);
             codex_responses_to_chat = matches!(transport.protocol, CopilotProtocol::Chat);
             codex_responses_to_anthropic = false;
@@ -1951,11 +1941,19 @@ impl RequestForwarder {
         };
         if adapter.name() == "Claude" {
             if let Some(api_format) = resolved_claude_api_format.as_deref() {
-                super::providers::normalize_anthropic_messages_for_provider(
-                    &mut mapped_body,
+                // 两个历史规范化只在窄形态（推理供应商的 tool 历史、DeepSeek 官方端点的
+                // disabled+effort 冲突）下才改写。只读门先行：绝大多数请求保持借用零拷贝。
+                if super::providers::anthropic_messages_need_normalization(
+                    &mapped_body,
                     provider,
                     api_format,
-                );
+                ) {
+                    super::providers::normalize_anthropic_messages_for_provider(
+                        mapped_body.to_mut(),
+                        provider,
+                        api_format,
+                    );
+                }
                 self.apply_media_prevention(&mut mapped_body, provider);
             }
         }
@@ -2061,8 +2059,8 @@ impl RequestForwarder {
         let mut codex_anthropic_one_m = false;
 
         // 转换请求体（如果需要）
-        let mut request_body = if codex_responses_to_chat {
-            let mut mapped_body = mapped_body;
+        let mut request_body: Cow<'_, Value> = if codex_responses_to_chat {
+            let mut mapped_body = mapped_body.into_owned();
             let explicit_prompt_cache_key = mapped_body
                 .get("prompt_cache_key")
                 .and_then(|value| value.as_str())
@@ -2101,9 +2099,9 @@ impl RequestForwarder {
                 self.session_client_provided
                     .then_some(self.session_id.as_str()),
             );
-            chat_body
+            Cow::Owned(chat_body)
         } else if codex_responses_to_anthropic {
-            let mut mapped_body = mapped_body;
+            let mut mapped_body = mapped_body.into_owned();
             if !self.keeps_resolved_model() {
                 super::providers::apply_codex_upstream_model(provider, &mut mapped_body);
             }
@@ -2159,13 +2157,13 @@ impl RequestForwarder {
                 &mut anthropic_body,
                 &codex_anthropic_cache_config(&self.optimizer_config),
             );
-            anthropic_body
+            Cow::Owned(anthropic_body)
         } else if needs_transform {
             if adapter.name() == "Claude" {
                 let api_format = resolved_claude_api_format
                     .as_deref()
                     .unwrap_or_else(|| super::providers::get_claude_api_format(provider));
-                let mut mapped_body = mapped_body;
+                let mut mapped_body = mapped_body.into_owned();
                 // 映射后的模型名不再带「省略 thinking 仍默认开思考」的语义（5.x 的
                 // Fable / Mythos / Opus / Sonnet），按客户端原模型补成显式 adaptive，
                 // effort 换算才不会当成关闭。
@@ -2175,16 +2173,16 @@ impl RequestForwarder {
                         body.get("model").and_then(|m| m.as_str()),
                     );
                 }
-                super::providers::transform_claude_request_for_api_format(
+                Cow::Owned(super::providers::transform_claude_request_for_api_format(
                     mapped_body,
                     provider,
                     api_format,
                     self.session_client_provided
                         .then_some(self.session_id.as_str()),
                     Some(self.gemini_shadow.as_ref()),
-                )?
+                )?)
             } else {
-                adapter.transform_request(mapped_body, provider)?
+                Cow::Owned(adapter.transform_request(mapped_body.into_owned(), provider)?)
             }
         } else {
             mapped_body
@@ -2200,9 +2198,12 @@ impl RequestForwarder {
             && !codex_responses_to_anthropic
         {
             if codex_official_auth_passthrough {
-                if super::providers::codex_compaction::scrub_ccswitch_state_for_official(
-                    &mut request_body,
-                ) {
+                // 只读探测先行：纯官方线程（绝大多数请求）一个字节都不用动，
+                // 借用中的请求体也就不需要拷贝。
+                if super::providers::codex_compaction::official_scrub_needed(&request_body) {
+                    super::providers::codex_compaction::scrub_ccswitch_state_for_official(
+                        request_body.to_mut(),
+                    );
                     log::debug!(
                         "[Codex] Scrubbed third-party turn state before the official upstream (provider={})",
                         provider.id
@@ -2228,7 +2229,7 @@ impl RequestForwarder {
             && super::providers::provider_needs_responses_namespace_flatten(provider)
         {
             if super::providers::transform_codex_responses_namespace::flatten_request_namespaces(
-                &mut request_body,
+                request_body.to_mut(),
             )? {
                 log::debug!(
                     "[Codex] Flattened namespace tools for native Responses upstream (provider={})",
@@ -2242,7 +2243,7 @@ impl RequestForwarder {
                 super::providers::codex_provider_upstream_model(provider)
             };
             super::providers::transform_codex_responses_xai_sanitize::apply_xai_native_responses_request_compat(
-                &mut request_body,
+                request_body.to_mut(),
                 &provider.id,
                 upstream_model.as_deref(),
                 &provider.settings_config,
@@ -2260,7 +2261,7 @@ impl RequestForwarder {
             if super::providers::codex_stack_upstream_rejects_web_search(
                 provider,
                 request_model.as_deref(),
-            ) && super::providers::strip_codex_hosted_web_search(&mut request_body)
+            ) && super::providers::strip_codex_hosted_web_search(request_body.to_mut())
             {
                 log::debug!(
                     "[Codex] Dropped hosted web_search for a stacked model (provider={})",
@@ -2280,7 +2281,7 @@ impl RequestForwarder {
         {
             let rewritten =
                 super::providers::transform_codex_chat_moonshot_schema::wrap_ref_siblings_in_chat_tools(
-                    &mut request_body,
+                    request_body.to_mut(),
                 );
             if rewritten > 0 {
                 log::debug!(
@@ -2302,14 +2303,14 @@ impl RequestForwarder {
                 .as_ref()
                 .and_then(|meta| meta.local_proxy_request_overrides.as_ref())
             {
-                apply_local_proxy_body_overrides(&mut request_body, overrides);
+                apply_local_proxy_body_overrides(request_body.to_mut(), overrides);
             }
         }
 
         // 过滤私有参数（以 `_` 开头的字段），防止内部信息泄露到上游。
         // 就地摘键、不重建文档：没有私有字段（绝大多数请求）时连拷贝都不产生。
         if contains_private_params(&request_body) {
-            strip_private_params(&mut request_body);
+            strip_private_params(request_body.to_mut());
         }
         let filtered_body = request_body;
         // 出站 body 定稿后刷新真值（覆盖 Codex chat 上游模型覆写、转换层模型改写）
@@ -2928,7 +2929,7 @@ impl RequestForwarder {
         let body_bytes = if matches!(method, &http::Method::GET | &http::Method::HEAD) {
             Vec::new()
         } else {
-            serde_json::to_vec(&filtered_body).map_err(|e| {
+            serde_json::to_vec(filtered_body.as_ref()).map_err(|e| {
                 ProxyError::Internal(format!("Failed to serialize request body: {e}"))
             })?
         };
@@ -2980,7 +2981,7 @@ impl RequestForwarder {
         log::debug!(
             "[{tag}] >>> 请求体已准备: bytes={}, hash={} (content omitted)",
             body_bytes.len(),
-            short_value_hash(Some(&filtered_body))
+            short_value_hash(Some(filtered_body.as_ref()))
         );
 
         // 确定超时
@@ -7044,7 +7045,7 @@ mod tests {
     fn prevention_replaces_when_all_switches_on_and_model_in_heuristic_list() {
         let fwd = forwarder_with_rectifier(RectifierConfig::default());
         let provider = provider_with_settings(json!({}));
-        let mut body = body_with_image("qwen3-coder-plus");
+        let mut body = Cow::Owned(body_with_image("qwen3-coder-plus"));
 
         let replaced = fwd.apply_media_prevention(&mut body, &provider);
 
@@ -7060,7 +7061,7 @@ mod tests {
             ..RectifierConfig::default()
         });
         let provider = provider_with_settings(json!({}));
-        let mut body = body_with_image("qwen3-coder-plus");
+        let mut body = Cow::Owned(body_with_image("qwen3-coder-plus"));
 
         let replaced = fwd.apply_media_prevention(&mut body, &provider);
 
@@ -7075,7 +7076,7 @@ mod tests {
             ..RectifierConfig::default()
         });
         let provider = provider_with_settings(json!({}));
-        let mut body = body_with_image("qwen3-coder-plus");
+        let mut body = Cow::Owned(body_with_image("qwen3-coder-plus"));
 
         assert_eq!(fwd.apply_media_prevention(&mut body, &provider), 0);
         assert_eq!(body["messages"][0]["content"][0]["type"], "image");
@@ -7091,7 +7092,7 @@ mod tests {
 
         // (a) 名单内模型、无显式声明 → 不再预替换
         let bare_provider = provider_with_settings(json!({}));
-        let mut list_body = body_with_image("qwen3-coder-plus");
+        let mut list_body = Cow::Owned(body_with_image("qwen3-coder-plus"));
         assert_eq!(
             fwd.apply_media_prevention(&mut list_body, &bare_provider),
             0,
@@ -7103,7 +7104,7 @@ mod tests {
         let declared_provider = provider_with_settings(json!({
             "models": [ { "id": "some-text-model", "input": ["text"] } ]
         }));
-        let mut declared_body = body_with_image("some-text-model");
+        let mut declared_body = Cow::Owned(body_with_image("some-text-model"));
         assert_eq!(
             fwd.apply_media_prevention(&mut declared_body, &declared_provider),
             1,
@@ -9268,39 +9269,90 @@ mod tests {
             };
             let base_url = serve_upstream(app).await;
 
-            let mut provider = test_provider_with_type(None);
-            provider.settings_config = json!({
-                "env": {
-                    "ANTHROPIC_BASE_URL": base_url,
-                    "ANTHROPIC_AUTH_TOKEN": "sk-test",
-                    "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-5-upstream"
-                }
-            });
-
             let body = heavy_claude_body();
             let mut headers = HeaderMap::new();
             headers.insert(
                 http::header::CONTENT_TYPE,
                 HeaderValue::from_static("application/json"),
             );
-
-            // 预热：建立连接、装好协议后端，别把一次性成本算进单次开销。
             let forwarder = test_forwarder(Duration::from_secs(10), Duration::from_secs(10));
+
+            // (a) 模型映射真的改写模型名：请求体落成 Owned（这里必然有一次深拷贝）。
+            let mut mapped_provider = test_provider_with_type(None);
+            mapped_provider.settings_config = json!({
+                "env": {
+                    "ANTHROPIC_BASE_URL": base_url,
+                    "ANTHROPIC_AUTH_TOKEN": "sk-test",
+                    "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-5-upstream"
+                }
+            });
+            let mapped = forward_loop(
+                &forwarder,
+                requests.clone(),
+                &body,
+                &headers,
+                &mapped_provider,
+                200,
+                "full forward, model rewrite",
+            )
+            .await;
+            let mapped_model = mapped
+                .last()
+                .and_then(|body| body.get("model"))
+                .and_then(|model| model.as_str())
+                .expect("mapped model");
+            assert_eq!(mapped_model, "claude-sonnet-4-5-upstream");
+
+            // (b) 纯透传（无映射配置）：模型不改写 → 全程零深拷贝。
+            let mut plain_provider = test_provider_with_type(None);
+            plain_provider.settings_config = json!({
+                "env": {
+                    "ANTHROPIC_BASE_URL": base_url,
+                    "ANTHROPIC_AUTH_TOKEN": "sk-test"
+                }
+            });
+            let passthrough = forward_loop(
+                &forwarder,
+                requests,
+                &body,
+                &headers,
+                &plain_provider,
+                200,
+                "full forward, pure passthrough",
+            )
+            .await;
+            let passthrough_model = passthrough
+                .last()
+                .and_then(|body| body.get("model"))
+                .and_then(|model| model.as_str())
+                .expect("passthrough model");
+            assert_eq!(passthrough_model, "claude-sonnet-4-5");
+        }
+
+        async fn forward_loop(
+            forwarder: &RequestForwarder,
+            requests: Arc<tokio::sync::Mutex<Vec<Value>>>,
+            body: &Value,
+            headers: &HeaderMap,
+            provider: &Provider,
+            iterations: usize,
+            label: &str,
+        ) -> Vec<Value> {
+            // 预热：建立连接、装好协议后端，别把一次性成本算进单次开销。
             forwarder
                 .forward_with_retry(
                     &AppType::Claude,
                     http::Method::POST,
                     "/v1/messages",
-                    &body,
+                    body,
                     headers.clone(),
                     Extensions::new(),
-                    std::slice::from_ref(&provider),
+                    std::slice::from_ref(provider),
                 )
                 .await
                 .map_err(|error| error.error)
                 .expect("warmup forward");
 
-            let iterations = 200;
             let start = Instant::now();
             for _ in 0..iterations {
                 forwarder
@@ -9308,29 +9360,18 @@ mod tests {
                         &AppType::Claude,
                         http::Method::POST,
                         "/v1/messages",
-                        &body,
+                        body,
                         headers.clone(),
                         Extensions::new(),
-                        std::slice::from_ref(&provider),
+                        std::slice::from_ref(provider),
                     )
                     .await
                     .map_err(|error| error.error)
                     .expect("forward");
             }
-            elapsed_report(
-                "full forward (loopback upstream)",
-                iterations,
-                start.elapsed(),
-            );
+            elapsed_report(label, iterations, start.elapsed());
 
-            let seen = requests.lock().await;
-            println!("upstream received {} requests", seen.len());
-            let mapped = seen
-                .last()
-                .and_then(|body| body.get("model"))
-                .and_then(|model| model.as_str())
-                .expect("upstream model");
-            assert_eq!(mapped, "claude-sonnet-4-5-upstream");
+            requests.lock().await.clone()
         }
     }
 }

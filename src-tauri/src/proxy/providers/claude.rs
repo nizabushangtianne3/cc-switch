@@ -189,16 +189,7 @@ pub fn normalize_deepseek_thinking_disabled_strip_effort(
     body: &mut Value,
     provider: &Provider,
 ) -> bool {
-    if !is_deepseek_official_anthropic_endpoint(provider) {
-        return false;
-    }
-
-    let thinking_type = body
-        .get("thinking")
-        .and_then(|t| t.get("type"))
-        .and_then(|t| t.as_str());
-
-    if thinking_type != Some("disabled") {
+    if !should_normalize_deepseek_effort(provider, body) {
         return false;
     }
 
@@ -223,6 +214,35 @@ pub fn normalize_deepseek_thinking_disabled_strip_effort(
     }
 
     changed
+}
+
+/// 只读判断 [`normalize_deepseek_thinking_disabled_strip_effort`] 会不会改写。
+/// 与改写函数共用同一个门，出站管道用它决定要不要为改写拷贝请求体。
+fn should_normalize_deepseek_effort(provider: &Provider, body: &Value) -> bool {
+    if !is_deepseek_official_anthropic_endpoint(provider) {
+        return false;
+    }
+
+    body.get("thinking")
+        .and_then(|t| t.get("type"))
+        .and_then(|t| t.as_str())
+        == Some("disabled")
+}
+
+/// 只读判断 [`normalize_anthropic_messages_for_provider`] 会不会改写请求体。
+///
+/// 请求体是 Cow 共享的，转发前先用这里决定要不要落成 Owned；
+/// 两个改写器各自的门都收敛到这一个谓词，由测试保证同进同出。
+pub fn anthropic_messages_need_normalization(
+    body: &Value,
+    provider: &Provider,
+    api_format: &str,
+) -> bool {
+    if api_format.trim() != "anthropic" {
+        return false;
+    }
+    should_normalize_anthropic_tool_thinking_history(provider, body, api_format)
+        || should_normalize_deepseek_effort(provider, body)
 }
 
 pub fn normalize_anthropic_messages_for_provider(
@@ -2877,5 +2897,59 @@ mod tests {
         assert!(changed);
         assert_eq!(body["thinking"]["type"], "disabled");
         assert!(body.get("output_config").is_none());
+    }
+
+    #[test]
+    fn messages_need_normalization_predicate_matches_the_rewrite_result() {
+        // 谓词是「可能要改」的供应商级粗筛（模型名或端点命中推理供应商），
+        // 不是改写的精确镜像：命中的请求可能实际一字不改。零拷贝只依赖
+        // 另一半不变式——谓词为 false 的请求一定不会被改写。
+        let provider = deepseek_official_provider();
+        let plain_provider = create_provider(json!({
+            "env": { "ANTHROPIC_BASE_URL": "https://api.anthropic.com", "ANTHROPIC_API_KEY": "k" }
+        }));
+        let deepseek_conflict = json!({
+            "model": "deepseek-v4-pro",
+            "thinking": { "type": "disabled" },
+            "reasoning_effort": "high"
+        });
+        let plain_request = json!({
+            "model": "claude-sonnet-4-5",
+            "messages": [{ "role": "user", "content": "hello" }]
+        });
+
+        assert!(anthropic_messages_need_normalization(
+            &deepseek_conflict,
+            &provider,
+            "anthropic"
+        ));
+        assert!(anthropic_messages_need_normalization(
+            &plain_request,
+            &provider,
+            "anthropic"
+        ));
+        assert!(anthropic_messages_need_normalization(
+            &deepseek_conflict,
+            &plain_provider,
+            "anthropic"
+        ));
+        assert!(!anthropic_messages_need_normalization(
+            &deepseek_conflict,
+            &provider,
+            "openai_chat"
+        ));
+
+        for (body, prov, api_format) in [
+            (&plain_request, &plain_provider, "anthropic"),
+            (&deepseek_conflict, &provider, "openai_chat"),
+        ] {
+            let mut rewritten = body.clone();
+            assert!(!normalize_anthropic_messages_for_provider(
+                &mut rewritten,
+                prov,
+                api_format
+            ));
+            assert_eq!(rewritten, *body);
+        }
     }
 }
