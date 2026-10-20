@@ -1,0 +1,19 @@
+{
+  "version": "4.0.18",
+  "items": [
+    {
+      "type": "fix",
+      "zh": "DSML 清洗对所有模型统一生效",
+      "zh-TW": "DSML 清理對所有模型統一生效",
+      "en": "DSML cleanup now applies to every model",
+      "ja": "DSML クリーニングを全モデルに適用"
+    },
+    {
+      "type": "fix",
+      "zh": "思考续写防护不再限定 DeepSeek",
+      "zh-TW": "思考續寫防護不再限定 DeepSeek",
+      "en": "Reasoning-continuation guard no longer checks the model name",
+      "ja": "思考継続の保護をモデル名に依存しない形へ"
+    }
+  ]
+}

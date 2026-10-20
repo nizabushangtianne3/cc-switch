@@ -5,6 +5,12 @@ All notable changes to CC Switch will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.18] - 2026-10-20
+
+### Changed
+
+- **Proxy:** The DeepSeek DSML cleanup is now a unified output rule for every Chat Completions upstream. It is content-driven instead of keyed on the model name, so any model that leaks the v4.1 spaced DSML opener, parser-constant fragments or a complete DSML block goes through the same strip/convert path; the reasoning-continuation guard no longer checks for a DeepSeek model id.
+
 ## [4.0.17] - 2026-10-20
 
 ### Fixed
