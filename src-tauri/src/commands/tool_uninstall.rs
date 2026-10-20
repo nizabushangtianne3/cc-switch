@@ -874,7 +874,11 @@ mod tests {
         use std::os::windows::process::CommandExt;
         use std::time::Duration;
 
-        const TEST_PROBE_TIMEOUT: Duration = Duration::from_secs(30);
+        // 预算只用来兜底「探测挂死」，断言的都是行为不是耗时。CI 的
+        // nextest 并行负载 + Defender 扫描下，where.exe 的进程创建可能
+        // 被拖到远超本地毫秒级（实测出现过 30s 预算被打穿），放宽到
+        // 120s 保留挂死保护，同时不在高负载 runner 上误报回归。
+        const TEST_PROBE_TIMEOUT: Duration = Duration::from_secs(120);
         const FIXTURE_ROOT: &str = "CC_SWITCH_TEST_NPM_UNINSTALL_ROOT";
         if let Some(root) = std::env::var_os(FIXTURE_ROOT) {
             let root = PathBuf::from(root);

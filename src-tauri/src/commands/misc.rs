@@ -2927,6 +2927,9 @@ fn windows_path_lookup_command(
         // directory before PATH.
         .arg(format!("$PATH:{tool}"))
         .env("PATH", effective_path)
+        // 与 Unix 分支的 resolve_path_default 一致：继承来的 stdin 可能是
+        // 管道/终端，须显式置空，避免任何等待 stdin 的路径挂死被动探测。
+        .stdin(Stdio::null())
         .creation_flags(CREATE_NO_WINDOW)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
