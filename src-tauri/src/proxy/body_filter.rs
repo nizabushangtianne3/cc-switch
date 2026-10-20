@@ -3,9 +3,7 @@
 //! 过滤不应透传到上游的私有参数，防止内部信息泄露。
 //!
 //! ## 过滤规则
-//! - 以 `_` 开头的字段被视为私有参数，会被递归过滤
-//! - 支持白名单机制，允许透传特定的 `_` 前缀字段
-//! - 支持嵌套对象和数组的深度过滤
+//! - 以 `_` 开头的字段被视为私有参数，会被就地递归移除
 //! - JSON Schema 的 properties / patternProperties / definitions / $defs 名称
 //!   是用户定义的字段名，不按私有参数过滤
 //!
@@ -14,108 +12,85 @@
 //! - `_debug_mode`: 调试标记
 //! - `_session_token`: 会话令牌
 //! - `_client_version`: 客户端版本
+//!
+//! 出站管道每个请求都要过一次这里，所以不重建文档：先用只读扫描确认
+//! 没有私有字段（绝大多数请求），连拷贝都不产生；有就在原值上摘键。
 
 use serde_json::Value;
-use std::collections::HashSet;
 
-/// 过滤私有参数（以 `_` 开头的字段）
+/// 只读扫描：请求体里是否存在需要过滤的私有字段。
 ///
-/// 递归遍历 JSON 结构，移除所有以下划线开头的字段。
-///
-/// # Arguments
-/// * `body` - 原始请求体
-///
-/// # Returns
-/// 过滤后的请求体
-///
-/// # Example
-/// ```ignore
-/// let input = json!({
-///     "model": "claude-3",
-///     "_internal_id": "abc123",
-///     "messages": [{"role": "user", "content": "hello", "_token": "secret"}]
-/// });
-/// let output = filter_private_params(input);
-/// // output 中不包含 _internal_id 和 _token
-/// ```
-#[cfg(test)]
-pub fn filter_private_params(body: Value) -> Value {
-    filter_private_params_with_whitelist(body, &[])
+/// 与 [`strip_private_params`] 同一套规则（含 JSON Schema 名称表例外）。
+pub fn contains_private_params(value: &Value) -> bool {
+    contains_private_params_under(value, None)
 }
 
-/// 过滤私有参数（支持白名单）
-///
-/// 递归遍历 JSON 结构，移除所有以下划线开头的字段，
-/// 但保留白名单中指定的字段。
-///
-/// # Arguments
-/// * `body` - 原始请求体
-/// * `whitelist` - 白名单字段列表（不过滤这些字段）
-///
-/// # Returns
-/// 过滤后的请求体
-///
-/// # Example
-/// ```ignore
-/// let input = json!({
-///     "model": "claude-3",
-///     "_metadata": {"key": "value"},  // 白名单中，保留
-///     "_internal_id": "abc123"        // 不在白名单中，过滤
-/// });
-/// let output = filter_private_params_with_whitelist(input, &["_metadata"]);
-/// // output 包含 _metadata，不包含 _internal_id
-/// ```
-pub fn filter_private_params_with_whitelist(body: Value, whitelist: &[String]) -> Value {
-    let whitelist_set: HashSet<&str> = whitelist.iter().map(|s| s.as_str()).collect();
-    filter_recursive_with_whitelist(body, None, &mut Vec::new(), &whitelist_set)
-}
-
-/// 递归过滤实现（支持白名单）
-fn filter_recursive_with_whitelist(
-    value: Value,
-    parent_key: Option<&str>,
-    removed_keys: &mut Vec<String>,
-    whitelist: &HashSet<&str>,
-) -> Value {
+fn contains_private_params_under(value: &Value, parent_key: Option<&str>) -> bool {
     match value {
         Value::Object(map) => {
             let is_schema_name_map = parent_key.is_some_and(matches_schema_name_map);
-            let filtered: serde_json::Map<String, Value> = map
-                .into_iter()
-                .filter_map(|(key, val)| {
-                    // 以 _ 开头且不在白名单中的字段被过滤
-                    if key.starts_with('_')
-                        && !whitelist.contains(key.as_str())
-                        && !is_schema_name_map
-                    {
-                        removed_keys.push(key);
-                        None
-                    } else {
-                        let filtered_value = filter_recursive_with_whitelist(
-                            val,
-                            Some(key.as_str()),
-                            removed_keys,
-                            whitelist,
-                        );
-                        Some((key, filtered_value))
-                    }
-                })
-                .collect();
-
-            // 仅在有过滤时记录日志（避免每次请求都打印）
-            if !removed_keys.is_empty() {
-                log::debug!("[BodyFilter] 过滤私有参数: {removed_keys:?}");
-                removed_keys.clear();
-            }
-
-            Value::Object(filtered)
+            map.iter().any(|(key, child)| {
+                (!is_schema_name_map && key.starts_with('_'))
+                    || contains_private_params_under(child, Some(key.as_str()))
+            })
         }
-        Value::Array(arr) => Value::Array(
-            arr.into_iter()
-                .map(|v| filter_recursive_with_whitelist(v, parent_key, removed_keys, whitelist))
-                .collect(),
-        ),
-        other => other,
+        Value::Array(items) => items
+            .iter()
+            .any(|item| contains_private_params_under(item, parent_key)),
+        _ => false,
+    }
+}
+
+/// 就地移除私有字段（以 `_` 开头的字段），返回是否真的移除过。
+///
+/// 没有私有字段时是零分配的只读遍历；有也只摘掉对应的键，
+/// 不会像「重建整棵文档」那样给每个对象都重新分配 Map。
+pub fn strip_private_params(value: &mut Value) -> bool {
+    let mut removed: Vec<String> = Vec::new();
+    let changed = strip_in_place(value, None, &mut removed);
+    if !removed.is_empty() {
+        // 仅在有过滤时记录日志（避免每次请求都打印）
+        log::debug!("[BodyFilter] 过滤私有参数: {removed:?}");
+    }
+    changed
+}
+
+fn strip_in_place(value: &mut Value, parent_key: Option<&str>, removed: &mut Vec<String>) -> bool {
+    match value {
+        Value::Object(map) => {
+            // Schema 名称表里的键是用户定义的字段名，原样保留。
+            let is_schema_name_map = parent_key.is_some_and(matches_schema_name_map);
+            let mut changed = false;
+            if !is_schema_name_map {
+                let mut removed_here = false;
+                map.retain(|key, _| {
+                    if key.starts_with('_') {
+                        removed.push(key.clone());
+                        removed_here = true;
+                        false
+                    } else {
+                        true
+                    }
+                });
+                changed = removed_here;
+            }
+            for (key, child) in map.iter_mut() {
+                if strip_in_place(child, Some(key.as_str()), removed) {
+                    changed = true;
+                }
+            }
+            changed
+        }
+        Value::Array(items) => {
+            let mut changed = false;
+            for item in items.iter_mut() {
+                if strip_in_place(item, parent_key, removed) {
+                    changed = true;
+                }
+            }
+            changed
+        }
+        _ => false,
     }
 }
 
@@ -131,6 +106,12 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    /// 测试辅助：就地过滤后把值交回去，保持既有断言的写法。
+    fn filtered(mut body: Value) -> Value {
+        strip_private_params(&mut body);
+        body
+    }
+
     #[test]
     fn test_filter_top_level_private_params() {
         let input = json!({
@@ -140,7 +121,7 @@ mod tests {
             "max_tokens": 1024
         });
 
-        let output = filter_private_params(input);
+        let output = filtered(input);
 
         assert!(output.get("model").is_some());
         assert!(output.get("max_tokens").is_some());
@@ -165,7 +146,7 @@ mod tests {
             }
         });
 
-        let output = filter_private_params(input);
+        let output = filtered(input);
 
         // 顶级字段保留
         assert!(output.get("model").is_some());
@@ -197,7 +178,7 @@ mod tests {
             }
         });
 
-        let output = filter_private_params(input);
+        let output = filtered(input);
 
         let level3 = output
             .get("level1")
@@ -221,7 +202,7 @@ mod tests {
             ]
         });
 
-        let output = filter_private_params(input);
+        let output = filtered(input);
         let items = output.get("items").unwrap().as_array().unwrap();
 
         for item in items {
@@ -237,66 +218,39 @@ mod tests {
             "messages": [{"role": "user", "content": "hello"}]
         });
 
-        let output = filter_private_params(input.clone());
+        let mut body = input.clone();
+        assert!(!strip_private_params(&mut body));
 
         // 无私有参数时，输出应与输入相同
-        assert_eq!(input, output);
+        assert_eq!(input, body);
     }
 
     #[test]
     fn test_empty_object() {
-        let input = json!({});
-        let output = filter_private_params(input);
-        assert_eq!(output, json!({}));
+        let mut body = json!({});
+        assert!(!strip_private_params(&mut body));
+        assert_eq!(body, json!({}));
     }
 
     #[test]
     fn test_primitive_values() {
         // 原始值不应被修改
-        assert_eq!(filter_private_params(json!(42)), json!(42));
-        assert_eq!(filter_private_params(json!("string")), json!("string"));
-        assert_eq!(filter_private_params(json!(true)), json!(true));
-        assert_eq!(filter_private_params(json!(null)), json!(null));
+        for mut value in [json!(42), json!("string"), json!(true), json!(null)] {
+            assert!(!strip_private_params(&mut value));
+            assert!(!contains_private_params(&value));
+        }
     }
 
     #[test]
-    fn test_whitelist_preserves_private_params() {
-        let input = json!({
-            "model": "claude-3",
-            "_metadata": {"key": "value"},
-            "_internal_id": "abc123",
-            "_stream_options": {"include_usage": true}
-        });
+    fn test_contains_private_params_matches_strip() {
+        let with_private = json!({ "a": { "b": ["ok", { "_x": 1 }] } });
+        let without_private = json!({ "a": { "b": ["ok", { "x": 1 }] } });
 
-        let whitelist = vec!["_metadata".to_string(), "_stream_options".to_string()];
-        let output = filter_private_params_with_whitelist(input, &whitelist);
+        assert!(contains_private_params(&with_private));
+        assert!(!contains_private_params(&without_private));
 
-        // 白名单中的字段保留
-        assert!(output.get("_metadata").is_some());
-        assert!(output.get("_stream_options").is_some());
-        // 不在白名单中的私有字段被过滤
-        assert!(output.get("_internal_id").is_none());
-        // 普通字段保留
-        assert!(output.get("model").is_some());
-    }
-
-    #[test]
-    fn test_whitelist_nested() {
-        let input = json!({
-            "data": {
-                "_allowed": "keep",
-                "_forbidden": "remove",
-                "normal": "value"
-            }
-        });
-
-        let whitelist = vec!["_allowed".to_string()];
-        let output = filter_private_params_with_whitelist(input, &whitelist);
-
-        let data = output.get("data").unwrap();
-        assert!(data.get("_allowed").is_some());
-        assert!(data.get("_forbidden").is_none());
-        assert!(data.get("normal").is_some());
+        let mut body = with_private;
+        assert!(strip_private_params(&mut body));
     }
 
     #[test]
@@ -317,8 +271,9 @@ mod tests {
             ]
         });
 
-        let output = filter_private_params(input);
-        let schema = &output["tools"][0]["input_schema"];
+        let mut body = input;
+        strip_private_params(&mut body);
+        let schema = &body["tools"][0]["input_schema"];
 
         assert!(schema["properties"].get("_id").is_some());
         assert!(schema["properties"].get("_meta").is_some());
@@ -327,15 +282,17 @@ mod tests {
     }
 
     #[test]
-    fn test_empty_whitelist_same_as_default() {
-        let input = json!({
-            "model": "claude-3",
-            "_internal_id": "abc123"
+    fn test_schema_property_names_do_not_force_a_strip() {
+        // `properties` 里的 `_x` 是合法字段名：只读扫描不能误报，
+        // 否则借用中的请求体会被无谓拷贝一份。
+        let body = json!({
+            "tools": [{
+                "input_schema": { "properties": { "_id": { "type": "string" } } }
+            }]
         });
 
-        let output1 = filter_private_params(input.clone());
-        let output2 = filter_private_params_with_whitelist(input, &[]);
-
-        assert_eq!(output1, output2);
+        assert!(!contains_private_params(&body));
+        let mut body = body;
+        assert!(!strip_private_params(&mut body));
     }
 }

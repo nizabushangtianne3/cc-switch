@@ -236,11 +236,6 @@ fn should_remove_top_level_thinking(body: &Value, messages: &[Value]) -> bool {
         .any(|b| b.get("type").and_then(|t| t.as_str()) == Some("tool_use"))
 }
 
-/// 与 CCH 对齐：请求前不做 thinking type 主动改写。
-pub fn normalize_thinking_type(body: Value) -> Value {
-    body
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -641,82 +636,5 @@ mod tests {
         assert_eq!(content[0]["type"], "text");
         assert!(content[0].get("signature").is_none());
         assert_eq!(body["thinking"]["type"], "adaptive");
-    }
-
-    // ==================== normalize_thinking_type 测试 ====================
-
-    #[test]
-    fn test_normalize_thinking_type_adaptive_unchanged() {
-        let body = json!({
-            "model": "claude-test",
-            "thinking": { "type": "adaptive" }
-        });
-
-        let result = normalize_thinking_type(body);
-
-        assert_eq!(result["thinking"]["type"], "adaptive");
-        assert!(result["thinking"].get("budget_tokens").is_none());
-    }
-
-    #[test]
-    fn test_normalize_thinking_type_enabled_unchanged() {
-        let body = json!({
-            "model": "claude-test",
-            "thinking": { "type": "enabled", "budget_tokens": 2048 }
-        });
-
-        let result = normalize_thinking_type(body);
-
-        assert_eq!(result["thinking"]["type"], "enabled");
-        assert_eq!(result["thinking"]["budget_tokens"], 2048);
-    }
-
-    #[test]
-    fn test_normalize_thinking_type_disabled_unchanged() {
-        let body = json!({
-            "model": "claude-test",
-            "thinking": { "type": "disabled" }
-        });
-
-        let result = normalize_thinking_type(body);
-
-        assert_eq!(result["thinking"]["type"], "disabled");
-    }
-
-    #[test]
-    fn test_normalize_thinking_type_preserves_budget() {
-        let body = json!({
-            "model": "claude-test",
-            "thinking": { "type": "adaptive", "budget_tokens": 5000 }
-        });
-
-        let result = normalize_thinking_type(body);
-
-        assert_eq!(result["thinking"]["type"], "adaptive");
-        assert_eq!(result["thinking"]["budget_tokens"], 5000);
-    }
-
-    #[test]
-    fn test_normalize_thinking_type_no_thinking() {
-        let body = json!({
-            "model": "claude-test"
-        });
-
-        let result = normalize_thinking_type(body);
-
-        assert!(result.get("thinking").is_none());
-    }
-
-    #[test]
-    fn test_normalize_thinking_type_unknown_unchanged() {
-        let body = json!({
-            "model": "claude-test",
-            "thinking": { "type": "unexpected", "budget_tokens": 100 }
-        });
-
-        let result = normalize_thinking_type(body);
-
-        assert_eq!(result["thinking"]["type"], "unexpected");
-        assert_eq!(result["thinking"]["budget_tokens"], 100);
     }
 }

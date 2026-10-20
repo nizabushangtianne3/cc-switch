@@ -4,23 +4,6 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::fmt::Write as _;
 
-pub(crate) fn canonicalize_value(value: Value) -> Value {
-    match value {
-        Value::Array(values) => Value::Array(values.into_iter().map(canonicalize_value).collect()),
-        Value::Object(map) => {
-            let mut entries = map.into_iter().collect::<Vec<_>>();
-            entries.sort_by(|(left, _), (right, _)| left.cmp(right));
-
-            let mut sorted = serde_json::Map::with_capacity(entries.len());
-            for (key, value) in entries {
-                sorted.insert(key, canonicalize_value(value));
-            }
-            Value::Object(sorted)
-        }
-        other => other,
-    }
-}
-
 pub(crate) fn canonical_json_string(value: &Value) -> String {
     match value {
         Value::Null => "null".to_string(),
@@ -131,13 +114,6 @@ mod tests {
             short_value_hash(Some(&left)),
             short_value_hash(Some(&right))
         );
-    }
-
-    #[test]
-    fn canonicalize_value_sorts_map_storage_order() {
-        let value = canonicalize_value(json!({"b": 2, "a": 1}));
-
-        assert_eq!(serde_json::to_string(&value).unwrap(), r#"{"a":1,"b":2}"#);
     }
 
     #[test]

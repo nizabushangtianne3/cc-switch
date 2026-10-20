@@ -4,11 +4,11 @@
 
 use super::hyper_client::{ProxyResponse, MAX_RESPONSE_BODY_BYTES};
 use super::{
-    body_filter::filter_private_params_with_whitelist,
+    body_filter::{contains_private_params, strip_private_params},
     content_encoding::{decompress_body_with_limit, get_content_encoding},
     error::*,
     failover_switch::FailoverSwitchManager,
-    json_canonical::{canonicalize_value, short_value_hash},
+    json_canonical::short_value_hash,
     log_codes::{fwd as log_fwd, key as log_key},
     opaque_state_rectifier::{
         carries_encrypted_agent_task, detect_opaque_state_rejection, rectify_opaque_state,
@@ -20,9 +20,7 @@ use super::{
         AuthInfo, AuthStrategy, ProviderAdapter, ProviderType,
     },
     thinking_budget_rectifier::{rectify_thinking_budget, should_rectify_thinking_budget},
-    thinking_rectifier::{
-        normalize_thinking_type, rectify_anthropic_request, should_rectify_thinking_signature,
-    },
+    thinking_rectifier::{rectify_anthropic_request, should_rectify_thinking_signature},
     types::{CopilotOptimizerConfig, OptimizerConfig, ProxyStatus, RectifierConfig},
     ProxyError,
 };
@@ -1699,7 +1697,7 @@ impl RequestForwarder {
         // Claude Desktop proxy 模式必须先把 Desktop 可见的 claude-* route
         // 映射成真实上游模型名，并且未知 route 要直接报错，不能使用默认模型兜底。
         // 聚合模型的请求已经解出了上游名，不再查映射表（查不到会报错，按档位回落会发错模型）。
-        let mapped_body = if matches!(app_type, AppType::ClaudeDesktop) {
+        let mut mapped_body = if matches!(app_type, AppType::ClaudeDesktop) {
             if self.keeps_resolved_model() {
                 crate::claude_desktop_config::normalize_upstream_request(body.clone(), provider)
             } else {
@@ -1714,8 +1712,6 @@ impl RequestForwarder {
             mapped_body
         };
 
-        // 与 CCH 对齐：请求前不做 thinking 主动改写（仅保留兼容入口）
-        let mut mapped_body = normalize_thinking_type(mapped_body);
         let is_copilot_codex_responses = matches!(app_type, AppType::Codex)
             && is_copilot
             && super::providers::is_codex_responses_endpoint(endpoint);
@@ -2298,20 +2294,24 @@ impl RequestForwarder {
             self.apply_media_prevention(&mut request_body, provider);
         }
 
-        // 过滤私有参数（以 `_` 开头的字段），防止内部信息泄露到上游
-        // 默认使用空白名单，过滤所有 _ 前缀字段
-        let mut filtered_body = prepare_upstream_request_body(request_body);
+        // 本地代理的请求体覆写先合并，再统一过滤：覆写可能带回 `_` 前缀字段，
+        // 放在后面过滤一次就够，不用像以前那样过滤→覆写→再过滤走三遍整棵树。
         if !is_copilot {
             if let Some(overrides) = provider
                 .meta
                 .as_ref()
                 .and_then(|meta| meta.local_proxy_request_overrides.as_ref())
             {
-                if apply_local_proxy_body_overrides(&mut filtered_body, overrides) {
-                    filtered_body = prepare_upstream_request_body(filtered_body);
-                }
+                apply_local_proxy_body_overrides(&mut request_body, overrides);
             }
         }
+
+        // 过滤私有参数（以 `_` 开头的字段），防止内部信息泄露到上游。
+        // 就地摘键、不重建文档：没有私有字段（绝大多数请求）时连拷贝都不产生。
+        if contains_private_params(&request_body) {
+            strip_private_params(&mut request_body);
+        }
+        let filtered_body = request_body;
         // 出站 body 定稿后刷新真值（覆盖 Codex chat 上游模型覆写、转换层模型改写）
         if let Some(m) = filtered_body
             .get("model")
@@ -4715,10 +4715,6 @@ fn is_protected_local_proxy_override_header(name: &http::HeaderName) -> bool {
     )
 }
 
-fn prepare_upstream_request_body(request_body: Value) -> Value {
-    canonicalize_value(filter_private_params_with_whitelist(request_body, &[]))
-}
-
 fn log_prompt_cache_trace(
     app_type: &AppType,
     provider: &Provider,
@@ -5165,7 +5161,7 @@ mod tests {
     }
 
     #[test]
-    fn prepare_upstream_request_body_filters_private_fields_and_canonicalizes_order() {
+    fn outbound_filter_removes_private_fields_and_keeps_key_order() {
         let body = json!({
             "z": 1,
             "_internal": "drop",
@@ -5188,7 +5184,11 @@ mod tests {
             "a": 2
         });
 
-        let prepared = prepare_upstream_request_body(body);
+        // 出站前只做「摘掉私有字段」这一件事：不重排键序、不重建文档，
+        // 客户端原始顺序原样带到上游。
+        assert!(contains_private_params(&body));
+        let mut prepared = body;
+        assert!(strip_private_params(&mut prepared));
 
         assert!(prepared.get("_internal").is_none());
         assert!(prepared["tools"][0]["parameters"]["properties"]
@@ -5199,8 +5199,21 @@ mod tests {
             .is_none());
         assert_eq!(
             serde_json::to_string(&prepared).unwrap(),
-            r#"{"a":2,"tools":[{"name":"lookup","parameters":{"properties":{"_id":{"type":"string"},"a":{"type":"string"},"b":{"type":"number"}},"type":"object"}}],"z":1}"#
+            r#"{"z":1,"tools":[{"name":"lookup","parameters":{"type":"object","properties":{"_id":{"type":"string"},"b":{"type":"number"},"a":{"type":"string"}}}}],"a":2}"#
         );
+    }
+
+    #[test]
+    fn outbound_filter_leaves_clean_bodies_untouched() {
+        let body = json!({
+            "model": "claude-3",
+            "messages": [{ "role": "user", "content": "hello" }]
+        });
+
+        assert!(!contains_private_params(&body));
+        let mut prepared = body.clone();
+        assert!(!strip_private_params(&mut prepared));
+        assert_eq!(prepared, body);
     }
 
     #[test]
@@ -9138,6 +9151,186 @@ mod tests {
             assert!(!requests[1].to_string().contains("\"signature\""));
             assert_eq!(books(&fwd).await, untouched());
             assert!(breaker_untouched(&fwd, "kimi").await);
+        }
+    }
+
+    /// 请求热路径基准探针（默认不跑，跑法见下）。
+    ///
+    /// 目的：让「精简一次转发要付多少 CPU」有可复现的数字，而不是凭感觉。
+    /// 覆盖四段：请求体深拷贝、私有字段只读扫描、序列化，
+    /// 以及经本地假上游完整转发一次（loopback，不含真实上游延迟）。
+    ///
+    /// ```text
+    /// cargo test --lib perf_probe -- --ignored --nocapture
+    /// ```
+    mod perf_probe {
+        use super::*;
+        use std::time::Instant;
+
+        /// 接近真实体量的 Claude Code 请求体（约数百 KB）：长 system、长历史、大 tools。
+        fn heavy_claude_body() -> Value {
+            let filler = "lorem ipsum dolor sit amet consectetur ".repeat(250);
+            let mut messages = Vec::new();
+            for index in 0..40 {
+                messages.push(json!({
+                    "role": if index % 2 == 0 { "user" } else { "assistant" },
+                    "content": [{ "type": "text", "text": format!("turn {index}: {filler}") }]
+                }));
+            }
+            json!({
+                "model": "claude-sonnet-4-5",
+                "max_tokens": 8192,
+                "system": [{
+                    "type": "text",
+                    "text": format!("system: {filler}"),
+                    "cache_control": { "type": "ephemeral" }
+                }],
+                "messages": messages,
+                "tools": [{
+                    "name": "Bash",
+                    "description": filler,
+                    "input_schema": {
+                        "type": "object",
+                        "properties": { "command": { "type": "string", "description": filler } }
+                    }
+                }],
+                "stream": false
+            })
+        }
+
+        fn elapsed_report(label: &str, iterations: usize, elapsed: std::time::Duration) {
+            println!(
+                "{label}: total={:?} per_iteration={:.3}ms",
+                elapsed,
+                elapsed.as_secs_f64() * 1000.0 / iterations as f64
+            );
+        }
+
+        #[test]
+        #[ignore]
+        fn body_stage_costs() {
+            let body = heavy_claude_body();
+            let body_bytes = serde_json::to_vec(&body).expect("serialize");
+            println!("request body bytes = {}", body_bytes.len());
+            let iterations = 200;
+
+            let start = Instant::now();
+            for _ in 0..iterations {
+                std::hint::black_box(body.clone());
+            }
+            elapsed_report("value deep clone", iterations, start.elapsed());
+
+            let start = Instant::now();
+            for _ in 0..iterations {
+                std::hint::black_box(contains_private_params(&body));
+            }
+            elapsed_report("private-param scan", iterations, start.elapsed());
+
+            let mut prepared = body.clone();
+            strip_private_params(&mut prepared);
+            let start = Instant::now();
+            for _ in 0..iterations {
+                std::hint::black_box(serde_json::to_vec(&prepared).expect("serialize"));
+            }
+            elapsed_report("serialize to bytes", iterations, start.elapsed());
+        }
+
+        #[tokio::test]
+        #[ignore]
+        async fn full_forward_costs() {
+            let _ = rustls::crypto::ring::default_provider().install_default();
+            let requests = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+            let app = {
+                let requests = requests.clone();
+                axum::Router::new().fallback(move |body: Bytes| {
+                    let requests = requests.clone();
+                    async move {
+                        requests
+                            .lock()
+                            .await
+                            .push(serde_json::from_slice(&body).unwrap_or(Value::Null));
+                        (
+                            StatusCode::OK,
+                            [(http::header::CONTENT_TYPE, "application/json")],
+                            json!({
+                                "id": "msg_1",
+                                "type": "message",
+                                "role": "assistant",
+                                "model": "claude-sonnet-4-5",
+                                "content": [{ "type": "text", "text": "ok" }],
+                                "stop_reason": "end_turn",
+                                "usage": { "input_tokens": 1, "output_tokens": 1 }
+                            })
+                            .to_string(),
+                        )
+                    }
+                })
+            };
+            let base_url = serve_upstream(app).await;
+
+            let mut provider = test_provider_with_type(None);
+            provider.settings_config = json!({
+                "env": {
+                    "ANTHROPIC_BASE_URL": base_url,
+                    "ANTHROPIC_AUTH_TOKEN": "sk-test",
+                    "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-5-upstream"
+                }
+            });
+
+            let body = heavy_claude_body();
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                http::header::CONTENT_TYPE,
+                HeaderValue::from_static("application/json"),
+            );
+
+            // 预热：建立连接、装好协议后端，别把一次性成本算进单次开销。
+            let forwarder = test_forwarder(Duration::from_secs(10), Duration::from_secs(10));
+            forwarder
+                .forward_with_retry(
+                    &AppType::Claude,
+                    http::Method::POST,
+                    "/v1/messages",
+                    &body,
+                    headers.clone(),
+                    Extensions::new(),
+                    std::slice::from_ref(&provider),
+                )
+                .await
+                .map_err(|error| error.error)
+                .expect("warmup forward");
+
+            let iterations = 200;
+            let start = Instant::now();
+            for _ in 0..iterations {
+                forwarder
+                    .forward_with_retry(
+                        &AppType::Claude,
+                        http::Method::POST,
+                        "/v1/messages",
+                        &body,
+                        headers.clone(),
+                        Extensions::new(),
+                        std::slice::from_ref(&provider),
+                    )
+                    .await
+                    .map_err(|error| error.error)
+                    .expect("forward");
+            }
+            elapsed_report(
+                "full forward (loopback upstream)",
+                iterations,
+                start.elapsed(),
+            );
+
+            let seen = requests.lock().await;
+            println!("upstream received {} requests", seen.len());
+            let mapped = seen
+                .last()
+                .and_then(|body| body.get("model"))
+                .and_then(|model| model.as_str())
+                .expect("upstream model");
+            assert_eq!(mapped, "claude-sonnet-4-5-upstream");
         }
     }
 }
