@@ -1,7 +1,11 @@
 #[inline]
 pub(crate) fn strip_sse_field<'a>(line: &'a str, field: &str) -> Option<&'a str> {
-    line.strip_prefix(&format!("{field}: "))
-        .or_else(|| line.strip_prefix(&format!("{field}:")))
+    // 逐字段零分配：SSE 每行都要过这里，format! 的两次临时分配
+    // 在长流式响应里是数千次小分配。语义与 "field: value" / "field:value"
+    // 两种前缀完全一致。
+    let rest = line.strip_prefix(field)?;
+    let rest = rest.strip_prefix(':')?;
+    Some(rest.strip_prefix(' ').unwrap_or(rest))
 }
 
 #[inline]
