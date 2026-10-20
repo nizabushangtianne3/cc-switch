@@ -10,10 +10,10 @@ use super::{
     hyper_client::{ProxyResponse, MAX_RESPONSE_BODY_BYTES},
     server::ProxyState,
     sse::{strip_sse_field, take_sse_block},
+    usage::logger::{spawn_usage_record, usage_logging_enabled, UsageRecord},
     usage::parser::TokenUsage,
     ProxyError,
 };
-use crate::database::PRICING_SOURCE_REQUEST;
 use axum::http::{header::HeaderMap, HeaderName};
 use axum::response::{IntoResponse, Response};
 use bytes::Bytes;
@@ -557,60 +557,30 @@ pub(crate) fn create_usage_collector(
         start_time,
         parser_config.stream_event_filter,
         move |events, first_token_ms| {
-            if let Some(usage) = stream_parser(&events) {
-                let model = model_extractor(&events, &context.outbound_model);
-                let latency_ms = start_time.elapsed().as_millis() as u64;
-
-                let context = Arc::clone(&context);
-
-                tokio::spawn(async move {
-                    log_usage_internal(
-                        &context.state,
-                        &context.provider_id,
-                        app_type_str,
-                        &model,
-                        &context.request_model,
-                        &context.outbound_model,
-                        usage,
-                        latency_ms,
-                        first_token_ms,
-                        true, // is_streaming
-                        status_code,
-                        Some(context.session_id.clone()),
-                        context.api_key_id.as_deref(),
-                    )
-                    .await;
-                });
-            } else {
-                let model = model_extractor(&events, &context.outbound_model);
-                let latency_ms = start_time.elapsed().as_millis() as u64;
-                let context = Arc::clone(&context);
-
-                tokio::spawn(async move {
-                    log_usage_internal(
-                        &context.state,
-                        &context.provider_id,
-                        app_type_str,
-                        &model,
-                        &context.request_model,
-                        &context.outbound_model,
-                        TokenUsage::default(),
-                        latency_ms,
-                        first_token_ms,
-                        true, // is_streaming
-                        status_code,
-                        Some(context.session_id.clone()),
-                        context.api_key_id.as_deref(),
-                    )
-                    .await;
-                });
+            let usage = stream_parser(&events);
+            if usage.is_none() {
                 log::debug!("[{tag}] 流式响应缺少 usage 统计，跳过消费记录");
             }
+            spawn_usage_record(UsageRecord {
+                state: context.state.clone(),
+                provider_id: context.provider_id.clone(),
+                app_type: app_type_str,
+                model: model_extractor(&events, &context.outbound_model),
+                request_model: context.request_model.clone(),
+                outbound_model: context.outbound_model.clone(),
+                usage: usage.unwrap_or_default(),
+                latency_ms: start_time.elapsed().as_millis() as u64,
+                first_token_ms,
+                is_streaming: true,
+                status_code,
+                session_id: Some(context.session_id.clone()),
+                api_key_id: context.api_key_id.clone(),
+            });
         },
     ))
 }
 
-/// 异步记录使用量
+/// 从请求上下文组装 usage 落库参数并后台写入。
 fn spawn_log_usage(
     state: &ProxyState,
     ctx: &RequestContext,
@@ -620,136 +590,26 @@ fn spawn_log_usage(
     status_code: u16,
     is_streaming: bool,
 ) {
-    // Check enable_logging before spawning the log task
-    if let Ok(config) = state.config.try_read() {
-        if !config.enable_logging {
-            return;
-        }
-    }
-
-    let state = state.clone();
-    let provider_id = ctx.provider.id.clone();
-    let app_type_str = ctx.app_type_str;
-    let model = model.to_string();
-    let request_model = request_model.to_string();
     // 「按请求计价」模式的锚点：映射后的出站模型，无映射时等于 request_model
     let outbound_model = ctx
         .outbound_model
         .clone()
-        .unwrap_or_else(|| request_model.clone());
-    let latency_ms = ctx.latency_ms();
-    let session_id = ctx.session_id.clone();
-    let api_key_id = ctx.api_key_id.clone();
-
-    tokio::spawn(async move {
-        log_usage_internal(
-            &state,
-            &provider_id,
-            app_type_str,
-            &model,
-            &request_model,
-            &outbound_model,
-            usage,
-            latency_ms,
-            None,
-            is_streaming,
-            status_code,
-            Some(session_id),
-            api_key_id.as_deref(),
-        )
-        .await;
+        .unwrap_or_else(|| request_model.to_string());
+    spawn_usage_record(UsageRecord {
+        state: state.clone(),
+        provider_id: ctx.provider.id.clone(),
+        app_type: ctx.app_type_str,
+        model: model.to_string(),
+        request_model: request_model.to_string(),
+        outbound_model,
+        usage,
+        latency_ms: ctx.latency_ms(),
+        first_token_ms: None,
+        is_streaming,
+        status_code,
+        session_id: Some(ctx.session_id.clone()),
+        api_key_id: ctx.api_key_id.clone(),
     });
-}
-
-pub(crate) fn usage_logging_enabled(state: &ProxyState) -> bool {
-    state
-        .config
-        .try_read()
-        .map(|config| config.enable_logging)
-        .unwrap_or(true)
-}
-
-/// 内部使用量记录函数
-///
-/// `outbound_model` 是「按请求计价」模式的锚点：实际发往上游的模型
-/// （路由接管映射后的真值，无映射时等于 request_model）。该模式的语义是
-/// 「按代理发出的请求计价、不信任上游回显」，接管场景下发出的请求模型是
-/// 映射后的 Y 而非客户端别名 X，按 X 计价会用错定价表行。
-#[allow(clippy::too_many_arguments)]
-async fn log_usage_internal(
-    state: &ProxyState,
-    provider_id: &str,
-    app_type: &str,
-    model: &str,
-    request_model: &str,
-    outbound_model: &str,
-    usage: TokenUsage,
-    latency_ms: u64,
-    first_token_ms: Option<u64>,
-    is_streaming: bool,
-    status_code: u16,
-    session_id: Option<String>,
-    api_key_id: Option<&str>,
-) {
-    use super::usage::logger::UsageLogger;
-
-    let dedup_scope = super::usage::parser::dedup_scope_for_app(app_type, provider_id);
-    let request_id = usage.dedup_request_id(dedup_scope);
-
-    log::debug!(
-        "[{app_type}] 记录请求日志: id={request_id}, provider={provider_id}, model={model}, streaming={is_streaming}, status={status_code}, latency_ms={latency_ms}, first_token_ms={first_token_ms:?}, session={}, input={}, output={}, cache_read={}, cache_creation={}",
-        session_id.as_deref().unwrap_or("none"),
-        usage.input_tokens,
-        usage.output_tokens,
-        usage.cache_read_tokens,
-        usage.cache_creation_tokens
-    );
-
-    // #7818：使用量写入要拿 Database 的单把 std::sync::Mutex<Connection> 并做
-    // 磁盘 IO，同步执行会卡住 tokio worker，移到阻塞线程池执行。计费模式
-    // 读取走同一把锁，一并移入。
-    let db = state.db.clone();
-    let provider_id = provider_id.to_string();
-    let app_type = app_type.to_string();
-    let model = model.to_string();
-    let request_model = request_model.to_string();
-    let outbound_model = outbound_model.to_string();
-    let api_key_id = api_key_id.map(str::to_string);
-    let write = tokio::task::spawn_blocking(move || {
-        let logger = UsageLogger::new(&db);
-        // 计费模式读取的 DAO 是伪 async（无真实挂起点、直接取阻塞锁），
-        // 在阻塞线程上 block_on 不会停转运行时
-        let pricing_model_source = tokio::runtime::Handle::current()
-            .block_on(logger.resolve_pricing_model_source(&app_type));
-        let pricing_model = if pricing_model_source == PRICING_SOURCE_REQUEST {
-            outbound_model
-        } else {
-            model.clone()
-        };
-        logger.log_with_calculation(
-            request_id,
-            provider_id,
-            app_type,
-            model,
-            request_model,
-            pricing_model,
-            usage,
-            latency_ms,
-            first_token_ms,
-            status_code,
-            session_id,
-            api_key_id,
-            None, // provider_type
-            is_streaming,
-        )
-    });
-    if let Err(e) = write.await.unwrap_or_else(|e| {
-        Err(crate::error::AppError::Database(format!(
-            "usage 记录任务失败: {e}"
-        )))
-    }) {
-        log::warn!("[USG-001] 记录使用量失败: {e}");
-    }
 }
 
 /// 创建带日志记录和超时控制的透传流
@@ -1253,6 +1113,35 @@ mod tests {
         Ok(())
     }
 
+    /// 测试辅助：同步写一条 usage 记录，保持旧 log_usage_internal 的调用形状。
+    async fn log_usage_for_test(
+        state: &ProxyState,
+        provider_id: &str,
+        app_type: &'static str,
+        model: &str,
+        request_model: &str,
+        outbound_model: &str,
+        usage: TokenUsage,
+        status_code: u16,
+    ) {
+        crate::proxy::usage::logger::write_usage_record(crate::proxy::usage::logger::UsageRecord {
+            state: state.clone(),
+            provider_id: provider_id.to_string(),
+            app_type,
+            model: model.to_string(),
+            request_model: request_model.to_string(),
+            outbound_model: outbound_model.to_string(),
+            usage,
+            latency_ms: 10,
+            first_token_ms: None,
+            is_streaming: false,
+            status_code,
+            session_id: None,
+            api_key_id: None,
+        })
+        .await;
+    }
+
     #[tokio::test]
     async fn test_log_usage_ignores_legacy_multiplier_and_provider_overrides(
     ) -> Result<(), AppError> {
@@ -1290,7 +1179,7 @@ mod tests {
             message_id: None,
         };
 
-        log_usage_internal(
+        log_usage_for_test(
             &state,
             "provider-1",
             app_type,
@@ -1298,12 +1187,7 @@ mod tests {
             "req-model",
             "req-model",
             usage,
-            10,
-            None,
-            false,
             200,
-            None,
-            None,
         )
         .await;
 
@@ -1358,7 +1242,7 @@ mod tests {
 
         // 路由接管场景：客户端请求 req-model（$2/M），代理实际发出 outbound-model
         // （$4/M），上游回显 resp-model。「按请求计价」必须锚定实际发出的模型。
-        log_usage_internal(
+        log_usage_for_test(
             &state,
             "provider-3",
             app_type,
@@ -1366,12 +1250,7 @@ mod tests {
             "req-model",
             "outbound-model",
             usage,
-            10,
-            None,
-            false,
             200,
-            None,
-            None,
         )
         .await;
 
@@ -1453,7 +1332,7 @@ mod tests {
         locked_rx.recv().expect("接收占锁通知失败");
 
         let writer = tokio::spawn(async move {
-            log_usage_internal(
+            log_usage_for_test(
                 &state,
                 "provider-busy",
                 app_type,
@@ -1461,12 +1340,7 @@ mod tests {
                 "req-model",
                 "req-model",
                 usage,
-                10,
-                None,
-                false,
                 200,
-                None,
-                None,
             )
             .await;
         });

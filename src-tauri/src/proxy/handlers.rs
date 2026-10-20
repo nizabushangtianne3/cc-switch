@@ -38,17 +38,19 @@ use super::{
     response_processor::{
         create_logged_passthrough_stream, create_usage_collector, process_response,
         read_decoded_body, strip_entity_headers_for_rebuilt_body,
-        strip_hop_by_hop_response_headers, usage_logging_enabled, SseUsageCollector,
-        SseUsageLogContext,
+        strip_hop_by_hop_response_headers, SseUsageCollector, SseUsageLogContext,
     },
     server::ProxyState,
     sse::{strip_sse_field, take_sse_block},
     types::*,
+    usage::logger::{
+        spawn_usage_error_record, spawn_usage_record, usage_logging_enabled, UsageErrorRecord,
+        UsageRecord,
+    },
     usage::parser::TokenUsage,
     ProxyError,
 };
 use crate::app_config::AppType;
-use crate::database::PRICING_SOURCE_REQUEST;
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use bytes::Bytes;
 use futures::StreamExt;
@@ -383,7 +385,7 @@ async fn handle_messages_for_app(
             if let Some(provider) = err.provider.take() {
                 ctx.provider = provider;
             }
-            log_forward_error(&state, &ctx, is_stream, &err.error).await;
+            spawn_forward_error_log(&state, &ctx, is_stream, &err.error);
             return Err(err.error);
         }
     };
@@ -504,25 +506,6 @@ fn prepare_claude_usage_log(
     })
 }
 
-async fn write_claude_usage_log(state: &ProxyState, log: ClaudeUsageLog) {
-    log_usage(
-        state,
-        &log.provider_id,
-        log.app_type,
-        &log.model,
-        &log.request_model,
-        &log.outbound_model,
-        log.usage,
-        log.latency_ms,
-        None,
-        log.is_streaming,
-        log.status_code,
-        Some(log.session_id),
-        log.api_key_id.as_deref(),
-    )
-    .await;
-}
-
 fn spawn_claude_usage_log(
     state: &ProxyState,
     ctx: &RequestContext,
@@ -530,16 +513,45 @@ fn spawn_claude_usage_log(
     status_code: u16,
     is_streaming: bool,
 ) {
-    if !usage_logging_enabled(state) {
-        return;
-    }
     let Some(log) = prepare_claude_usage_log(ctx, response, status_code, is_streaming) else {
         return;
     };
-    let state = state.clone();
-    tokio::spawn(async move {
-        write_claude_usage_log(&state, log).await;
+    spawn_usage_record(UsageRecord {
+        state: state.clone(),
+        provider_id: log.provider_id,
+        app_type: log.app_type,
+        model: log.model,
+        request_model: log.request_model,
+        outbound_model: log.outbound_model,
+        usage: log.usage,
+        latency_ms: log.latency_ms,
+        first_token_ms: None,
+        is_streaming: log.is_streaming,
+        status_code: log.status_code,
+        session_id: Some(log.session_id),
+        api_key_id: log.api_key_id,
     });
+}
+
+/// 特殊路径：上游已经成功扣费、但响应转换失败要返回终态错误时，
+/// 必须先把 usage 落库再返回，所以这里同步等待写库。
+async fn write_claude_usage_log(state: &ProxyState, log: ClaudeUsageLog) {
+    super::usage::logger::write_usage_record(UsageRecord {
+        state: state.clone(),
+        provider_id: log.provider_id,
+        app_type: log.app_type,
+        model: log.model,
+        request_model: log.request_model,
+        outbound_model: log.outbound_model,
+        usage: log.usage,
+        latency_ms: log.latency_ms,
+        first_token_ms: None,
+        is_streaming: log.is_streaming,
+        status_code: log.status_code,
+        session_id: Some(log.session_id),
+        api_key_id: log.api_key_id,
+    })
+    .await;
 }
 
 async fn handle_claude_transform(
@@ -631,25 +643,20 @@ async fn handle_claude_transform(
                             .filter(|m| !m.is_empty())
                             .unwrap_or_else(|| context.outbound_model.clone());
                         let latency_ms = start_time.elapsed().as_millis() as u64;
-                        let context = Arc::clone(&context);
-
-                        tokio::spawn(async move {
-                            log_usage(
-                                &context.state,
-                                &context.provider_id,
-                                app_type_str,
-                                &model,
-                                &context.request_model,
-                                &context.outbound_model,
-                                usage,
-                                latency_ms,
-                                first_token_ms,
-                                true,
-                                status_code,
-                                Some(context.session_id.clone()),
-                                context.api_key_id.as_deref(),
-                            )
-                            .await;
+                        spawn_usage_record(UsageRecord {
+                            state: context.state.clone(),
+                            provider_id: context.provider_id.clone(),
+                            app_type: app_type_str,
+                            model,
+                            request_model: context.request_model.clone(),
+                            outbound_model: context.outbound_model.clone(),
+                            usage,
+                            latency_ms,
+                            first_token_ms,
+                            is_streaming: true,
+                            status_code,
+                            session_id: Some(context.session_id.clone()),
+                            api_key_id: context.api_key_id.clone(),
                         });
                     } else {
                         log::debug!("[Claude] OpenRouter 流式响应缺少 usage 统计，跳过消费记录");
@@ -964,7 +971,7 @@ pub async fn handle_chat_completions(
             if let Some(provider) = err.provider.take() {
                 ctx.provider = provider;
             }
-            log_forward_error(&state, &ctx, is_stream, &err.error).await;
+            spawn_forward_error_log(&state, &ctx, is_stream, &err.error);
             return build_codex_proxy_error_response(&ctx, &endpoint, &err.error);
         }
     };
@@ -1090,7 +1097,7 @@ async fn handle_responses_for_app(
             if let Some(provider) = err.provider.take() {
                 ctx.provider = provider;
             }
-            log_forward_error(&state, &ctx, is_stream, &err.error).await;
+            spawn_forward_error_log(&state, &ctx, is_stream, &err.error);
             return build_codex_proxy_error_response(&ctx, &endpoint, &err.error);
         }
     };
@@ -1323,7 +1330,7 @@ async fn handle_codex_standalone_passthrough(
             if let Some(provider) = err.provider.take() {
                 ctx.provider = provider;
             }
-            log_forward_error(&state, &ctx, false, &err.error).await;
+            spawn_forward_error_log(&state, &ctx, false, &err.error);
             return build_codex_proxy_error_response(&ctx, &endpoint, &err.error);
         }
     };
@@ -1421,7 +1428,7 @@ async fn handle_responses_compact_for_app(
             if let Some(provider) = err.provider.take() {
                 ctx.provider = provider;
             }
-            log_forward_error(&state, &ctx, is_stream, &err.error).await;
+            spawn_forward_error_log(&state, &ctx, is_stream, &err.error);
             return build_codex_proxy_error_response(&ctx, &endpoint, &err.error);
         }
     };
@@ -1629,31 +1636,20 @@ async fn handle_codex_xai_native_responses_rewrite(
                     .outbound_model
                     .clone()
                     .unwrap_or_else(|| ctx.request_model.clone());
-                let app_type_str = ctx.app_type_str;
-                let api_key_id = ctx.api_key_id.clone();
-                tokio::spawn({
-                    let state = state.clone();
-                    let provider_id = ctx.provider.id.clone();
-                    let session_id = ctx.session_id.clone();
-                    let latency_ms = ctx.latency_ms();
-                    async move {
-                        log_usage(
-                            &state,
-                            &provider_id,
-                            app_type_str,
-                            &model,
-                            &request_model,
-                            &outbound_model,
-                            usage,
-                            latency_ms,
-                            None,
-                            false,
-                            status.as_u16(),
-                            Some(session_id),
-                            api_key_id.as_deref(),
-                        )
-                        .await;
-                    }
+                spawn_usage_record(UsageRecord {
+                    state: state.clone(),
+                    provider_id: ctx.provider.id.clone(),
+                    app_type: ctx.app_type_str,
+                    model,
+                    request_model,
+                    outbound_model,
+                    usage,
+                    latency_ms: ctx.latency_ms(),
+                    first_token_ms: None,
+                    is_streaming: false,
+                    status_code: status.as_u16(),
+                    session_id: Some(ctx.session_id.clone()),
+                    api_key_id: ctx.api_key_id.clone(),
                 });
             }
             match serde_json::to_vec(&value) {
@@ -1735,25 +1731,20 @@ async fn handle_codex_chat_to_responses_transform(
                         .unwrap_or_else(|| context.outbound_model.clone());
                     let latency_ms = start_time.elapsed().as_millis() as u64;
 
-                    let context = Arc::clone(&context);
-
-                    tokio::spawn(async move {
-                        log_usage(
-                            &context.state,
-                            &context.provider_id,
-                            app_type_str,
-                            &model,
-                            &context.request_model,
-                            &context.outbound_model,
-                            usage,
-                            latency_ms,
-                            first_token_ms,
-                            true,
-                            status.as_u16(),
-                            Some(context.session_id.clone()),
-                            context.api_key_id.as_deref(),
-                        )
-                        .await;
+                    spawn_usage_record(UsageRecord {
+                        state: context.state.clone(),
+                        provider_id: context.provider_id.clone(),
+                        app_type: app_type_str,
+                        model,
+                        request_model: context.request_model.clone(),
+                        outbound_model: context.outbound_model.clone(),
+                        usage,
+                        latency_ms,
+                        first_token_ms,
+                        is_streaming: true,
+                        status_code: status.as_u16(),
+                        session_id: Some(context.session_id.clone()),
+                        api_key_id: context.api_key_id.clone(),
                     });
                 },
             ))
@@ -1853,31 +1844,20 @@ async fn handle_codex_chat_to_responses_transform(
             .outbound_model
             .clone()
             .unwrap_or_else(|| ctx.request_model.clone());
-        let app_type_str = ctx.app_type_str;
-        let api_key_id = ctx.api_key_id.clone();
-        tokio::spawn({
-            let state = state.clone();
-            let provider_id = ctx.provider.id.clone();
-            let session_id = ctx.session_id.clone();
-            let latency_ms = ctx.latency_ms();
-            async move {
-                log_usage(
-                    &state,
-                    &provider_id,
-                    app_type_str,
-                    &model,
-                    &request_model,
-                    &outbound_model,
-                    usage,
-                    latency_ms,
-                    None,
-                    false,
-                    status.as_u16(),
-                    Some(session_id),
-                    api_key_id.as_deref(),
-                )
-                .await;
-            }
+        spawn_usage_record(UsageRecord {
+            state: state.clone(),
+            provider_id: ctx.provider.id.clone(),
+            app_type: ctx.app_type_str,
+            model,
+            request_model,
+            outbound_model,
+            usage,
+            latency_ms: ctx.latency_ms(),
+            first_token_ms: None,
+            is_streaming: false,
+            status_code: status.as_u16(),
+            session_id: Some(ctx.session_id.clone()),
+            api_key_id: ctx.api_key_id.clone(),
         });
     }
 
@@ -2020,31 +2000,20 @@ async fn handle_codex_anthropic_to_responses_transform(
             .outbound_model
             .clone()
             .unwrap_or_else(|| ctx.request_model.clone());
-        let app_type_str = ctx.app_type_str;
-        let api_key_id = ctx.api_key_id.clone();
-        tokio::spawn({
-            let state = state.clone();
-            let provider_id = ctx.provider.id.clone();
-            let session_id = ctx.session_id.clone();
-            let latency_ms = ctx.latency_ms();
-            async move {
-                log_usage(
-                    &state,
-                    &provider_id,
-                    app_type_str,
-                    &model,
-                    &request_model,
-                    &outbound_model,
-                    usage,
-                    latency_ms,
-                    None,
-                    false,
-                    status.as_u16(),
-                    Some(session_id),
-                    api_key_id.as_deref(),
-                )
-                .await;
-            }
+        spawn_usage_record(UsageRecord {
+            state: state.clone(),
+            provider_id: ctx.provider.id.clone(),
+            app_type: ctx.app_type_str,
+            model,
+            request_model,
+            outbound_model,
+            usage,
+            latency_ms: ctx.latency_ms(),
+            first_token_ms: None,
+            is_streaming: false,
+            status_code: status.as_u16(),
+            session_id: Some(ctx.session_id.clone()),
+            api_key_id: ctx.api_key_id.clone(),
         });
     }
 
@@ -2102,25 +2071,20 @@ fn build_codex_anthropic_sse_response(
                     .unwrap_or_else(|| context.outbound_model.clone());
                 let latency_ms = start_time.elapsed().as_millis() as u64;
 
-                let context = Arc::clone(&context);
-
-                tokio::spawn(async move {
-                    log_usage(
-                        &context.state,
-                        &context.provider_id,
-                        app_type_str,
-                        &model,
-                        &context.request_model,
-                        &context.outbound_model,
-                        usage,
-                        latency_ms,
-                        first_token_ms,
-                        true,
-                        status.as_u16(),
-                        Some(context.session_id.clone()),
-                        context.api_key_id.as_deref(),
-                    )
-                    .await;
+                spawn_usage_record(UsageRecord {
+                    state: context.state.clone(),
+                    provider_id: context.provider_id.clone(),
+                    app_type: app_type_str,
+                    model,
+                    request_model: context.request_model.clone(),
+                    outbound_model: context.outbound_model.clone(),
+                    usage,
+                    latency_ms,
+                    first_token_ms,
+                    is_streaming: true,
+                    status_code: status.as_u16(),
+                    session_id: Some(context.session_id.clone()),
+                    api_key_id: context.api_key_id.clone(),
                 });
             },
         ))
@@ -2481,7 +2445,7 @@ pub async fn handle_gemini(
             if let Some(provider) = err.provider.take() {
                 ctx.provider = provider;
             }
-            log_forward_error(&state, &ctx, is_stream, &err.error).await;
+            spawn_forward_error_log(&state, &ctx, is_stream, &err.error);
             return Err(err.error);
         }
     };
@@ -3115,126 +3079,27 @@ fn merge_tool_call_delta(
 }
 
 // ============================================================================
-// 使用量记录（保留用于 Claude 转换逻辑）
+// 使用量记录
 // ============================================================================
 
-async fn log_forward_error(
+/// 失败请求的错误行后台落库（fire-and-forget，不阻塞错误响应返回）。
+fn spawn_forward_error_log(
     state: &ProxyState,
     ctx: &RequestContext,
     is_streaming: bool,
     error: &ProxyError,
 ) {
-    use super::usage::logger::UsageLogger;
-
-    let status_code = map_proxy_error_to_status(error);
-    let error_message = get_error_message(error);
-    let request_id = uuid::Uuid::new_v4().to_string();
-
-    // #7818：错误行的写入同样要拿 Database 的阻塞锁并做磁盘 IO，
-    // 移到阻塞线程池执行，避免卡住 tokio worker。
-    let db = state.db.clone();
-    let provider_id = ctx.provider.id.clone();
-    let app_type = ctx.app_type_str.to_string();
-    let request_model = ctx.request_model.clone();
-    let session_id = ctx.session_id.clone();
-    let latency_ms = ctx.latency_ms();
-    let write = tokio::task::spawn_blocking(move || {
-        UsageLogger::new(&db).log_error_with_context(
-            request_id,
-            provider_id,
-            app_type,
-            request_model,
-            status_code,
-            error_message,
-            latency_ms,
-            is_streaming,
-            Some(session_id),
-            None,
-        )
+    spawn_usage_error_record(UsageErrorRecord {
+        state: state.clone(),
+        provider_id: ctx.provider.id.clone(),
+        app_type: ctx.app_type_str,
+        request_model: ctx.request_model.clone(),
+        status_code: map_proxy_error_to_status(error),
+        error_message: get_error_message(error),
+        latency_ms: ctx.latency_ms(),
+        is_streaming,
+        session_id: Some(ctx.session_id.clone()),
     });
-    if let Err(e) = write.await.unwrap_or_else(|e| {
-        Err(crate::error::AppError::Database(format!(
-            "usage 记录任务失败: {e}"
-        )))
-    }) {
-        log::warn!("记录失败请求日志失败: {e}");
-    }
-}
-
-/// 记录请求使用量
-///
-/// `outbound_model` 是「按请求计价」模式的锚点：实际发往上游的模型
-/// （路由接管映射后的真值，无映射时等于 request_model）。
-#[allow(clippy::too_many_arguments)]
-async fn log_usage(
-    state: &ProxyState,
-    provider_id: &str,
-    app_type: &str,
-    model: &str,
-    request_model: &str,
-    outbound_model: &str,
-    usage: TokenUsage,
-    latency_ms: u64,
-    first_token_ms: Option<u64>,
-    is_streaming: bool,
-    status_code: u16,
-    session_id: Option<String>,
-    api_key_id: Option<&str>,
-) {
-    use super::usage::logger::UsageLogger;
-
-    if !usage_logging_enabled(state) {
-        return;
-    }
-
-    let dedup_scope = super::usage::parser::dedup_scope_for_app(app_type, provider_id);
-    let request_id = usage.dedup_request_id(dedup_scope);
-
-    // #7818：使用量写入要拿 Database 的单把 std::sync::Mutex<Connection> 并做
-    // 磁盘 IO，同步执行会卡住 tokio worker，移到阻塞线程池执行。计费模式
-    // 读取走同一把锁，一并移入。
-    let db = state.db.clone();
-    let provider_id = provider_id.to_string();
-    let app_type = app_type.to_string();
-    let model = model.to_string();
-    let request_model = request_model.to_string();
-    let outbound_model = outbound_model.to_string();
-    let api_key_id = api_key_id.map(str::to_string);
-    let write = tokio::task::spawn_blocking(move || {
-        let logger = UsageLogger::new(&db);
-        // 计费模式读取的 DAO 是伪 async（无真实挂起点、直接取阻塞锁），
-        // 在阻塞线程上 block_on 不会停转运行时
-        let pricing_model_source = tokio::runtime::Handle::current()
-            .block_on(logger.resolve_pricing_model_source(&app_type));
-        let pricing_model = if pricing_model_source == PRICING_SOURCE_REQUEST {
-            outbound_model
-        } else {
-            model.clone()
-        };
-        logger.log_with_calculation(
-            request_id,
-            provider_id,
-            app_type,
-            model,
-            request_model,
-            pricing_model,
-            usage,
-            latency_ms,
-            first_token_ms,
-            status_code,
-            session_id,
-            api_key_id,
-            None, // provider_type
-            is_streaming,
-        )
-    });
-    if let Err(e) = write.await.unwrap_or_else(|e| {
-        Err(crate::error::AppError::Database(format!(
-            "usage 记录任务失败: {e}"
-        )))
-    }) {
-        log::warn!("[USG-001] 记录使用量失败: {e}");
-    }
 }
 
 #[cfg(test)]

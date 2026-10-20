@@ -440,6 +440,180 @@ impl<'a> UsageLogger<'a> {
     }
 }
 
+// ============================================================================
+// 出站管道的统一落库入口
+// ============================================================================
+
+use crate::proxy::server::ProxyState;
+
+/// 一次成功请求的 usage 落库参数。
+///
+/// 出站管道（转发器、处理器、各 transform handler）统一经
+/// [`spawn_usage_record`] 落库，不再各自维护一份写库逻辑。
+pub(crate) struct UsageRecord {
+    pub state: ProxyState,
+    pub provider_id: String,
+    pub app_type: &'static str,
+    pub model: String,
+    pub request_model: String,
+    /// 「按请求计价」模式的锚点：实际发往上游的模型（映射后的真值）。
+    pub outbound_model: String,
+    pub usage: TokenUsage,
+    pub latency_ms: u64,
+    pub first_token_ms: Option<u64>,
+    pub is_streaming: bool,
+    pub status_code: u16,
+    pub session_id: Option<String>,
+    pub api_key_id: Option<String>,
+}
+
+/// 全局代理日志开关（proxy_config.enable_logging）。
+pub(crate) fn usage_logging_enabled(state: &ProxyState) -> bool {
+    state
+        .config
+        .try_read()
+        .map(|config| config.enable_logging)
+        .unwrap_or(true)
+}
+
+/// 记录成功请求的 usage（fire-and-forget：写库在阻塞线程池，不阻塞响应返回）。
+pub(crate) fn spawn_usage_record(record: UsageRecord) {
+    if !usage_logging_enabled(&record.state) {
+        return;
+    }
+    tokio::spawn(write_usage_record(record));
+}
+
+/// 写入一条成功请求的 usage 记录。
+///
+/// 写库要拿 Database 的单把阻塞锁并做磁盘 IO，同步执行会卡住 tokio
+/// worker，因此移到阻塞线程池执行（#7818）。需要同步等待的调用方
+/// （测试、回归闸门）直接 await 本函数。
+pub(crate) async fn write_usage_record(record: UsageRecord) {
+    let UsageRecord {
+        state,
+        provider_id,
+        app_type,
+        model,
+        request_model,
+        outbound_model,
+        usage,
+        latency_ms,
+        first_token_ms,
+        is_streaming,
+        status_code,
+        session_id,
+        api_key_id,
+    } = record;
+
+    let dedup_scope = super::parser::dedup_scope_for_app(app_type, &provider_id);
+    let request_id = usage.dedup_request_id(dedup_scope);
+
+    log::debug!(
+        "[{app_type}] 记录请求日志: id={request_id}, provider={provider_id}, model={model}, streaming={is_streaming}, status={status_code}, latency_ms={latency_ms}, first_token_ms={first_token_ms:?}, session={}, input={}, output={}, cache_read={}, cache_creation={}",
+        session_id.as_deref().unwrap_or("none"),
+        usage.input_tokens,
+        usage.output_tokens,
+        usage.cache_read_tokens,
+        usage.cache_creation_tokens
+    );
+
+    let db = state.db.clone();
+    let write = tokio::task::spawn_blocking(move || {
+        let logger = UsageLogger::new(&db);
+        // 计费模式读取的 DAO 是伪 async（无真实挂起点、直接取阻塞锁），
+        // 在阻塞线程上 block_on 不会停转运行时
+        let pricing_model_source = tokio::runtime::Handle::current()
+            .block_on(logger.resolve_pricing_model_source(app_type));
+        let pricing_model = if pricing_model_source == PRICING_SOURCE_REQUEST {
+            outbound_model
+        } else {
+            model.clone()
+        };
+        logger.log_with_calculation(
+            request_id,
+            provider_id,
+            app_type.to_string(),
+            model,
+            request_model,
+            pricing_model,
+            usage,
+            latency_ms,
+            first_token_ms,
+            status_code,
+            session_id,
+            api_key_id,
+            None, // provider_type
+            is_streaming,
+        )
+    });
+    if let Err(e) = write
+        .await
+        .unwrap_or_else(|e| Err(AppError::Database(format!("usage 记录任务失败: {e}"))))
+    {
+        log::warn!("[USG-001] 记录使用量失败: {e}");
+    }
+}
+
+/// 一次失败请求的错误行落库参数。
+pub(crate) struct UsageErrorRecord {
+    pub state: ProxyState,
+    pub provider_id: String,
+    pub app_type: &'static str,
+    pub request_model: String,
+    pub status_code: u16,
+    pub error_message: String,
+    pub latency_ms: u64,
+    pub is_streaming: bool,
+    pub session_id: Option<String>,
+}
+
+/// 记录失败请求的错误行（fire-and-forget）。
+///
+/// 与成功路径不同：错误行不受 enable_logging 开关拦截，排障时
+/// 需要能看到失败请求，保持既有行为。
+pub(crate) fn spawn_usage_error_record(record: UsageErrorRecord) {
+    tokio::spawn(write_usage_error_record(record));
+}
+
+/// 写入一条失败请求的错误行（写库同样走阻塞线程池）。
+pub(crate) async fn write_usage_error_record(record: UsageErrorRecord) {
+    let UsageErrorRecord {
+        state,
+        provider_id,
+        app_type,
+        request_model,
+        status_code,
+        error_message,
+        latency_ms,
+        is_streaming,
+        session_id,
+    } = record;
+
+    let request_id = uuid::Uuid::new_v4().to_string();
+    let db = state.db.clone();
+    let write = tokio::task::spawn_blocking(move || {
+        UsageLogger::new(&db).log_error_with_context(
+            request_id,
+            provider_id,
+            app_type.to_string(),
+            request_model,
+            status_code,
+            error_message,
+            latency_ms,
+            is_streaming,
+            session_id,
+            None,
+        )
+    });
+    if let Err(e) = write
+        .await
+        .unwrap_or_else(|e| Err(AppError::Database(format!("usage 记录任务失败: {e}"))))
+    {
+        log::warn!("记录失败请求日志失败: {e}");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
