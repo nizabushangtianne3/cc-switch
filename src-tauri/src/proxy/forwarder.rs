@@ -9234,6 +9234,16 @@ mod tests {
                 std::hint::black_box(serde_json::to_vec(&prepared).expect("serialize"));
             }
             elapsed_report("serialize to bytes", iterations, start.elapsed());
+
+            // 响应侧同体量的整包 JSON parse：非流式 usage 解析曾内联在
+            // 返回客户端之前，现在挪进了后台任务，这里量化省掉的那段开销。
+            let response_bytes = serde_json::to_vec(&prepared).expect("serialize");
+            let start = Instant::now();
+            for _ in 0..iterations {
+                let parsed: Value = serde_json::from_slice(&response_bytes).expect("parse");
+                std::hint::black_box(parsed);
+            }
+            elapsed_report("parse response json", iterations, start.elapsed());
         }
 
         #[tokio::test]

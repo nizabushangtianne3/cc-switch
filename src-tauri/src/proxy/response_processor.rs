@@ -10,7 +10,7 @@ use super::{
     hyper_client::{ProxyResponse, MAX_RESPONSE_BODY_BYTES},
     server::ProxyState,
     sse::{strip_sse_field, take_sse_block},
-    usage::logger::{spawn_usage_record, usage_logging_enabled, UsageRecord},
+    usage::logger::{spawn_usage_record, usage_logging_enabled, write_usage_record, UsageRecord},
     usage::parser::TokenUsage,
     ProxyError,
 };
@@ -248,73 +248,17 @@ pub async fn handle_non_streaming(
     );
 
     // 解析并记录使用量。关闭 usage logging 时直接跳过，避免非流式响应整包 JSON parse。
+    // 解析放后台任务：整包 parse 对大响应是毫秒级开销，不该挡在返回客户端的路上。
+    // body_bytes 是引用计数的 Bytes，clone 只是 +1，响应体本身已经读完了。
     if usage_logging_enabled(state) {
-        if let Ok(json_value) = serde_json::from_slice::<Value>(&body_bytes) {
-            // 解析使用量
-            if let Some(usage) = (parser_config.response_parser)(&json_value) {
-                // 归因优先级：usage 解析出的模型 → 响应 model 字段 → 映射后的出站
-                // 模型（路由接管真值）→ 客户端请求模型。空字符串视为缺失。
-                let model = usage
-                    .model
-                    .clone()
-                    .filter(|m| !m.is_empty())
-                    .or_else(|| {
-                        json_value
-                            .get("model")
-                            .and_then(|m| m.as_str())
-                            .filter(|m| !m.is_empty())
-                            .map(str::to_string)
-                    })
-                    .or_else(|| ctx.outbound_model.clone())
-                    .unwrap_or_else(|| ctx.request_model.clone());
-
-                spawn_log_usage(
-                    state,
-                    ctx,
-                    usage,
-                    &model,
-                    &ctx.request_model,
-                    status.as_u16(),
-                    false,
-                );
-            } else {
-                let model = json_value
-                    .get("model")
-                    .and_then(|m| m.as_str())
-                    .filter(|m| !m.is_empty())
-                    .map(str::to_string)
-                    .or_else(|| ctx.outbound_model.clone())
-                    .unwrap_or_else(|| ctx.request_model.clone());
-                spawn_log_usage(
-                    state,
-                    ctx,
-                    TokenUsage::default(),
-                    &model,
-                    &ctx.request_model,
-                    status.as_u16(),
-                    false,
-                );
-                log::debug!(
-                    "[{}] 未能解析 usage 信息，跳过记录",
-                    parser_config.app_type_str
-                );
-            }
-        } else {
-            log::debug!(
-                "[{}] <<< 响应 (非 JSON): {} bytes",
-                ctx.tag,
-                body_bytes.len()
-            );
-            spawn_log_usage(
-                state,
-                ctx,
-                TokenUsage::default(),
-                ctx.outbound_model.as_deref().unwrap_or(&ctx.request_model),
-                &ctx.request_model,
-                status.as_u16(),
-                false,
-            );
-        }
+        let context = SseUsageLogContext::new(ctx, state);
+        tokio::spawn(parse_and_log_non_streaming_usage(
+            context,
+            body_bytes.clone(),
+            *parser_config,
+            status.as_u16(),
+            ctx.latency_ms(),
+        ));
     } else {
         log::debug!("[{}] usage logging 已关闭，跳过非流式 usage 解析", ctx.tag);
     }
@@ -361,6 +305,11 @@ type UsageCallbackWithTiming = Arc<dyn Fn(Vec<Value>, Option<u64>) + Send + Sync
 pub(crate) struct SseUsageLogContext {
     pub(crate) state: ProxyState,
     pub(crate) provider_id: String,
+    pub(crate) tag: &'static str,
+    /// 落库用的应用类型。必须取 ctx.app_type_str：Claude Desktop 透传复用
+    /// CLAUDE_PARSER_CONFIG（parser_config 说 "claude"），按 parser_config
+    /// 记账会把 claude-desktop 的行错记到 claude 名下。
+    pub(crate) app_type: &'static str,
     pub(crate) request_model: String,
     pub(crate) outbound_model: String,
     pub(crate) session_id: String,
@@ -372,6 +321,8 @@ impl SseUsageLogContext {
         Self {
             state: state.clone(),
             provider_id: ctx.provider.id.clone(),
+            tag: ctx.tag,
+            app_type: ctx.app_type_str,
             request_model: ctx.request_model.clone(),
             // 流式事件缺失模型名时的归因兜底：映射后的出站模型（路由接管真值）
             // 优先，其次才是客户端请求别名。
@@ -545,11 +496,6 @@ pub(crate) fn create_usage_collector(
     }
 
     let context = Arc::new(SseUsageLogContext::new(ctx, state));
-    // 用 ctx 的 app_type 而不是 parser_config 的：Claude Desktop 流式透传复用
-    // CLAUDE_PARSER_CONFIG（app_type_str="claude"），按 parser_config 记账会把
-    // claude-desktop 的行错记到 claude 名下，导致供应商计价覆盖解析不到。
-    let app_type_str = ctx.app_type_str;
-    let tag = ctx.tag;
     let start_time = ctx.start_time;
     let stream_parser = parser_config.stream_parser;
     let model_extractor = parser_config.model_extractor;
@@ -559,12 +505,12 @@ pub(crate) fn create_usage_collector(
         move |events, first_token_ms| {
             let usage = stream_parser(&events);
             if usage.is_none() {
-                log::debug!("[{tag}] 流式响应缺少 usage 统计，跳过消费记录");
+                log::debug!("[{}] 流式响应缺少 usage 统计，跳过消费记录", context.tag);
             }
             spawn_usage_record(UsageRecord {
                 state: context.state.clone(),
                 provider_id: context.provider_id.clone(),
-                app_type: app_type_str,
+                app_type: context.app_type,
                 model: model_extractor(&events, &context.outbound_model),
                 request_model: context.request_model.clone(),
                 outbound_model: context.outbound_model.clone(),
@@ -580,36 +526,82 @@ pub(crate) fn create_usage_collector(
     ))
 }
 
-/// 从请求上下文组装 usage 落库参数并后台写入。
-fn spawn_log_usage(
-    state: &ProxyState,
-    ctx: &RequestContext,
-    usage: TokenUsage,
-    model: &str,
-    request_model: &str,
+/// 非流式响应的 usage 解析与落库（后台任务执行）。
+///
+/// 整包 JSON parse 对大响应是毫秒级开销，放后台后不再挡在返回客户端的路上；
+/// Bytes 是引用计数的，任务里拿到的只是 +1 的克隆。
+///
+/// 归因优先级：usage 解析出的模型 → 响应 model 字段 → 映射后的出站
+/// 模型（路由接管真值）→ 客户端请求模型。空字符串视为缺失。
+/// 本函数已经在后台任务里，写库直接走 [`write_usage_record`]，不再二次 spawn。
+async fn parse_and_log_non_streaming_usage(
+    context: SseUsageLogContext,
+    body_bytes: Bytes,
+    parser_config: UsageParserConfig,
     status_code: u16,
-    is_streaming: bool,
+    latency_ms: u64,
 ) {
-    // 「按请求计价」模式的锚点：映射后的出站模型，无映射时等于 request_model
-    let outbound_model = ctx
-        .outbound_model
-        .clone()
-        .unwrap_or_else(|| request_model.to_string());
-    spawn_usage_record(UsageRecord {
-        state: state.clone(),
-        provider_id: ctx.provider.id.clone(),
-        app_type: ctx.app_type_str,
-        model: model.to_string(),
-        request_model: request_model.to_string(),
-        outbound_model,
+    let record = |usage: TokenUsage, model: String| UsageRecord {
+        state: context.state.clone(),
+        provider_id: context.provider_id.clone(),
+        app_type: context.app_type,
+        model,
+        request_model: context.request_model.clone(),
+        // 「按请求计价」模式的锚点：映射后的出站模型，无映射时等于 request_model
+        outbound_model: context.outbound_model.clone(),
         usage,
-        latency_ms: ctx.latency_ms(),
+        latency_ms,
         first_token_ms: None,
-        is_streaming,
+        is_streaming: false,
         status_code,
-        session_id: Some(ctx.session_id.clone()),
-        api_key_id: ctx.api_key_id.clone(),
-    });
+        session_id: Some(context.session_id.clone()),
+        api_key_id: context.api_key_id.clone(),
+    };
+
+    let Ok(json_value) = serde_json::from_slice::<Value>(&body_bytes) else {
+        log::debug!(
+            "[{}] <<< 响应 (非 JSON): {} bytes",
+            context.tag,
+            body_bytes.len()
+        );
+        write_usage_record(record(
+            TokenUsage::default(),
+            context.outbound_model.clone(),
+        ))
+        .await;
+        return;
+    };
+
+    match (parser_config.response_parser)(&json_value) {
+        Some(usage) => {
+            let model = usage
+                .model
+                .clone()
+                .filter(|m| !m.is_empty())
+                .or_else(|| {
+                    json_value
+                        .get("model")
+                        .and_then(|m| m.as_str())
+                        .filter(|m| !m.is_empty())
+                        .map(str::to_string)
+                })
+                .unwrap_or_else(|| context.outbound_model.clone());
+            write_usage_record(record(usage, model)).await;
+        }
+        None => {
+            log::debug!(
+                "[{}] 未能解析 usage 信息，跳过记录",
+                parser_config.app_type_str
+            );
+            let model = json_value
+                .get("model")
+                .and_then(|m| m.as_str())
+                .filter(|m| !m.is_empty())
+                .map(str::to_string)
+                .unwrap_or_else(|| context.outbound_model.clone());
+            write_usage_record(record(TokenUsage::default(), model)).await;
+        }
+    }
 }
 
 /// 创建带日志记录和超时控制的透传流
@@ -797,7 +789,9 @@ mod tests {
     use crate::database::Database;
     use crate::error::AppError;
     use crate::provider::ProviderMeta;
+    use crate::proxy::handler_config::CLAUDE_PARSER_CONFIG;
     use rust_decimal::Decimal;
+    use serde_json::json;
     use std::str::FromStr;
     use std::sync::Arc;
 
@@ -1076,6 +1070,111 @@ mod tests {
 
     fn build_state(db: Arc<Database>) -> ProxyState {
         ProxyState::for_test(db)
+    }
+
+    fn non_streaming_context(state: &ProxyState) -> SseUsageLogContext {
+        SseUsageLogContext {
+            state: state.clone(),
+            provider_id: "provider-ns".to_string(),
+            tag: "Claude",
+            app_type: "claude",
+            request_model: "req-model".to_string(),
+            outbound_model: "outbound-model".to_string(),
+            session_id: "session-ns".to_string(),
+            api_key_id: None,
+        }
+    }
+
+    async fn usage_row(db: &Arc<Database>, provider_id: &str) -> (String, i64, i64, i64, i64) {
+        let conn = db.conn.lock().expect("lock");
+        conn.query_row(
+            "SELECT model, input_tokens, output_tokens, latency_ms, status_code
+             FROM proxy_request_logs WHERE provider_id = ?1",
+            [provider_id],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
+        )
+        .expect("usage row")
+    }
+
+    #[tokio::test]
+    async fn non_streaming_usage_parse_records_tokens_and_model() {
+        let db = Arc::new(Database::memory().expect("memory db"));
+        let state = build_state(db.clone());
+        let context = non_streaming_context(&state);
+        let body = serde_json::to_vec(&json!({
+            "id": "msg_1",
+            "model": "resp-model",
+            "usage": { "input_tokens": 100, "output_tokens": 50 }
+        }))
+        .expect("serialize");
+
+        parse_and_log_non_streaming_usage(
+            context,
+            Bytes::from(body),
+            CLAUDE_PARSER_CONFIG,
+            200,
+            42,
+        )
+        .await;
+
+        let (model, input, output, latency, status) = usage_row(&db, "provider-ns").await;
+        assert_eq!(model, "resp-model");
+        assert_eq!((input, output), (100, 50));
+        assert_eq!(latency, 42);
+        assert_eq!(status, 200);
+    }
+
+    #[tokio::test]
+    async fn non_streaming_without_usage_falls_back_to_response_model() {
+        let db = Arc::new(Database::memory().expect("memory db"));
+        let state = build_state(db.clone());
+        let context = non_streaming_context(&state);
+        let body = serde_json::to_vec(&json!({
+            "model": "resp-model",
+            "content": [{ "type": "text", "text": "ok" }]
+        }))
+        .expect("serialize");
+
+        parse_and_log_non_streaming_usage(
+            context,
+            Bytes::from(body),
+            CLAUDE_PARSER_CONFIG,
+            200,
+            10,
+        )
+        .await;
+
+        let (model, input, output, _, _) = usage_row(&db, "provider-ns").await;
+        assert_eq!(model, "resp-model");
+        assert_eq!((input, output), (0, 0));
+    }
+
+    #[tokio::test]
+    async fn non_json_response_records_outbound_model_with_zero_usage() {
+        let db = Arc::new(Database::memory().expect("memory db"));
+        let state = build_state(db.clone());
+        let context = non_streaming_context(&state);
+
+        parse_and_log_non_streaming_usage(
+            context,
+            Bytes::from_static(b"not json at all"),
+            CLAUDE_PARSER_CONFIG,
+            200,
+            10,
+        )
+        .await;
+
+        let (model, input, output, _, _) = usage_row(&db, "provider-ns").await;
+        assert_eq!(model, "outbound-model");
+        assert_eq!((input, output), (0, 0));
     }
 
     fn seed_pricing(db: &Database) -> Result<(), AppError> {
