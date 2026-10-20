@@ -1424,4 +1424,221 @@ mod tests {
         proxy.stop().await.expect("stop test proxy");
         mock_handle.abort();
     }
+
+    /// Claude 流式路径端到端：stream=true → SSE 透传 → 事件序列完整送达客户端。
+    #[tokio::test]
+    async fn claude_messages_streaming_passes_events_through() {
+        const SSE_BODY: &str = "event: message_start\n\
+            data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_s\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-3-5-haiku-20241022\",\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\
+            \n\
+            event: content_block_start\n\
+            data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\
+            \n\
+            event: content_block_delta\n\
+            data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"streamed hello\"}}\n\
+            \n\
+            event: content_block_stop\n\
+            data: {\"type\":\"content_block_stop\",\"index\":0}\n\
+            \n\
+            event: message_delta\n\
+            data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":5}}\n\
+            \n\
+            event: message_stop\n\
+            data: {\"type\":\"message_stop\"}\n\
+            \n";
+        let captured = Arc::new(Mutex::new(Vec::<CapturedRequest>::new()));
+        let capture_handler = {
+            let captured = captured.clone();
+            move |request: axum::extract::Request| {
+                let captured = captured.clone();
+                async move {
+                    let (parts, body) = request.into_parts();
+                    let body = axum::body::to_bytes(body, 1024 * 1024)
+                        .await
+                        .expect("read mock request body");
+                    captured.lock().await.push(CapturedRequest {
+                        path_and_query: parts
+                            .uri
+                            .path_and_query()
+                            .map(|value| value.as_str().to_string())
+                            .unwrap_or_else(|| parts.uri.path().to_string()),
+                        authorization: None,
+                        body: serde_json::from_slice(&body).unwrap_or(Value::Null),
+                    });
+                    (
+                        StatusCode::OK,
+                        [(header::CONTENT_TYPE, "text/event-stream")],
+                        SSE_BODY.to_string(),
+                    )
+                }
+            }
+        };
+        let mock_app = Router::new().route("/v1/messages", post(capture_handler));
+        let mock_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind mock upstream");
+        let mock_addr = mock_listener.local_addr().expect("mock addr");
+        let mock_handle = tokio::spawn(async move {
+            axum::serve(mock_listener, mock_app)
+                .await
+                .expect("serve mock");
+        });
+
+        let db = Arc::new(Database::memory().expect("memory database"));
+        let provider = Provider::with_id(
+            "claude-stream".to_string(),
+            "Claude Stream".to_string(),
+            json!({
+                "env": {
+                    "ANTHROPIC_BASE_URL": format!("http://{mock_addr}"),
+                    "ANTHROPIC_AUTH_TOKEN": "sk-test-stream"
+                }
+            }),
+            None,
+        );
+        db.save_provider("claude", &provider)
+            .expect("save claude provider");
+        db.set_current_provider("claude", &provider.id)
+            .expect("select claude provider");
+
+        let proxy = ProxyServer::new(
+            ProxyConfig {
+                listen_port: 0,
+                ..ProxyConfig::default()
+            },
+            db,
+            None,
+        );
+        let proxy_info = proxy.start().await.expect("start test proxy");
+        let client = reqwest::Client::new();
+
+        let response = client
+            .post(format!("http://127.0.0.1:{}/v1/messages", proxy_info.port))
+            .json(&json!({
+                "model": "claude-3-5-haiku-20241022",
+                "max_tokens": 64,
+                "stream": true,
+                "messages": [{ "role": "user", "content": "hi" }]
+            }))
+            .send()
+            .await
+            .expect("send claude streaming request");
+        assert_eq!(response.status(), StatusCode::OK);
+        let content_type = response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .expect("content type")
+            .to_string();
+        assert!(
+            content_type.starts_with("text/event-stream"),
+            "流式响应必须是 SSE: {content_type}"
+        );
+        let body = response.text().await.expect("read sse body");
+        assert!(body.contains("event: message_start"), "{body}");
+        assert!(
+            body.contains("streamed hello"),
+            "content_block_delta 文本必须透传: {body}"
+        );
+        assert!(body.contains("event: message_stop"), "{body}");
+
+        let requests = captured.lock().await;
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].body["stream"], true);
+        drop(requests);
+
+        proxy.stop().await.expect("stop test proxy");
+        mock_handle.abort();
+    }
+
+    /// 上游 400 错误 → 错误体透传给客户端（failover 关闭时不重试）。
+    #[tokio::test]
+    async fn claude_messages_upstream_error_passes_through() {
+        let captured = Arc::new(Mutex::new(Vec::<CapturedRequest>::new()));
+        let capture_handler = {
+            let captured = captured.clone();
+            move |request: axum::extract::Request| {
+                let captured = captured.clone();
+                async move {
+                    let (_parts, body) = request.into_parts();
+                    let body = axum::body::to_bytes(body, 1024 * 1024)
+                        .await
+                        .expect("read mock request body");
+                    captured.lock().await.push(CapturedRequest {
+                        path_and_query: String::from("/v1/messages"),
+                        authorization: None,
+                        body: serde_json::from_slice(&body).unwrap_or(Value::Null),
+                    });
+                    (
+                        StatusCode::BAD_REQUEST,
+                        [(header::CONTENT_TYPE, "application/json")],
+                        serde_json::json!({
+                            "type": "error",
+                            "error": { "type": "invalid_request_error", "message": "bad request upstream" }
+                        })
+                        .to_string(),
+                    )
+                }
+            }
+        };
+        let mock_app = Router::new().route("/v1/messages", post(capture_handler));
+        let mock_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind mock upstream");
+        let mock_addr = mock_listener.local_addr().expect("mock addr");
+        let mock_handle = tokio::spawn(async move {
+            axum::serve(mock_listener, mock_app)
+                .await
+                .expect("serve mock");
+        });
+
+        let db = Arc::new(Database::memory().expect("memory database"));
+        let provider = Provider::with_id(
+            "claude-error".to_string(),
+            "Claude Error".to_string(),
+            json!({
+                "env": {
+                    "ANTHROPIC_BASE_URL": format!("http://{mock_addr}"),
+                    "ANTHROPIC_AUTH_TOKEN": "sk-test-error"
+                }
+            }),
+            None,
+        );
+        db.save_provider("claude", &provider)
+            .expect("save claude provider");
+        db.set_current_provider("claude", &provider.id)
+            .expect("select claude provider");
+
+        let proxy = ProxyServer::new(
+            ProxyConfig {
+                listen_port: 0,
+                ..ProxyConfig::default()
+            },
+            db,
+            None,
+        );
+        let proxy_info = proxy.start().await.expect("start test proxy");
+        let client = reqwest::Client::new();
+
+        let response = client
+            .post(format!("http://127.0.0.1:{}/v1/messages", proxy_info.port))
+            .json(&json!({
+                "model": "claude-3-5-haiku-20241022",
+                "max_tokens": 64,
+                "messages": [{ "role": "user", "content": "hi" }]
+            }))
+            .send()
+            .await
+            .expect("send claude error request");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body: Value = response.json().await.expect("read error body");
+        assert_eq!(body["error"]["type"], "invalid_request_error");
+        assert_eq!(body["error"]["message"], "bad request upstream");
+
+        // 400 是客户端错误：单供应商、failover 关闭时不重试——只打一次上游。
+        assert_eq!(captured.lock().await.len(), 1);
+
+        proxy.stop().await.expect("stop test proxy");
+        mock_handle.abort();
+    }
 }
