@@ -2341,4 +2341,147 @@ mod tests {
         proxy.stop().await.expect("stop test proxy");
         mock_handle.abort();
     }
+
+    /// Codex Anthropic 上游端到端：wire_api="anthropic" → Responses 请求转成
+    /// Anthropic Messages 发给上游 → Anthropic 响应由
+    /// handle_codex_anthropic_to_responses_transform 转回 Responses 格式。
+    #[tokio::test]
+    async fn codex_anthropic_upstream_response_converts_back_to_responses() {
+        let captured = Arc::new(Mutex::new(Vec::<CapturedRequest>::new()));
+        let capture_handler = {
+            let captured = captured.clone();
+            move |request: axum::extract::Request| {
+                let captured = captured.clone();
+                async move {
+                    let (parts, body) = request.into_parts();
+                    let body = axum::body::to_bytes(body, 1024 * 1024)
+                        .await
+                        .expect("read mock request body");
+                    captured.lock().await.push(CapturedRequest {
+                        path_and_query: parts
+                            .uri
+                            .path_and_query()
+                            .map(|value| value.as_str().to_string())
+                            .unwrap_or_else(|| parts.uri.path().to_string()),
+                        authorization: parts
+                            .headers
+                            .get(header::AUTHORIZATION)
+                            .and_then(|value| value.to_str().ok())
+                            .map(ToString::to_string),
+                        body: serde_json::from_slice(&body).unwrap_or(Value::Null),
+                    });
+
+                    let message = serde_json::json!({
+                        "id": "msg_anth_conv",
+                        "type": "message",
+                        "role": "assistant",
+                        "model": "gpt-5.6-sol",
+                        "content": [{ "type": "text", "text": "anthropic converted reply" }],
+                        "stop_reason": "end_turn",
+                        "usage": { "input_tokens": 9, "output_tokens": 4 }
+                    });
+                    (
+                        StatusCode::OK,
+                        [(header::CONTENT_TYPE, "application/json")],
+                        message.to_string(),
+                    )
+                }
+            }
+        };
+        // fallback 路由：Codex anthropic 路径的 URL 形状由适配器决定，
+        // 测试只断言路径含 /v1/messages + body 是 Anthropic Messages 格式。
+        let mock_app = Router::new().fallback(capture_handler);
+        let mock_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind mock upstream");
+        let mock_addr = mock_listener.local_addr().expect("mock addr");
+        let mock_handle = tokio::spawn(async move {
+            axum::serve(mock_listener, mock_app)
+                .await
+                .expect("serve mock");
+        });
+
+        let db = Arc::new(Database::memory().expect("memory database"));
+        let provider = Provider::with_id(
+            "codex-anthropic".to_string(),
+            "Codex Anthropic Upstream".to_string(),
+            json!({
+                "auth": { "OPENAI_API_KEY": "upstream-key" },
+                "config": format!(
+                    "model_provider = \"custom\"\nmodel = \"gpt-5.6-sol\"\n\n[model_providers.custom]\nname = \"custom\"\nbase_url = \"http://{mock_addr}\"\nwire_api = \"anthropic\"\n"
+                )
+            }),
+            None,
+        );
+        db.save_provider("codex", &provider)
+            .expect("save codex anthropic provider");
+        db.set_current_provider("codex", &provider.id)
+            .expect("select codex anthropic provider");
+
+        let proxy = ProxyServer::new(
+            ProxyConfig {
+                listen_port: 0,
+                ..ProxyConfig::default()
+            },
+            db.clone(),
+            None,
+        );
+        let proxy_info = proxy.start().await.expect("start test proxy");
+        let client = reqwest::Client::new();
+
+        let response = client
+            .post(format!("http://127.0.0.1:{}/v1/responses", proxy_info.port))
+            .header(header::AUTHORIZATION, "Bearer client-secret")
+            .json(&json!({
+                "model": "gpt-5.6-sol",
+                "input": [{ "role": "user", "content": [{ "type": "input_text", "text": "hi" }] }],
+                "stream": false
+            }))
+            .send()
+            .await
+            .expect("send codex anthropic request");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: Value = response.json().await.expect("read responses body");
+        assert_eq!(body["object"], "response");
+        let output_text = body["output"]
+            .as_array()
+            .and_then(|items| items.first())
+            .and_then(|item| item["content"].as_array())
+            .and_then(|content| content.first())
+            .and_then(|part| part["text"].as_str())
+            .expect("output text");
+        assert_eq!(output_text, "anthropic converted reply");
+
+        // 上游收到的是 Anthropic Messages 格式
+        let requests = captured.lock().await;
+        assert_eq!(requests.len(), 1);
+        assert!(
+            requests[0].path_and_query.contains("/v1/messages"),
+            "anthropic 上游路径应含 /v1/messages: {}",
+            requests[0].path_and_query
+        );
+        assert_eq!(requests[0].body["model"], "gpt-5.6-sol");
+        assert!(
+            requests[0].body["messages"].is_array(),
+            "anthropic 请求体必须带 messages"
+        );
+        drop(requests);
+
+        // usage 落库是后台任务：留出完成窗口后断言。
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        let (model, input_tokens): (String, i64) = {
+            let conn = db.conn.lock().expect("lock");
+            conn.query_row(
+                "SELECT model, input_tokens FROM proxy_request_logs WHERE provider_id = 'codex-anthropic'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("usage row")
+        };
+        assert_eq!(model, "gpt-5.6-sol");
+        assert_eq!(input_tokens, 9);
+
+        proxy.stop().await.expect("stop test proxy");
+        mock_handle.abort();
+    }
 }
