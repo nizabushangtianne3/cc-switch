@@ -4,13 +4,17 @@
 //! Supports HTTP CONNECT tunneling through upstream proxies.
 //! Falls back to hyper-util Client (title-case headers) when raw write is not feasible.
 
+use super::upstream_pool::{self, PoolKey, PooledUpstream};
 use super::ProxyError;
 use bytes::Bytes;
 use futures::{stream::Stream, StreamExt};
 use http_body_util::BodyExt;
+use hyper::body::{Frame, Incoming};
 use hyper_rustls::HttpsConnectorBuilder;
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
+use std::pin::Pin;
 use std::sync::{Arc, OnceLock};
+use std::task::{ready, Context, Poll};
 
 /// Our own header case map: maps lowercase header name → original wire-casing bytes.
 ///
@@ -53,6 +57,10 @@ impl OriginalHeaderCases {
 /// Connection-level extension type so per-request clones stay cheap.
 pub(crate) type SharedOriginalHeaderCases = Arc<OriginalHeaderCases>;
 
+/// 裸写连接的写半边（类型按上游协议在分支处装箱：TLS 隧道与明文 TCP 的半边类型不同）。
+pub(crate) type BoxedUpstreamWrite = Box<dyn tokio::io::AsyncWrite + Unpin + Send>;
+pub(crate) type BoxedUpstreamRead = Box<dyn tokio::io::AsyncRead + Unpin + Send>;
+
 type HyperClient = Client<
     hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>,
     http_body_util::Full<Bytes>,
@@ -84,7 +92,7 @@ pub(crate) const MAX_RESPONSE_BODY_BYTES: usize = 128 * 1024 * 1024;
 /// The hyper variant is used for the main (direct) path with header-case preservation.
 /// The reqwest variant is the fallback when an upstream HTTP/SOCKS5 proxy is configured.
 pub enum ProxyResponse {
-    Hyper(hyper::Response<hyper::body::Incoming>),
+    Hyper(hyper::Response<PoolBody>),
     Reqwest(reqwest::Response),
     Buffered {
         status: http::StatusCode,
@@ -96,6 +104,81 @@ pub enum ProxyResponse {
         headers: http::HeaderMap,
         stream: std::pin::Pin<Box<dyn Stream<Item = Result<Bytes, std::io::Error>> + Send>>,
     },
+}
+
+/// 裸写连接的响应体：框架读完时把连接归还 keep-alive 池。
+///
+/// 归还与否由 hyper 判定（`sender.is_ready()`），本类型只负责在正确的
+/// 时机（`poll_frame` 返回 None 或 body 被丢弃）触发；框架未读完就
+/// 中断的连接 hyper 不会标记 ready，归还函数内部直接拒绝入池。
+pub(crate) struct PoolBody {
+    inner: Pin<Box<Incoming>>,
+    release: Option<PoolRelease>,
+}
+
+/// 连接归还句柄：写半边 + hyper 解析句柄 + 池键。
+struct PoolRelease {
+    key: PoolKey,
+    write_half: BoxedUpstreamWrite,
+    sender: hyper::client::conn::http1::SendRequest<http_body_util::Full<Bytes>>,
+}
+
+impl PoolRelease {
+    /// body 框架完整结束：hyper 确认可复用才入池；不可复用（close /
+    /// body 未读完就中断）时丢弃，连接随各半边落地正常关闭。
+    fn release(self) {
+        upstream_pool::put(
+            self.key,
+            upstream_pool::PooledUpstream::new(self.write_half, self.sender),
+        );
+    }
+}
+
+impl PoolBody {
+    fn release(&mut self) {
+        if let Some(release) = self.release.take() {
+            release.release();
+        }
+    }
+}
+
+impl http_body::Body for PoolBody {
+    type Data = Bytes;
+    type Error = hyper::Error;
+
+    fn poll_frame(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+        let this = self.get_mut();
+        let frame = ready!(this.inner.as_mut().poll_frame(cx));
+        match &frame {
+            // body 框架完整结束：归还池（hyper 判定不可复用时拒绝入池）
+            None => this.release(),
+            // 连接已坏：显式放弃复用，避免半死连接被再次取出
+            Some(Err(_)) => {
+                let _ = this.release.take();
+            }
+            _ => {}
+        }
+        Poll::Ready(frame)
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.inner.is_end_stream()
+    }
+
+    fn size_hint(&self) -> http_body::SizeHint {
+        self.inner.size_hint()
+    }
+}
+
+impl Drop for PoolBody {
+    fn drop(&mut self) {
+        // 未走到 poll_frame(None) 就被丢弃（客户端断开、上游错误）时，
+        // hyper 不会标记 ready，put 内部直接拒绝入池，连接正常关闭。
+        self.release();
+    }
 }
 
 impl ProxyResponse {
@@ -330,7 +413,7 @@ pub async fn send_request(
             ))
         })?;
 
-    Ok(ProxyResponse::Hyper(resp))
+    Ok(wrap_hyper_response(resp, None))
 }
 
 /// TCP or TLS stream returned by `connect_via_proxy`.
@@ -338,7 +421,7 @@ pub async fn send_request(
 /// When the proxy URL uses `https://`, the connection to the proxy itself is
 /// TLS-wrapped before sending the CONNECT request.  The enum lets
 /// `send_raw_request` work with either variant generically.
-enum ProxyStream {
+pub(crate) enum ProxyStream {
     Tcp(tokio::net::TcpStream),
     Tls(Box<tokio_rustls::client::TlsStream<tokio::net::TcpStream>>),
 }
@@ -394,6 +477,11 @@ impl tokio::io::AsyncWrite for ProxyStream {
 /// When `proxy_url` is provided, establishes an HTTP CONNECT tunnel through
 /// the proxy first, then performs TLS + raw write through the tunnel.
 /// This preserves header casing even when an upstream proxy is configured.
+///
+/// 连接经 [`upstream_pool`] 按 keep-alive 复用：命中池时直接把下一份
+/// 手工报文写进既有连接；池条目失效（写入失败/解析失败）时的语义与
+/// 「新建连接中途失败」完全一致，交给 forwarder 的既有重试处理，
+/// 这里不做静默重发（POST 不能盲重放）。
 async fn send_raw_request(
     uri: &http::Uri,
     method: &http::Method,
@@ -415,6 +503,40 @@ async fn send_raw_request(
 
     // Build raw HTTP request bytes
     let raw = build_raw_request(method, path_and_query, headers, original_cases, body);
+    let key = PoolKey::new(proxy_url, scheme, host, port);
+
+    // 池命中：写下一份手工报文，让既有 hyper 连接驱动解析响应。
+    if let Some(pooled) = upstream_pool::take(&key) {
+        let PooledUpstream {
+            mut write_half,
+            mut sender,
+            ..
+        } = pooled;
+        let sent = async {
+            write_half
+                .write_all(&raw)
+                .await
+                .map_err(|e| ProxyError::ForwardFailed(format!("Write failed: {e}")))?;
+            write_half
+                .flush()
+                .await
+                .map_err(|e| ProxyError::ForwardFailed(format!("Write failed: {e}")))?;
+            parse_hyper_response(&mut sender, method.clone()).await
+        };
+        match sent.await {
+            Ok(resp) => {
+                let release = PoolRelease {
+                    key,
+                    write_half,
+                    sender,
+                };
+                return Ok(wrap_hyper_response(resp, Some(release)));
+            }
+            Err(e) => {
+                log::debug!("[HyperClient] pooled connection unusable, reconnecting: {e}");
+            }
+        }
+    }
 
     // Establish TCP connection — either direct or through HTTP CONNECT proxy
     let stream = if let Some(proxy) = proxy_url {
@@ -427,40 +549,56 @@ async fn send_raw_request(
         )
     };
 
-    if scheme == "https" {
+    // TLS 握手在连接级完成后再分家：握手需要完整的读写能力。
+    // TLS 隧道与明文 TCP 的半边类型不同，此处统一装箱成 trait 对象。
+    let (read_half, mut write_half): (BoxedUpstreamRead, BoxedUpstreamWrite) = if scheme == "https"
+    {
         let tls_connector = global_tls_connector();
         let server_name = rustls::pki_types::ServerName::try_from(host.to_string())
             .map_err(|e| ProxyError::ForwardFailed(format!("Invalid server name: {e}")))?;
-        let mut tls_stream = tls_connector
+        let tls_stream = tls_connector
             .connect(server_name, stream)
             .await
             .map_err(|e| ProxyError::ForwardFailed(format!("TLS handshake failed: {e}")))?;
-
-        tls_stream
-            .write_all(&raw)
-            .await
-            .map_err(|e| ProxyError::ForwardFailed(format!("Write failed: {e}")))?;
-        tls_stream
-            .flush()
-            .await
-            .map_err(|e| ProxyError::ForwardFailed(format!("Flush failed: {e}")))?;
-
-        let filtered = WriteFilter::new(tls_stream);
-        do_hyper_response(filtered, method.clone()).await
+        let (read, write) = tokio::io::split(tls_stream);
+        (Box::new(read), Box::new(write))
     } else {
-        let mut stream = stream;
-        stream
-            .write_all(&raw)
-            .await
-            .map_err(|e| ProxyError::ForwardFailed(format!("Write failed: {e}")))?;
-        stream
-            .flush()
-            .await
-            .map_err(|e| ProxyError::ForwardFailed(format!("Flush failed: {e}")))?;
+        let (read, write) = tokio::io::split(stream);
+        (Box::new(read), Box::new(write))
+    };
 
-        let filtered = WriteFilter::new(stream);
-        do_hyper_response(filtered, method.clone()).await
-    }
+    // 读半边交给 hyper 的连接驱动解析响应；写半边写手工报文并入池。
+    let reader = RawPeerReader { read: read_half };
+
+    write_half
+        .write_all(&raw)
+        .await
+        .map_err(|e| ProxyError::ForwardFailed(format!("Write failed: {e}")))?;
+    write_half
+        .flush()
+        .await
+        .map_err(|e| ProxyError::ForwardFailed(format!("Write failed: {e}")))?;
+
+    let (mut sender, conn) = hyper::client::conn::http1::Builder::new()
+        .preserve_header_case(true)
+        .handshake::<_, http_body_util::Full<Bytes>>(hyper_util::rt::TokioIo::new(reader))
+        .await
+        .map_err(|e| ProxyError::ForwardFailed(format!("Handshake failed: {e}")))?;
+
+    // Spawn the connection driver (reads responses from the stream)
+    tokio::spawn(async move {
+        if let Err(e) = conn.await {
+            log::debug!("[HyperClient] raw conn driver error: {e}");
+        }
+    });
+
+    let resp = parse_hyper_response(&mut sender, method.clone()).await?;
+    let release = PoolRelease {
+        key,
+        write_half,
+        sender,
+    };
+    Ok(wrap_hyper_response(resp, Some(release)))
 }
 
 /// Establish a connection through an HTTP CONNECT proxy tunnel.
@@ -683,98 +821,73 @@ fn build_raw_request(
     raw
 }
 
-/// Use hyper's low-level client to parse the response on a stream where we've
-/// already written the request.
+/// 把手工报文的响应交给 hyper 的连接驱动解析。
 ///
-/// `WriteFilter` discards any writes from hyper (it would try to send its own
-/// request encoding), while passing reads through transparently.
-async fn do_hyper_response<S>(
-    stream: WriteFilter<S>,
+/// hyper 会尝试写自己的请求编码，[`RawPeerReader`] 将其丢弃；它随后从
+/// 共享读半边读到上游对真实报文的响应并完成解析。
+async fn parse_hyper_response(
+    sender: &mut hyper::client::conn::http1::SendRequest<http_body_util::Full<Bytes>>,
     method: http::Method,
-) -> Result<ProxyResponse, ProxyError>
-where
-    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
-{
-    let io = hyper_util::rt::TokioIo::new(stream);
-
-    let (mut sender, conn) = hyper::client::conn::http1::Builder::new()
-        .preserve_header_case(true)
-        .handshake::<_, http_body_util::Full<Bytes>>(io)
-        .await
-        .map_err(|e| ProxyError::ForwardFailed(format!("Handshake failed: {e}")))?;
-
-    // Spawn the connection driver (reads responses from the stream)
-    tokio::spawn(async move {
-        if let Err(e) = conn.await {
-            log::debug!("[HyperClient] raw conn driver error: {e}");
-        }
-    });
-
-    // Send a dummy request through hyper — hyper will encode this and try to write it,
-    // but WriteFilter discards all writes. Hyper will then read the response from the stream.
+) -> Result<hyper::Response<Incoming>, ProxyError> {
     let dummy_req = http::Request::builder()
         .method(method)
         .uri("/")
         .body(http_body_util::Full::new(Bytes::new()))
         .map_err(|e| ProxyError::ForwardFailed(format!("Build dummy request: {e}")))?;
 
-    let resp = sender
+    sender
         .send_request(dummy_req)
         .await
-        .map_err(|e| ProxyError::ForwardFailed(format!("Response parse failed: {e}")))?;
-
-    Ok(ProxyResponse::Hyper(resp))
+        .map_err(|e| ProxyError::ForwardFailed(format!("Response parse failed: {e}")))
 }
 
-/// A stream wrapper that discards all writes but passes reads through.
-///
-/// This lets hyper's connection driver think it sent a request (its encoded bytes
-/// go to /dev/null), while correctly parsing the response that the upstream server
-/// sends in reply to our raw-written request.
-struct WriteFilter<S> {
-    inner: S,
+fn wrap_hyper_response(
+    resp: hyper::Response<Incoming>,
+    release: Option<PoolRelease>,
+) -> ProxyResponse {
+    let (parts, body) = resp.into_parts();
+    ProxyResponse::Hyper(http::Response::from_parts(
+        parts,
+        PoolBody {
+            inner: Box::pin(body),
+            release,
+        },
+    ))
 }
 
-impl<S> WriteFilter<S> {
-    fn new(inner: S) -> Self {
-        Self { inner }
-    }
+/// 裸写连接的读半边适配器：把 tokio split 出来的读半边交给 hyper 的
+/// 连接驱动；hyper 对这条连接的写全部丢弃（真实报文由池里的写半边
+/// 手工写出）。
+struct RawPeerReader {
+    read: Box<dyn tokio::io::AsyncRead + Unpin + Send>,
 }
 
-impl<S: tokio::io::AsyncRead + Unpin> tokio::io::AsyncRead for WriteFilter<S> {
+impl tokio::io::AsyncRead for RawPeerReader {
     fn poll_read(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
         buf: &mut tokio::io::ReadBuf<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        // Pass reads through to the underlying stream
-        let inner = std::pin::Pin::new(&mut self.get_mut().inner);
-        inner.poll_read(cx, buf)
+    ) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.get_mut().read).poll_read(cx, buf)
     }
 }
 
-impl<S: Unpin> tokio::io::AsyncWrite for WriteFilter<S> {
+impl tokio::io::AsyncWrite for RawPeerReader {
     fn poll_write(
-        self: std::pin::Pin<&mut Self>,
-        _cx: &mut std::task::Context<'_>,
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
         buf: &[u8],
-    ) -> std::task::Poll<std::io::Result<usize>> {
+    ) -> Poll<std::io::Result<usize>> {
         // Discard all writes — pretend they succeeded
-        std::task::Poll::Ready(Ok(buf.len()))
+        Poll::Ready(Ok(buf.len()))
     }
 
-    fn poll_flush(
-        self: std::pin::Pin<&mut Self>,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        std::task::Poll::Ready(Ok(()))
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Poll::Ready(Ok(()))
     }
 
-    fn poll_shutdown(
-        self: std::pin::Pin<&mut Self>,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        std::task::Poll::Ready(Ok(()))
+    fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Poll::Ready(Ok(()))
     }
 }
 
@@ -940,7 +1053,9 @@ mod tests {
         let response = sender.send_request(request).await.unwrap();
         assert_eq!(response.status(), http::StatusCode::OK);
 
-        let result = ProxyResponse::Hyper(response).bytes_with_limit(LIMIT).await;
+        let result = wrap_hyper_response(response, None)
+            .bytes_with_limit(LIMIT)
+            .await;
         assert!(matches!(result, Err(ProxyError::ResponseBodyTooLarge(_))));
 
         // 关键断言：若退回"先 collect 收满再比较"，服务器会把 16 MiB 全部写完
@@ -966,5 +1081,139 @@ mod tests {
         assert!(matches!(result, Err(ProxyError::ResponseBodyTooLarge(_))));
 
         assert_server_aborted_early(written, BODY_LEN).await;
+    }
+
+    /// 计数 TCP 连接的假上游：每 accept 一条连接计数 +1，响应固定 JSON。
+    /// `close_after_first` 为 true 时第一条连接的响应带 `Connection: close`，
+    /// 用于验证池不会复用上游声明关闭的连接。
+    async fn counting_upstream(
+        counter: Arc<std::sync::atomic::AtomicUsize>,
+        close_after_first: bool,
+    ) -> http::Uri {
+        use std::sync::atomic::AtomicUsize;
+        use std::sync::atomic::Ordering;
+
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind loopback");
+        let addr = listener.local_addr().expect("local addr");
+        tokio::spawn(async move {
+            loop {
+                let Ok((socket, _)) = listener.accept().await else {
+                    break;
+                };
+                let seen = counter.fetch_add(1, Ordering::SeqCst) + 1;
+                let close = close_after_first && seen == 1;
+                tokio::spawn(async move {
+                    let service = hyper::service::service_fn(
+                        move |_req: hyper::Request<hyper::body::Incoming>| {
+                            let mut resp = hyper::Response::new(http_body_util::Full::new(
+                                Bytes::from_static(br#"{"ok":true}"#),
+                            ));
+                            if close {
+                                resp.headers_mut().insert(
+                                    http::header::CONNECTION,
+                                    http::HeaderValue::from_static("close"),
+                                );
+                            }
+                            async move { Ok::<_, std::convert::Infallible>(resp) }
+                        },
+                    );
+                    let _ = hyper::server::conn::http1::Builder::new()
+                        .serve_connection(hyper_util::rt::TokioIo::new(socket), service)
+                        .await;
+                });
+            }
+        });
+        http::Uri::builder()
+            .scheme("http")
+            .authority(format!("127.0.0.1:{}", addr.port()))
+            .path_and_query("/")
+            .build()
+            .expect("upstream uri")
+    }
+
+    fn post_extensions() -> (http::HeaderMap, http::Extensions) {
+        let raw = b"POST / HTTP/1.1\r\nHost: upstream\r\nContent-Type: application/json\r\n\r\n";
+        let mut headers = http::HeaderMap::new();
+        headers.insert(
+            http::header::HOST,
+            http::HeaderValue::from_static("upstream"),
+        );
+        headers.insert(
+            http::header::CONTENT_TYPE,
+            http::HeaderValue::from_static("application/json"),
+        );
+        let mut extensions = http::Extensions::new();
+        extensions.insert(Arc::new(OriginalHeaderCases::from_raw_bytes(raw)));
+        (headers, extensions)
+    }
+
+    #[tokio::test]
+    async fn send_request_reuses_the_upstream_connection_across_requests() {
+        use std::sync::atomic::AtomicUsize;
+        use std::sync::atomic::Ordering;
+
+        super::upstream_pool::clear_for_test();
+        let counter = Arc::new(AtomicUsize::new(0));
+        let uri = counting_upstream(counter.clone(), false).await;
+        let (headers, extensions) = post_extensions();
+
+        for _ in 0..3 {
+            let resp = send_request(
+                uri.clone(),
+                "test",
+                &http::Method::POST,
+                headers.clone(),
+                &extensions,
+                b"{}".to_vec(),
+                std::time::Duration::from_secs(10),
+                None,
+            )
+            .await
+            .expect("request 1");
+            let body = resp.bytes_with_limit(1024).await.expect("body");
+            assert_eq!(&body[..], br#"{"ok":true}"#);
+        }
+
+        assert_eq!(
+            counter.load(Ordering::SeqCst),
+            1,
+            "三次请求应复用同一条 TCP 连接"
+        );
+    }
+
+    #[tokio::test]
+    async fn send_request_does_not_reuse_connections_the_upstream_closes() {
+        use std::sync::atomic::AtomicUsize;
+        use std::sync::atomic::Ordering;
+
+        super::upstream_pool::clear_for_test();
+        let counter = Arc::new(AtomicUsize::new(0));
+        let uri = counting_upstream(counter.clone(), true).await;
+        let (headers, extensions) = post_extensions();
+
+        for _ in 0..2 {
+            let resp = send_request(
+                uri.clone(),
+                "test",
+                &http::Method::POST,
+                headers.clone(),
+                &extensions,
+                b"{}".to_vec(),
+                std::time::Duration::from_secs(10),
+                None,
+            )
+            .await
+            .expect("request");
+            let body = resp.bytes_with_limit(1024).await.expect("body");
+            assert_eq!(&body[..], br#"{"ok":true}"#);
+        }
+
+        assert_eq!(
+            counter.load(Ordering::SeqCst),
+            2,
+            "上游声明 Connection: close 时必须各建一条连接"
+        );
     }
 }
