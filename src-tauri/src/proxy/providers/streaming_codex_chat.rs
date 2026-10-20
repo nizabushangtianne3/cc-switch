@@ -224,9 +224,9 @@ impl ChatToResponsesState {
         events
     }
 
-    /// DSML-filtered visible content. The optional reasoning-leak guard keeps
-    /// DeepSeek V4.x reasoning fragments that upstream misroutes into
-    /// `content` inside the reasoning item instead of the visible message.
+    /// DSML-filtered visible content. The unified reasoning-leak rule keeps
+    /// fragments that an upstream misroutes into `content` inside the
+    /// reasoning item instead of the visible message.
     fn handle_content_text_chunk(&mut self, text: &str) -> Vec<Bytes> {
         let output = self.dsml_content.push(text);
         self.emit_dsml_content_output(output)
@@ -267,9 +267,7 @@ impl ChatToResponsesState {
     }
 
     fn should_watch_reasoning_leak(&self) -> bool {
-        self.model.to_ascii_lowercase().contains("deepseek")
-            && !self.reasoning.text.is_empty()
-            && reasoning_is_open(&self.reasoning.text)
+        !self.reasoning.text.is_empty() && reasoning_is_open(&self.reasoning.text)
     }
 
     fn emit_dsml_content_output(&mut self, output: DsmlStreamOutput) -> Vec<Bytes> {
@@ -1943,26 +1941,44 @@ mod tests {
         assert_eq!(terminal_special_output(false, prefix, true).await, expected);
     }
 
-    fn dsml_content_chunk(id: &str, content: &str, finish_reason: Option<&str>) -> String {
+    fn content_chunk_for_model(
+        model: &str,
+        id: &str,
+        content: &str,
+        finish_reason: Option<&str>,
+    ) -> String {
         let mut choice = json!({"delta": {"content": content}});
         if let Some(reason) = finish_reason {
             choice["finish_reason"] = json!(reason);
         }
         let chunk = json!({
             "id": id,
-            "model": "deepseek-ai/deepseek-v4.1-flash",
+            "model": model,
             "choices": [choice]
         });
         format!("data: {}\n\n", serde_json::to_string(&chunk).unwrap())
     }
 
-    fn dsml_reasoning_chunk(id: &str, reasoning: &str) -> String {
+    fn dsml_content_chunk(id: &str, content: &str, finish_reason: Option<&str>) -> String {
+        content_chunk_for_model(
+            "deepseek-ai/deepseek-v4.1-flash",
+            id,
+            content,
+            finish_reason,
+        )
+    }
+
+    fn reasoning_chunk_for_model(model: &str, id: &str, reasoning: &str) -> String {
         let chunk = json!({
             "id": id,
-            "model": "deepseek-ai/deepseek-v4.1-flash",
+            "model": model,
             "choices": [{"delta": {"reasoning_content": reasoning}}]
         });
         format!("data: {}\n\n", serde_json::to_string(&chunk).unwrap())
+    }
+
+    fn dsml_reasoning_chunk(id: &str, reasoning: &str) -> String {
+        reasoning_chunk_for_model("deepseek-ai/deepseek-v4.1-flash", id, reasoning)
     }
 
     fn v41_dsml_block(name: &str, key: &str, value: &str) -> String {
@@ -2013,6 +2029,16 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn strips_dsml_for_any_chat_model() {
+        let pipe = "｜";
+        let content = format!("\n\n<{pipe}DSML{pipe} calls>\n");
+        let chunk = content_chunk_for_model("z-ai/glm-5.3", "chatcmpl_any", &content, Some("stop"));
+        let output = collect(vec![chunk.as_str(), "data: [DONE]\n\n"]).await;
+        assert!(!output.contains("｜DSML｜"), "output={output}");
+        assert!(!output.contains("DSML"), "output={output}");
+    }
+
+    #[tokio::test]
     async fn push_content_delta_strips_stray_dsml_opener_directly() {
         let mut state = ChatToResponsesState::with_tool_context(CodexToolContext::default());
         state.model = "deepseek-ai/deepseek-v4.1-flash".to_string();
@@ -2052,5 +2078,34 @@ mod tests {
 
         assert!(!visible.contains('x'));
         assert!(reasoning_text.contains('x'));
+    }
+
+    #[tokio::test]
+    async fn reclassifies_reasoning_leak_for_any_chat_model() {
+        let model = "z-ai/glm-5.3";
+        let reasoning = reasoning_chunk_for_model(model, "chatcmpl_any_leak", "Let's inspect...");
+        let leaked = format!("<DSML>`{}", "y".repeat(700));
+        let content =
+            content_chunk_for_model(model, "chatcmpl_any_leak", &leaked, Some("tool_calls"));
+        let output = collect(vec![
+            reasoning.as_str(),
+            content.as_str(),
+            "data: [DONE]\n\n",
+        ])
+        .await;
+        let events = parse_sse_events(&output);
+        let visible: String = events
+            .iter()
+            .filter(|event| event["type"] == "response.output_text.delta")
+            .filter_map(|event| event["delta"].as_str())
+            .collect();
+        let reasoning_text: String = events
+            .iter()
+            .filter(|event| event["type"] == "response.reasoning_summary_text.delta")
+            .filter_map(|event| event["delta"].as_str())
+            .collect();
+
+        assert!(!visible.contains('y'));
+        assert!(reasoning_text.contains('y'));
     }
 }

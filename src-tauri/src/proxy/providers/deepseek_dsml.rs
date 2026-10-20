@@ -1,9 +1,11 @@
-//! DeepSeek DSML tool-call recovery and reasoning-continuation cleanup.
+//! Inline tool-call text recovery and reasoning-continuation cleanup.
 //!
 //! NVIDIA NIM and a few other OpenAI-compatible upstreams can leak DeepSeek's
 //! native DSML markup into `content` / `reasoning_content` when their server
 //! side tool parser is not fully enabled. The leaked text is not a valid
 //! OpenAI payload and must never reach the client as visible message text.
+//! This is a unified rule for every Chat upstream: the filter is driven by the
+//! response text itself, not by a provider or model name.
 //!
 //! Supported variants:
 //! - DeepSeek V4: `<pipe>DSML<pipe>tool_calls`, `<pipe>DSML<pipe>invoke name="`
