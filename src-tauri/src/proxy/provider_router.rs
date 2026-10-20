@@ -191,16 +191,26 @@ impl ProviderRouter {
             breaker.record_failure(used_half_open_permit).await;
         }
 
-        // 3. 更新数据库健康状态（使用配置的阈值）
-        self.db
-            .update_provider_health_with_threshold(
-                provider_id,
-                app_type,
+        // 3. 更新数据库健康状态（使用配置的阈值）。
+        // 写库持 Database 的阻塞锁并做磁盘 IO，移到阻塞线程池执行
+        // （同 usage 写入的 #7818 约定），避免每请求的结果记账卡住 tokio worker。
+        let db = Arc::clone(&self.db);
+        let provider_id = provider_id.to_string();
+        let app_type = app_type.to_string();
+        let write = tokio::task::spawn_blocking(move || {
+            db.update_provider_health_with_threshold(
+                &provider_id,
+                &app_type,
                 success,
                 error_msg,
                 failure_threshold,
             )
-            .await?;
+        });
+        let write_result = match write.await {
+            Ok(result) => result,
+            Err(e) => return Err(AppError::Database(format!("健康状态写入任务失败: {e}"))),
+        };
+        write_result?;
 
         Ok(())
     }

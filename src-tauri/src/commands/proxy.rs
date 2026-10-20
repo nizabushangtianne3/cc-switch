@@ -447,12 +447,18 @@ pub async fn reset_circuit_breaker(
     app_type: String,
 ) -> Result<(), String> {
     let app = require_proxy_app(&app_type)?;
-    // 1. 重置数据库健康状态
     let db = &state.db;
-    db.update_provider_health(&provider_id, &app_type, true, None)
+    // 1. 重置数据库健康状态（写库走阻塞线程池，同 #7818 约定）
+    let write_db = std::sync::Arc::clone(&state.db);
+    let write_provider_id = provider_id.clone();
+    let write_app_type = app_type.clone();
+    let write = tokio::task::spawn_blocking(move || {
+        write_db.update_provider_health(&write_provider_id, &write_app_type, true, None)
+    });
+    write
         .await
+        .map_err(|e| format!("健康状态写入任务失败: {e}"))?
         .map_err(|e| e.to_string())?;
-
     // 2. 如果代理正在运行，重置内存中的熔断器状态
     state
         .proxy_service

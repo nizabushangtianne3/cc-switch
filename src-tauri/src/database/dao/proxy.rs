@@ -585,7 +585,7 @@ impl Database {
     /// 更新Provider健康状态
     ///
     /// 使用默认阈值（5）判断是否健康，建议使用 `update_provider_health_with_threshold` 传入配置的阈值
-    pub async fn update_provider_health(
+    pub fn update_provider_health(
         &self,
         provider_id: &str,
         app_type: &str,
@@ -594,14 +594,17 @@ impl Database {
     ) -> Result<(), AppError> {
         // 默认阈值与 CircuitBreakerConfig::default() 保持一致
         self.update_provider_health_with_threshold(provider_id, app_type, success, error_msg, 5)
-            .await
     }
 
     /// 更新Provider健康状态（带阈值参数）
     ///
+    /// 同步函数：持 Database 的阻塞锁并做磁盘写。调用方在异步上下文里
+    /// 必须经 `tokio::task::spawn_blocking` 执行（同 usage 写入的 #7818 约定），
+    /// 否则会卡住 tokio worker。
+    ///
     /// # Arguments
     /// * `failure_threshold` - 连续失败多少次后标记为不健康
-    pub async fn update_provider_health_with_threshold(
+    pub fn update_provider_health_with_threshold(
         &self,
         provider_id: &str,
         app_type: &str,
@@ -979,21 +982,66 @@ mod tests {
                 false,
                 Some("upstream failed".to_string()),
                 3,
-            )
-            .await?;
+            )?;
         }
         let failed = db.get_provider_health("provider-a", "claude").await?;
         assert!(!failed.is_healthy);
         assert_eq!(failed.consecutive_failures, 3);
         assert_eq!(failed.last_error.as_deref(), Some("upstream failed"));
 
-        db.update_provider_health_with_threshold("provider-a", "claude", true, None, 3)
-            .await?;
+        db.update_provider_health_with_threshold("provider-a", "claude", true, None, 3)?;
         let recovered = db.get_provider_health("provider-a", "claude").await?;
         assert!(recovered.is_healthy);
         assert_eq!(recovered.consecutive_failures, 0);
         assert!(recovered.last_success_at.is_some());
 
+        Ok(())
+    }
+
+    // #7818 同类回归闸门：健康状态写库必须离开异步执行器线程。
+    // Database 全局只有单把 std::sync::Mutex<Connection>，先让专用线程占住
+    // 这把锁。若健康写库仍在当前 tokio worker 上同步等锁，current_thread
+    // 运行时会被整个卡死，下方的心跳 sleep 只能在锁释放（约 500ms）后才会
+    // 醒来；经 spawn_blocking 执行时 sleep 照常在 100ms 触发。
+    #[tokio::test]
+    async fn provider_health_write_does_not_block_the_async_runtime() -> Result<(), AppError> {
+        use std::thread;
+        use std::time::{Duration, Instant};
+
+        let db = std::sync::Arc::new(Database::memory()?);
+        let provider = Provider::with_id(
+            "provider-health".to_string(),
+            "Provider Health".to_string(),
+            serde_json::json!({}),
+            None,
+        );
+        db.save_provider("claude", &provider)?;
+
+        let (locked_tx, locked_rx) = std::sync::mpsc::channel();
+        let blocker_db = db.clone();
+        let blocker = thread::spawn(move || {
+            let _guard = blocker_db.conn.lock().expect("占锁失败");
+            locked_tx.send(()).expect("通知占锁失败");
+            // 无论被测代码走哪条路径都定时释放，测试不会挂死
+            thread::sleep(Duration::from_millis(500));
+        });
+        locked_rx.recv().expect("接收占锁通知失败");
+
+        let start = Instant::now();
+        let writer = tokio::task::spawn_blocking(move || {
+            db.update_provider_health_with_threshold("provider-health", "claude", true, None, 5)
+        });
+        // 心跳：写库若卡在当前 worker，这个 sleep 只能在 500ms 后才返回
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let heartbeat = start.elapsed();
+
+        blocker.join().expect("占锁线程 panic");
+        writer.await.expect("健康写库任务 panic")?;
+
+        assert!(
+            heartbeat < Duration::from_millis(400),
+            "健康写库不得阻塞异步运行时（实际 {heartbeat:?}）"
+        );
         Ok(())
     }
 }
