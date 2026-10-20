@@ -1301,4 +1301,127 @@ mod tests {
             "full URL"
         );
     }
+
+    /// Claude 路径端到端：POST /v1/messages → 转发到 ANTHROPIC_BASE_URL →
+    /// 响应回客户端 → usage 异步落库。覆盖 handle_messages 的非流式主路径。
+    #[tokio::test]
+    async fn claude_messages_endpoint_forwards_and_records_usage() {
+        let captured = Arc::new(Mutex::new(Vec::<CapturedRequest>::new()));
+        let capture_handler = {
+            let captured = captured.clone();
+            move |request: axum::extract::Request| {
+                let captured = captured.clone();
+                async move {
+                    let (parts, body) = request.into_parts();
+                    let body = axum::body::to_bytes(body, 1024 * 1024)
+                        .await
+                        .expect("read mock request body");
+                    captured.lock().await.push(CapturedRequest {
+                        path_and_query: parts
+                            .uri
+                            .path_and_query()
+                            .map(|value| value.as_str().to_string())
+                            .unwrap_or_else(|| parts.uri.path().to_string()),
+                        authorization: parts
+                            .headers
+                            .get(header::AUTHORIZATION)
+                            .and_then(|value| value.to_str().ok())
+                            .map(ToString::to_string),
+                        body: serde_json::from_slice(&body).unwrap_or(Value::Null),
+                    });
+
+                    let message = serde_json::json!({
+                        "id": "msg_test_1",
+                        "type": "message",
+                        "role": "assistant",
+                        "model": "claude-3-5-haiku-20241022",
+                        "content": [{ "type": "text", "text": "hello from upstream" }],
+                        "stop_reason": "end_turn",
+                        "usage": { "input_tokens": 10, "output_tokens": 5 }
+                    });
+                    (
+                        StatusCode::OK,
+                        [(header::CONTENT_TYPE, "application/json")],
+                        message.to_string(),
+                    )
+                }
+            }
+        };
+        let mock_app = Router::new().route("/v1/messages", post(capture_handler));
+        let mock_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind mock upstream");
+        let mock_addr = mock_listener.local_addr().expect("mock addr");
+        let mock_handle = tokio::spawn(async move {
+            axum::serve(mock_listener, mock_app)
+                .await
+                .expect("serve mock");
+        });
+
+        let db = Arc::new(Database::memory().expect("memory database"));
+        let provider = Provider::with_id(
+            "claude-upstream".to_string(),
+            "Claude Upstream".to_string(),
+            json!({
+                "env": {
+                    "ANTHROPIC_BASE_URL": format!("http://{mock_addr}"),
+                    "ANTHROPIC_AUTH_TOKEN": "sk-test-upstream"
+                }
+            }),
+            None,
+        );
+        db.save_provider("claude", &provider)
+            .expect("save claude provider");
+        db.set_current_provider("claude", &provider.id)
+            .expect("select claude provider");
+
+        let proxy = ProxyServer::new(
+            ProxyConfig {
+                listen_port: 0,
+                ..ProxyConfig::default()
+            },
+            db.clone(),
+            None,
+        );
+        let proxy_info = proxy.start().await.expect("start test proxy");
+        let client = reqwest::Client::new();
+
+        let response = client
+            .post(format!("http://127.0.0.1:{}/v1/messages", proxy_info.port))
+            .json(&json!({
+                "model": "claude-3-5-haiku-20241022",
+                "max_tokens": 64,
+                "messages": [{ "role": "user", "content": "hi" }]
+            }))
+            .send()
+            .await
+            .expect("send claude messages request");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: Value = response.json().await.expect("read claude response");
+        assert_eq!(body["content"][0]["text"], "hello from upstream");
+        assert_eq!(body["usage"]["input_tokens"], 10);
+
+        // usage 落库是后台任务：留出完成窗口后断言。
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        let (model, input_tokens): (String, i64) = {
+            let conn = db.conn.lock().expect("lock");
+            conn.query_row(
+                "SELECT model, input_tokens FROM proxy_request_logs WHERE provider_id = 'claude-upstream'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("usage row")
+        };
+        assert_eq!(model, "claude-3-5-haiku-20241022");
+        assert_eq!(input_tokens, 10);
+
+        let requests = captured.lock().await;
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].path_and_query, "/v1/messages");
+        assert_eq!(requests[0].body["model"], "claude-3-5-haiku-20241022");
+        drop(requests);
+
+        proxy.stop().await.expect("stop test proxy");
+        mock_handle.abort();
+    }
 }
