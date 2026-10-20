@@ -1941,4 +1941,265 @@ mod tests {
 
         mock_handle.abort();
     }
+
+    /// Claude 转换流式路径：openai_chat + stream=true → 上游回 OpenAI SSE →
+    /// 转换为 Anthropic SSE 事件序列回客户端。
+    #[tokio::test]
+    async fn claude_openai_chat_streaming_transforms_events() {
+        const OPENAI_SSE: &str = "data: {\"id\":\"chatcmpl-1\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"stream hi\"}}]}\n\
+            \n\
+            data: {\"id\":\"chatcmpl-1\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":7,\"completion_tokens\":3}}\n\
+            \n\
+            data: [DONE]\n\
+            \n";
+        let captured = Arc::new(Mutex::new(Vec::<CapturedRequest>::new()));
+        let capture_handler = {
+            let captured = captured.clone();
+            move |request: axum::extract::Request| {
+                let captured = captured.clone();
+                async move {
+                    let (parts, body) = request.into_parts();
+                    let body = axum::body::to_bytes(body, 1024 * 1024)
+                        .await
+                        .expect("read mock request body");
+                    captured.lock().await.push(CapturedRequest {
+                        path_and_query: parts
+                            .uri
+                            .path_and_query()
+                            .map(|value| value.as_str().to_string())
+                            .unwrap_or_else(|| parts.uri.path().to_string()),
+                        authorization: parts
+                            .headers
+                            .get(header::AUTHORIZATION)
+                            .and_then(|value| value.to_str().ok())
+                            .map(ToString::to_string),
+                        body: serde_json::from_slice(&body).unwrap_or(Value::Null),
+                    });
+                    (
+                        StatusCode::OK,
+                        [(header::CONTENT_TYPE, "text/event-stream")],
+                        OPENAI_SSE.to_string(),
+                    )
+                }
+            }
+        };
+        let mock_app = Router::new().route("/v1/chat/completions", post(capture_handler));
+        let mock_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind mock upstream");
+        let mock_addr = mock_listener.local_addr().expect("mock addr");
+        let mock_handle = tokio::spawn(async move {
+            axum::serve(mock_listener, mock_app)
+                .await
+                .expect("serve mock");
+        });
+
+        let db = Arc::new(Database::memory().expect("memory database"));
+        let provider = Provider::with_id(
+            "claude-openai-stream".to_string(),
+            "Claude OpenAI Stream".to_string(),
+            json!({
+                "env": {
+                    "ANTHROPIC_BASE_URL": format!("http://{mock_addr}"),
+                    "ANTHROPIC_AUTH_TOKEN": "sk-test-stream"
+                },
+                "api_format": "openai_chat"
+            }),
+            None,
+        );
+        db.save_provider("claude", &provider)
+            .expect("save claude-openai-stream provider");
+        db.set_current_provider("claude", &provider.id)
+            .expect("select claude-openai-stream provider");
+
+        let proxy = ProxyServer::new(
+            ProxyConfig {
+                listen_port: 0,
+                ..ProxyConfig::default()
+            },
+            db,
+            None,
+        );
+        let proxy_info = proxy.start().await.expect("start test proxy");
+        let client = reqwest::Client::new();
+
+        let response = client
+            .post(format!("http://127.0.0.1:{}/v1/messages", proxy_info.port))
+            .json(&json!({
+                "model": "claude-3-5-haiku-20241022",
+                "max_tokens": 64,
+                "stream": true,
+                "messages": [{ "role": "user", "content": "hi" }]
+            }))
+            .send()
+            .await
+            .expect("send claude transform streaming request");
+        assert_eq!(response.status(), StatusCode::OK);
+        let content_type = response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .expect("content type")
+            .to_string();
+        assert!(
+            content_type.starts_with("text/event-stream"),
+            "转换后的流式响应必须是 SSE: {content_type}"
+        );
+        let body = response.text().await.expect("read sse body");
+        assert!(body.contains("event: message_start"), "{body}");
+        assert!(
+            body.contains("stream hi"),
+            "content_block_delta 必须携带转换后的文本: {body}"
+        );
+        assert!(body.contains("event: message_stop"), "{body}");
+
+        let requests = captured.lock().await;
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].path_and_query, "/v1/chat/completions");
+        assert_eq!(requests[0].body["stream"], true);
+        drop(requests);
+
+        proxy.stop().await.expect("stop test proxy");
+        mock_handle.abort();
+    }
+
+    /// Claude Desktop 网关：token 鉴权 + 路由映射（claude-sonnet-4-6 →
+    /// 上游模型）+ 响应回客户端；错误 token 必须 401。
+    #[tokio::test]
+    async fn claude_desktop_gateway_authenticates_and_maps_routes() {
+        let captured = Arc::new(Mutex::new(Vec::<CapturedRequest>::new()));
+        let capture_handler = {
+            let captured = captured.clone();
+            move |request: axum::extract::Request| {
+                let captured = captured.clone();
+                async move {
+                    let (parts, body) = request.into_parts();
+                    let body = axum::body::to_bytes(body, 1024 * 1024)
+                        .await
+                        .expect("read mock request body");
+                    captured.lock().await.push(CapturedRequest {
+                        path_and_query: parts
+                            .uri
+                            .path_and_query()
+                            .map(|value| value.as_str().to_string())
+                            .unwrap_or_else(|| parts.uri.path().to_string()),
+                        authorization: None,
+                        body: serde_json::from_slice(&body).unwrap_or(Value::Null),
+                    });
+                    let message = serde_json::json!({
+                        "id": "msg_dt_1",
+                        "type": "message",
+                        "role": "assistant",
+                        "model": "mimo-v2.5-pro",
+                        "content": [{ "type": "text", "text": "desktop hello" }],
+                        "stop_reason": "end_turn",
+                        "usage": { "input_tokens": 8, "output_tokens": 4 }
+                    });
+                    (
+                        StatusCode::OK,
+                        [(header::CONTENT_TYPE, "application/json")],
+                        message.to_string(),
+                    )
+                }
+            }
+        };
+        let mock_app = Router::new().route("/v1/messages", post(capture_handler));
+        let mock_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind mock upstream");
+        let mock_addr = mock_listener.local_addr().expect("mock addr");
+        let mock_handle = tokio::spawn(async move {
+            axum::serve(mock_listener, mock_app)
+                .await
+                .expect("serve mock");
+        });
+
+        let db = Arc::new(Database::memory().expect("memory database"));
+        let mut provider = Provider::with_id(
+            "desktop-upstream".to_string(),
+            "Desktop Upstream".to_string(),
+            json!({
+                "env": {
+                    "ANTHROPIC_BASE_URL": format!("http://{mock_addr}"),
+                    "ANTHROPIC_AUTH_TOKEN": "sk-desktop"
+                }
+            }),
+            None,
+        );
+        provider.meta = Some(crate::provider::ProviderMeta {
+            claude_desktop_mode: Some(crate::provider::ClaudeDesktopMode::Proxy),
+            claude_desktop_model_routes: std::collections::HashMap::from([(
+                "claude-sonnet-4-6".to_string(),
+                crate::provider::ClaudeDesktopModelRoute {
+                    model: "mimo-v2.5-pro".to_string(),
+                    label_override: None,
+                    supports_1m: None,
+                },
+            )]),
+            ..Default::default()
+        });
+        db.save_provider("claude-desktop", &provider)
+            .expect("save desktop provider");
+        db.set_current_provider("claude-desktop", &provider.id)
+            .expect("select desktop provider");
+
+        let gateway_token = crate::claude_desktop_config::get_or_create_gateway_token(db.as_ref())
+            .expect("gateway token");
+
+        let proxy = ProxyServer::new(
+            ProxyConfig {
+                listen_port: 0,
+                ..ProxyConfig::default()
+            },
+            db.clone(),
+            None,
+        );
+        let proxy_info = proxy.start().await.expect("start test proxy");
+        let client = reqwest::Client::new();
+
+        // 错误 token → 401
+        let rejected = client
+            .post(format!(
+                "http://127.0.0.1:{}/claude-desktop/v1/messages",
+                proxy_info.port
+            ))
+            .header(header::AUTHORIZATION, "Bearer wrong-token")
+            .json(&json!({
+                "model": "claude-sonnet-4-6",
+                "max_tokens": 64,
+                "messages": [{ "role": "user", "content": "hi" }]
+            }))
+            .send()
+            .await
+            .expect("send rejected request");
+        assert_eq!(rejected.status(), StatusCode::UNAUTHORIZED);
+
+        // 正确 token → 路由映射后转发
+        let response = client
+            .post(format!(
+                "http://127.0.0.1:{}/claude-desktop/v1/messages",
+                proxy_info.port
+            ))
+            .header(header::AUTHORIZATION, format!("Bearer {gateway_token}"))
+            .json(&json!({
+                "model": "claude-sonnet-4-6",
+                "max_tokens": 64,
+                "messages": [{ "role": "user", "content": "hi" }]
+            }))
+            .send()
+            .await
+            .expect("send desktop request");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: Value = response.json().await.expect("read desktop response");
+        assert_eq!(body["content"][0]["text"], "desktop hello");
+
+        // 上游收到的模型是路由映射后的真值
+        let requests = captured.lock().await;
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].body["model"], "mimo-v2.5-pro");
+        drop(requests);
+
+        proxy.stop().await.expect("stop test proxy");
+        mock_handle.abort();
+    }
 }
