@@ -1457,3 +1457,53 @@ fn incremental_vacuum_reclaims_entire_freelist() {
     Database::incremental_vacuum_on_conn(&conn).expect("incremental vacuum");
     assert_eq!(freelist(&conn), 0, "all free pages should be reclaimed");
 }
+
+#[test]
+fn main_db_connection_enables_wal_normal_and_busy_timeout() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let conn = Connection::open(dir.path().join("cc-switch.db")).expect("open file db");
+
+    super::configure_main_db_connection(&conn).expect("configure pragmas");
+
+    let journal_mode: String = conn
+        .query_row("PRAGMA journal_mode;", [], |row| row.get(0))
+        .expect("read journal_mode");
+    assert_eq!(journal_mode.to_ascii_lowercase(), "wal");
+
+    // NORMAL 只在 WAL 生效时设置（回滚日志模式下降级 synchronous 有损坏风险）
+    let synchronous: i64 = conn
+        .query_row("PRAGMA synchronous;", [], |row| row.get(0))
+        .expect("read synchronous");
+    assert_eq!(synchronous, 1, "expected synchronous=NORMAL");
+
+    let busy_timeout: i64 = conn
+        .query_row("PRAGMA busy_timeout;", [], |row| row.get(0))
+        .expect("read busy_timeout");
+    assert_eq!(busy_timeout, 5000);
+
+    let foreign_keys: i64 = conn
+        .query_row("PRAGMA foreign_keys;", [], |row| row.get(0))
+        .expect("read foreign_keys");
+    assert_eq!(foreign_keys, 1);
+}
+
+#[test]
+fn in_memory_connection_is_not_switched_to_wal() {
+    let conn = Connection::open_in_memory().expect("open memory db");
+
+    super::configure_main_db_connection(&conn).expect("configure pragmas");
+
+    let journal_mode: String = conn
+        .query_row("PRAGMA journal_mode;", [], |row| row.get(0))
+        .expect("read journal_mode");
+    // :memory: 上 WAL 无意义；best-effort 分支应保留 memory 并跳过 synchronous 降级。
+    assert_eq!(journal_mode.to_ascii_lowercase(), "memory");
+
+    let synchronous: i64 = conn
+        .query_row("PRAGMA synchronous;", [], |row| row.get(0))
+        .expect("read synchronous");
+    assert_eq!(
+        synchronous, 2,
+        "memory db should keep default synchronous=FULL"
+    );
+}

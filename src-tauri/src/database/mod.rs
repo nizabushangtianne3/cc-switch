@@ -108,9 +108,7 @@ impl Database {
 
         let conn = Connection::open(&db_path).map_err(|e| AppError::Database(e.to_string()))?;
 
-        // 启用外键约束
-        conn.execute("PRAGMA foreign_keys = ON;", [])
-            .map_err(|e| AppError::Database(e.to_string()))?;
+        configure_main_db_connection(&conn)?;
         if !db_exists {
             // For a brand-new database, configure incremental auto-vacuum
             // before creating any tables so no rebuild is needed later.
@@ -311,4 +309,33 @@ impl Database {
             .map_err(|e| AppError::Database(e.to_string()))?;
         Ok(count == 0)
     }
+}
+
+/// 主库连接的运行参数（每请求一条 usage 写入 + UI 读都走这里）。
+///
+/// - WAL：写不再逐次提交 fsync，读写在文件层互不阻塞；应用崩溃仍一致。
+/// - synchronous = NORMAL：仅在 WAL 生效时设置（回滚日志模式下降低
+///   synchronous 有掉电损坏风险，SQLite 文档明确不建议）。
+/// - busy_timeout：兜底备份/导入等外部短时锁，避免立即 SQLITE_BUSY。
+///
+/// WAL 依赖本地文件系统的共享内存；网络盘上 SQLite 会拒绝切换——
+/// 按 best-effort 处理，保留原日志模式并记警告，不阻塞启动。
+pub(crate) fn configure_main_db_connection(conn: &Connection) -> Result<(), AppError> {
+    conn.execute("PRAGMA foreign_keys = ON;", [])
+        .map_err(|e| AppError::Database(e.to_string()))?;
+    conn.busy_timeout(std::time::Duration::from_secs(5))
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+    let journal_mode: String = conn
+        .query_row("PRAGMA journal_mode = WAL;", [], |row| row.get(0))
+        .map_err(|e| AppError::Database(e.to_string()))?;
+    if journal_mode.eq_ignore_ascii_case("wal") {
+        conn.execute("PRAGMA synchronous = NORMAL;", [])
+            .map_err(|e| AppError::Database(e.to_string()))?;
+    } else {
+        log::warn!(
+            "WAL 不可用（journal_mode={journal_mode}），保持默认日志模式与 synchronous 设置"
+        );
+    }
+    Ok(())
 }
