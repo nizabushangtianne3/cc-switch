@@ -2202,4 +2202,143 @@ mod tests {
         proxy.stop().await.expect("stop test proxy");
         mock_handle.abort();
     }
+
+    /// Codex Chat 上游端到端：wire_api="chat" → Responses 请求转成 Chat 发给上游 →
+    /// chat.completion 响应由 handle_codex_chat_to_responses_transform 转回
+    /// Responses 格式给客户端 → usage 落库。
+    #[tokio::test]
+    async fn codex_chat_upstream_response_converts_back_to_responses() {
+        let captured = Arc::new(Mutex::new(Vec::<CapturedRequest>::new()));
+        let capture_handler = {
+            let captured = captured.clone();
+            move |request: axum::extract::Request| {
+                let captured = captured.clone();
+                async move {
+                    let (parts, body) = request.into_parts();
+                    let body = axum::body::to_bytes(body, 1024 * 1024)
+                        .await
+                        .expect("read mock request body");
+                    captured.lock().await.push(CapturedRequest {
+                        path_and_query: parts
+                            .uri
+                            .path_and_query()
+                            .map(|value| value.as_str().to_string())
+                            .unwrap_or_else(|| parts.uri.path().to_string()),
+                        authorization: parts
+                            .headers
+                            .get(header::AUTHORIZATION)
+                            .and_then(|value| value.to_str().ok())
+                            .map(ToString::to_string),
+                        body: serde_json::from_slice(&body).unwrap_or(Value::Null),
+                    });
+
+                    let completion = serde_json::json!({
+                        "id": "chatcmpl-conv",
+                        "object": "chat.completion",
+                        "choices": [{
+                            "index": 0,
+                            "message": { "role": "assistant", "content": "converted reply" },
+                            "finish_reason": "stop"
+                        }],
+                        "usage": { "prompt_tokens": 12, "completion_tokens": 6, "total_tokens": 18 }
+                    });
+                    (
+                        StatusCode::OK,
+                        [(header::CONTENT_TYPE, "application/json")],
+                        completion.to_string(),
+                    )
+                }
+            }
+        };
+        let mock_app = Router::new().route("/v1/chat/completions", post(capture_handler));
+        let mock_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind mock upstream");
+        let mock_addr = mock_listener.local_addr().expect("mock addr");
+        let mock_handle = tokio::spawn(async move {
+            axum::serve(mock_listener, mock_app)
+                .await
+                .expect("serve mock");
+        });
+
+        let db = Arc::new(Database::memory().expect("memory database"));
+        let provider = Provider::with_id(
+            "codex-chat".to_string(),
+            "Codex Chat Upstream".to_string(),
+            json!({
+                "auth": { "OPENAI_API_KEY": "upstream-key" },
+                "config": format!(
+                    "model_provider = \"custom\"\nmodel = \"gpt-5.6-sol\"\n\n[model_providers.custom]\nname = \"custom\"\nbase_url = \"http://{mock_addr}/v1\"\nwire_api = \"chat\"\n"
+                )
+            }),
+            None,
+        );
+        db.save_provider("codex", &provider)
+            .expect("save codex chat provider");
+        db.set_current_provider("codex", &provider.id)
+            .expect("select codex chat provider");
+
+        let proxy = ProxyServer::new(
+            ProxyConfig {
+                listen_port: 0,
+                ..ProxyConfig::default()
+            },
+            db.clone(),
+            None,
+        );
+        let proxy_info = proxy.start().await.expect("start test proxy");
+        let client = reqwest::Client::new();
+
+        let response = client
+            .post(format!("http://127.0.0.1:{}/v1/responses", proxy_info.port))
+            .header(header::AUTHORIZATION, "Bearer client-secret")
+            .json(&json!({
+                "model": "gpt-5.6-sol",
+                "input": [{ "role": "user", "content": [{ "type": "input_text", "text": "hi" }] }],
+                "stream": false
+            }))
+            .send()
+            .await
+            .expect("send codex responses request");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: Value = response.json().await.expect("read responses body");
+        // 转回 Responses 格式：output 数组带 assistant 消息文本
+        assert_eq!(body["object"], "response");
+        let output_text = body["output"]
+            .as_array()
+            .and_then(|items| items.first())
+            .and_then(|item| item["content"].as_array())
+            .and_then(|content| content.first())
+            .and_then(|part| part["text"].as_str())
+            .expect("output text");
+        assert_eq!(output_text, "converted reply");
+
+        // 上游收到的是 OpenAI Chat 格式
+        let requests = captured.lock().await;
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].path_and_query, "/v1/chat/completions");
+        assert_eq!(requests[0].body["model"], "gpt-5.6-sol");
+        assert_eq!(
+            requests[0].body["messages"][0]["content"],
+            serde_json::Value::String("hi".into())
+        );
+        drop(requests);
+
+        // usage 落库是后台任务：留出完成窗口后断言。
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        let (model, input_tokens): (String, i64) = {
+            let conn = db.conn.lock().expect("lock");
+            conn.query_row(
+                "SELECT model, input_tokens FROM proxy_request_logs WHERE provider_id = 'codex-chat'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("usage row")
+        };
+        assert_eq!(model, "gpt-5.6-sol");
+        assert_eq!(input_tokens, 12);
+
+        proxy.stop().await.expect("stop test proxy");
+        mock_handle.abort();
+    }
 }
