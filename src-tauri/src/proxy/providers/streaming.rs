@@ -3,7 +3,7 @@
 //! 实现 OpenAI SSE → Anthropic SSE 格式转换
 
 use super::inline_think::InlineThinkSplitter;
-use crate::proxy::sse::{strip_sse_field, take_sse_block};
+use crate::proxy::sse::{next_sse_block_range, strip_sse_field};
 use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -271,12 +271,9 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                 Ok(bytes) => {
                     crate::proxy::sse::append_utf8_safe(&mut buffer, &mut utf8_remainder, &bytes);
 
-                    while let Some(line) = take_sse_block(&mut buffer) {
-                        if line.trim().is_empty() {
-                            continue;
-                        }
-
-                        for l in line.lines() {
+                    while let Some((end, delim)) = next_sse_block_range(&buffer) {
+                        let block = &buffer[..end];
+                        for l in block.lines() {
                             if let Some(data) = strip_sse_field(l, "data") {
                                 if data.trim() == "[DONE]" {
                                     log::debug!("[Claude/OpenRouter] <<< OpenAI SSE: [DONE]");
@@ -742,6 +739,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                 }
                             }
                         }
+                        buffer.drain(..end + delim);
                     }
                 }
                 Err(e) => {

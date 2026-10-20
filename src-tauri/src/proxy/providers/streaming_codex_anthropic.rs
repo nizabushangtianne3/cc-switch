@@ -22,7 +22,7 @@ use super::transform_codex_chat::{
 };
 use super::transform_responses::sanitize_anthropic_tool_use_input_json;
 use crate::proxy::json_canonical::canonicalize_tool_arguments_str;
-use crate::proxy::sse::{strip_sse_field, take_sse_block};
+use crate::proxy::sse::{next_sse_block_range, strip_sse_field};
 use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
 use serde_json::{json, Map, Value};
@@ -744,8 +744,10 @@ pub(crate) fn create_responses_sse_stream_from_anthropic_with_context<
                     // JSON document. Hold that body intact (including pretty-printed
                     // blank lines) until EOF instead of discarding it as SSE blocks.
                     if json_document_candidate(&buffer).is_none() {
-                        while let Some(block) = take_sse_block(&mut buffer) {
-                            let (events, failed) = process_anthropic_sse_block(&mut state, &block);
+                        while let Some((end, delim)) = next_sse_block_range(&buffer) {
+                            let (events, failed) =
+                                process_anthropic_sse_block(&mut state, &buffer[..end]);
+                            buffer.drain(..end + delim);
                             for event in events {
                                 yield Ok(event);
                             }

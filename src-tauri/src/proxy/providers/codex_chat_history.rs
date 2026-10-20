@@ -1,5 +1,5 @@
 use super::codex_chat_common::{is_empty_value, response_item_call_id};
-use crate::proxy::sse::{append_utf8_safe, strip_sse_field, take_sse_block};
+use crate::proxy::sse::{append_utf8_safe, next_sse_block_range, strip_sse_field};
 use bytes::Bytes;
 use futures::{Stream, StreamExt};
 use serde_json::Value;
@@ -379,8 +379,10 @@ pub fn record_responses_sse_stream(
             match chunk {
                 Ok(bytes) => {
                     append_utf8_safe(&mut buffer, &mut utf8_remainder, &bytes);
-                    while let Some(block) = take_sse_block(&mut buffer) {
-                        inspect_sse_block(&block, &mut current_response_id, history.as_ref()).await;
+                    while let Some((end, delim)) = next_sse_block_range(&buffer) {
+                        let block = &buffer[..end];
+                        inspect_sse_block(block, &mut current_response_id, history.as_ref()).await;
+                        buffer.drain(..end + delim);
                     }
                     yield Ok(bytes);
                 }

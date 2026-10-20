@@ -16,7 +16,7 @@
 //!   来源（可能正是这家自己签发的），原样发出，上游明确拒绝后再由 `opaque_state_rectifier`
 //!   换掉。
 
-use crate::proxy::sse::{append_utf8_safe, strip_sse_field, take_sse_block};
+use crate::proxy::sse::{append_utf8_safe, next_sse_block_range, strip_sse_field};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
@@ -386,11 +386,15 @@ where
             match chunk {
                 Ok(bytes) => {
                     append_utf8_safe(&mut buffer, &mut utf8_remainder, &bytes);
-                    while let Some(block) = take_sse_block(&mut buffer) {
-                        if block.trim().is_empty() {
-                            continue;
-                        }
-                        for event in state.handle_block(&block) {
+                    while let Some((end, delim)) = next_sse_block_range(&buffer) {
+                        let block = &buffer[..end];
+                        let events = if block.trim().is_empty() {
+                            Vec::new()
+                        } else {
+                            state.handle_block(block)
+                        };
+                        buffer.drain(..end + delim);
+                        for event in events {
                             yield Ok(event);
                         }
                     }

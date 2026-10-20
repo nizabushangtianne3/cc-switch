@@ -13,7 +13,7 @@ use super::{
     },
 };
 use crate::proxy::json_canonical::canonicalize_tool_arguments_str;
-use crate::proxy::sse::{strip_sse_field, take_sse_block};
+use crate::proxy::sse::{next_sse_block_range, strip_sse_field};
 use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
 use serde_json::{json, Value};
@@ -766,11 +766,8 @@ pub fn create_responses_sse_stream_from_chat_with_context<E: std::error::Error +
                 Ok(bytes) => {
                     crate::proxy::sse::append_utf8_safe(&mut buffer, &mut utf8_remainder, &bytes);
 
-                    while let Some(block) = take_sse_block(&mut buffer) {
-                        if block.trim().is_empty() {
-                            continue;
-                        }
-
+                    while let Some((end, delim)) = next_sse_block_range(&buffer) {
+                        let block = &buffer[..end];
                         let mut event_name: Option<String> = None;
                         let mut data_parts: Vec<String> = Vec::new();
                         for line in block.lines() {
@@ -781,6 +778,7 @@ pub fn create_responses_sse_stream_from_chat_with_context<E: std::error::Error +
                                 data_parts.push(data.to_string());
                             }
                         }
+                        buffer.drain(..end + delim);
 
                         if data_parts.is_empty() {
                             continue;

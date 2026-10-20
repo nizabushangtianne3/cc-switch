@@ -8,7 +8,7 @@ use super::transform_gemini::{
     build_anthropic_usage, is_synthesized_tool_call_id, rectify_tool_call_parts,
     synthesize_tool_call_id, AnthropicToolSchemaHints,
 };
-use crate::proxy::sse::{append_utf8_safe, strip_sse_field, take_sse_block};
+use crate::proxy::sse::{append_utf8_safe, next_sse_block_range, strip_sse_field};
 use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
 use serde_json::{json, Value};
@@ -263,17 +263,15 @@ pub fn create_anthropic_sse_stream_from_gemini<E: std::error::Error + Send + 'st
                 Ok(bytes) => {
                     append_utf8_safe(&mut buffer, &mut utf8_remainder, &bytes);
 
-                    while let Some(block) = take_sse_block(&mut buffer) {
-                        if block.trim().is_empty() {
-                            continue;
-                        }
-
+                    while let Some((end, delim)) = next_sse_block_range(&buffer) {
+                        let block = &buffer[..end];
                         let mut data_lines: Vec<String> = Vec::new();
                         for line in block.lines() {
                             if let Some(data) = strip_sse_field(line, "data") {
                                 data_lines.push(data.to_string());
                             }
                         }
+                        buffer.drain(..end + delim);
 
                         if data_lines.is_empty() {
                             continue;

@@ -41,7 +41,7 @@ use super::{
         strip_hop_by_hop_response_headers, SseUsageCollector, SseUsageLogContext,
     },
     server::ProxyState,
-    sse::{strip_sse_field, take_sse_block},
+    sse::{next_sse_block_range, strip_sse_field},
     types::*,
     usage::logger::{
         spawn_usage_error_record, spawn_usage_record, usage_logging_enabled, UsageErrorRecord,
@@ -2593,8 +2593,11 @@ fn responses_sse_to_response_value(body: &str) -> Result<Value, ProxyError> {
         Ok(())
     };
 
-    while let Some(block) = take_sse_block(&mut buffer) {
-        process_block(&block, true)?;
+    while let Some((end, delim)) = next_sse_block_range(&buffer) {
+        let block = &buffer[..end];
+        let outcome = process_block(block, true);
+        buffer.drain(..end + delim);
+        outcome?;
     }
     // 最后一个事件后可能没有空行分隔（错标 SSE 兜底/非规范上游常见）：
     // 残余 buffer 当最后一块处理，否则尾部的 response.completed 会被丢掉。
@@ -2926,8 +2929,10 @@ fn chat_sse_to_response_value(body: &str) -> Result<Value, ProxyError> {
             Ok(())
         };
 
-    while let Some(block) = take_sse_block(&mut buffer) {
-        if let Some((event, data)) = sse_block_parts(&block) {
+    while let Some((end, delim)) = next_sse_block_range(&buffer) {
+        let parts = sse_block_parts(&buffer[..end]);
+        buffer.drain(..end + delim);
+        if let Some((event, data)) = parts {
             process_event(&event, &data, true)?;
         }
     }

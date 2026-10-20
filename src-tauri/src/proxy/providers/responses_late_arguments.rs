@@ -16,7 +16,7 @@ use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
 use serde_json::Value;
 
-use crate::proxy::sse::{append_utf8_safe, strip_sse_field, take_sse_block};
+use crate::proxy::sse::{append_utf8_safe, next_sse_block_range, strip_sse_field};
 
 /// 一个 SSE 块，解析出的事件（不是 JSON 的块为 None）。
 struct Block {
@@ -209,11 +209,15 @@ where
             match chunk {
                 Ok(bytes) => {
                     append_utf8_safe(&mut buffer, &mut utf8_remainder, &bytes);
-                    while let Some(block) = take_sse_block(&mut buffer) {
-                        if block.trim().is_empty() {
-                            continue;
-                        }
-                        for out in repair.push(&block) {
+                    while let Some((end, delim)) = next_sse_block_range(&buffer) {
+                        let block = &buffer[..end];
+                        let outputs = if block.trim().is_empty() {
+                            Vec::new()
+                        } else {
+                            repair.push(block)
+                        };
+                        buffer.drain(..end + delim);
+                        for out in outputs {
                             yield Ok(out);
                         }
                     }

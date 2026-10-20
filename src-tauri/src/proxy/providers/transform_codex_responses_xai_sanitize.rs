@@ -36,7 +36,7 @@ use futures::stream::{Stream, StreamExt};
 use serde_json::{json, Map, Number, Value};
 
 use super::transform_codex_responses_namespace::{restore_sse_event_namespaces, NamespacedName};
-use crate::proxy::sse::{append_utf8_safe, strip_sse_field, take_sse_block};
+use crate::proxy::sse::{append_utf8_safe, next_sse_block_range, strip_sse_field};
 
 /// Codex plugin-private fields removed recursively at any nesting depth.
 const RECURSIVE_UNSUPPORTED_FIELDS: &[&str] = &["external_web_access"];
@@ -1077,11 +1077,17 @@ where
             match chunk {
                 Ok(bytes) => {
                     append_utf8_safe(&mut buffer, &mut utf8_remainder, &bytes);
-                    while let Some(block) = take_sse_block(&mut buffer) {
-                        if block.trim().is_empty() {
-                            continue;
+                    while let Some((end, delim)) = next_sse_block_range(&buffer) {
+                        let block = &buffer[..end];
+                        let rewritten = if block.trim().is_empty() {
+                            None
+                        } else {
+                            Some(rewrite_xai_native_sse_block(block, &restore_map))
+                        };
+                        buffer.drain(..end + delim);
+                        if let Some(event) = rewritten {
+                            yield Ok(event);
                         }
-                        yield Ok(rewrite_xai_native_sse_block(&block, &restore_map));
                     }
                 }
                 Err(e) => {

@@ -9,7 +9,7 @@ pub(crate) fn strip_sse_field<'a>(line: &'a str, field: &str) -> Option<&'a str>
 }
 
 #[inline]
-pub(crate) fn take_sse_block(buffer: &mut String) -> Option<String> {
+pub(crate) fn next_sse_block_range(buffer: &str) -> Option<(usize, usize)> {
     let mut best: Option<(usize, usize)> = None;
 
     // The data line and the following blank line can use different line endings.
@@ -24,9 +24,7 @@ pub(crate) fn take_sse_block(buffer: &mut String) -> Option<String> {
     }
 
     let (pos, len) = best?;
-    let block = buffer[..pos].to_string();
-    buffer.drain(..pos + len);
-    Some(block)
+    Some((pos, len))
 }
 
 /// Append raw bytes to a UTF-8 `String` buffer, correctly handling multi-byte
@@ -94,7 +92,7 @@ pub(crate) fn append_utf8_safe(buffer: &mut String, remainder: &mut Vec<u8>, new
 
 #[cfg(test)]
 mod tests {
-    use super::{append_utf8_safe, strip_sse_field, take_sse_block};
+    use super::{append_utf8_safe, next_sse_block_range, strip_sse_field};
 
     #[test]
     fn strip_sse_field_accepts_optional_space() {
@@ -118,29 +116,29 @@ mod tests {
     }
 
     #[test]
-    fn take_sse_block_supports_lf_delimiters() {
-        let mut buffer = "data: {\"ok\":true}\n\nrest".to_string();
+    fn next_sse_block_range_supports_lf_delimiters() {
+        let mut buffer = String::from("data: {\"ok\":true}\n\nrest");
 
-        assert_eq!(
-            take_sse_block(&mut buffer),
-            Some("data: {\"ok\":true}".to_string())
-        );
+        let (end, delim) = next_sse_block_range(&buffer).expect("block");
+        assert_eq!(&buffer[..end], "data: {\"ok\":true}");
+        assert_eq!(delim, 2);
+        buffer.drain(..end + delim);
         assert_eq!(buffer, "rest");
     }
 
     #[test]
-    fn take_sse_block_supports_crlf_delimiters() {
-        let mut buffer = "data: {\"ok\":true}\r\n\r\nrest".to_string();
+    fn next_sse_block_range_supports_crlf_delimiters() {
+        let mut buffer = String::from("data: {\"ok\":true}\r\n\r\nrest");
 
-        assert_eq!(
-            take_sse_block(&mut buffer),
-            Some("data: {\"ok\":true}".to_string())
-        );
+        let (end, delim) = next_sse_block_range(&buffer).expect("block");
+        assert_eq!(&buffer[..end], "data: {\"ok\":true}");
+        assert_eq!(delim, 4);
+        buffer.drain(..end + delim);
         assert_eq!(buffer, "rest");
     }
 
     #[test]
-    fn take_sse_block_handles_mixed_line_endings_across_chunks() {
+    fn next_sse_block_range_handles_mixed_line_endings_across_chunks() {
         for delimiter in ["\n\n", "\r\n\r\n", "\n\r\n", "\r\n\n"] {
             let first = "event: message\r\ndata: first";
             let input = format!("{first}{delimiter}data: second\n\npartial");
@@ -151,8 +149,9 @@ mod tests {
                 let mut blocks = Vec::new();
                 for chunk in [&input[..split], &input[split..]] {
                     buffer.push_str(chunk);
-                    while let Some(block) = take_sse_block(&mut buffer) {
-                        blocks.push(block);
+                    while let Some((end, delim)) = next_sse_block_range(&buffer) {
+                        blocks.push(buffer[..end].to_string());
+                        buffer.drain(..end + delim);
                     }
                 }
                 assert_eq!(
@@ -165,7 +164,9 @@ mod tests {
 
             // A complete mixed delimiter must dispatch without another event.
             let mut buffer = format!("{first}{delimiter}");
-            assert_eq!(take_sse_block(&mut buffer).as_deref(), Some(first));
+            let (end, _delim) = next_sse_block_range(&buffer).expect("block");
+            assert_eq!(&buffer[..end], first);
+            buffer.drain(..end + _delim);
             assert!(buffer.is_empty());
         }
     }

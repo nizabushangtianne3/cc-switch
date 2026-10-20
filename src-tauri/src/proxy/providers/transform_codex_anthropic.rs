@@ -18,7 +18,7 @@ use super::transform_codex_chat::{
 use super::transform_responses::{sanitize_anthropic_tool_use_input, TOOL_RESULT_ERROR_MARKER};
 use crate::proxy::error::ProxyError;
 use crate::proxy::json_canonical::canonical_json_string;
-use crate::proxy::sse::{strip_sse_field, take_sse_block};
+use crate::proxy::sse::{next_sse_block_range, strip_sse_field};
 use crate::proxy::tool_media::{
     strip_and_clamp_media_from_tool_value, ToolMediaScope, TOOL_RESULT_MEDIA_ATTACHED_MARKER,
 };
@@ -1560,9 +1560,10 @@ pub fn anthropic_sse_to_message_value(body: &str) -> Result<Value, ProxyError> {
         Ok(())
     };
 
-    while let Some(block) = take_sse_block(&mut buffer) {
+    while let Some((end, delim)) = next_sse_block_range(&buffer) {
+        let block = &buffer[..end];
         process_block(
-            &block,
+            block,
             &mut message,
             &mut blocks,
             &mut json_accum,
@@ -1570,6 +1571,7 @@ pub fn anthropic_sse_to_message_value(body: &str) -> Result<Value, ProxyError> {
             &mut delta_usage,
             &mut saw_message_stop,
         )?;
+        buffer.drain(..end + delim);
     }
     // Tolerate the last event missing a trailing blank line (truncated stream).
     if !buffer.trim().is_empty() {

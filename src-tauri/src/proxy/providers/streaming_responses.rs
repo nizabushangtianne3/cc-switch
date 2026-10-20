@@ -16,7 +16,7 @@ use super::transform_responses::{
     web_search_max_uses_exceeded_error, web_search_results_from_action,
     web_search_results_from_output_item, web_search_tool_result_error,
 };
-use crate::proxy::sse::{strip_sse_field, take_sse_block};
+use crate::proxy::sse::{next_sse_block_range, strip_sse_field};
 use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
 use serde_json::{json, Value};
@@ -2498,11 +2498,8 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                     }
 
                     // SSE 事件由 \n\n 分隔
-                    while let Some(block) = take_sse_block(&mut buffer) {
-                        if block.trim().is_empty() {
-                            continue;
-                        }
-
+                    while let Some((end, delim)) = next_sse_block_range(&buffer) {
+                        let block = &buffer[..end];
                         // 解析 SSE 块：提取 event: 和 data: 行
                         let mut event_type: Option<String> = None;
                         let mut data_parts: Vec<String> = Vec::new();
@@ -2514,6 +2511,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                 data_parts.push(d.to_string());
                             }
                         }
+                        buffer.drain(..end + delim);
 
                         if data_parts.is_empty() {
                             continue;

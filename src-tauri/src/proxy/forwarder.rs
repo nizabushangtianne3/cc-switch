@@ -3290,8 +3290,11 @@ impl RequestForwarder {
                 return Ok(ProxyResponse::streamed(status, headers, replay));
             }
 
-            while let Some(block) = crate::proxy::sse::take_sse_block(&mut parse_buffer) {
-                if let Some(outcome) = inspect_responses_start_event(&block) {
+            while let Some((end, delim)) = crate::proxy::sse::next_sse_block_range(&parse_buffer) {
+                let block = &parse_buffer[..end];
+                let outcome = inspect_responses_start_event(block);
+                parse_buffer.drain(..end + delim);
+                if let Some(outcome) = outcome {
                     outcome?;
                     let replay =
                         futures::stream::iter(replay_chunks.into_iter().map(Ok)).chain(stream);
@@ -3353,8 +3356,11 @@ impl RequestForwarder {
             held_bytes += chunk.len();
             replay_chunks.push(chunk);
 
-            while let Some(block) = crate::proxy::sse::take_sse_block(&mut parse_buffer) {
-                match encrypted_task_stream_start(&block, request) {
+            while let Some((end, delim)) = crate::proxy::sse::next_sse_block_range(&parse_buffer) {
+                let block = &parse_buffer[..end];
+                let verdict = encrypted_task_stream_start(block, request);
+                parse_buffer.drain(..end + delim);
+                match verdict {
                     StreamStart::Pending => {}
                     StreamStart::Commit => break 'hold,
                     StreamStart::Rejected(error) => return Err(error),
