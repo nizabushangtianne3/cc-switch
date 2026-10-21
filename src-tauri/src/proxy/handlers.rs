@@ -333,9 +333,7 @@ async fn handle_messages_for_app(
         Err(rejected) => return Ok(*rejected),
     };
     if stack.is_none() {
-        extensions.insert(Arc::new(super::forwarder::RawRequestBody {
-            bytes: body_bytes.clone(),
-        }));
+        extensions.insert(super::forwarder::RawRequestBody { bytes: body_bytes });
     }
 
     let mut ctx = RequestContext::new(
@@ -937,9 +935,7 @@ pub async fn handle_chat_completions(
         Err(rejected) => return Ok(*rejected),
     };
     if stack.is_none() {
-        extensions.insert(Arc::new(super::forwarder::RawRequestBody {
-            bytes: body_bytes.clone(),
-        }));
+        extensions.insert(super::forwarder::RawRequestBody { bytes: body_bytes });
     }
 
     let mut ctx = RequestContext::new(
@@ -1062,9 +1058,7 @@ async fn handle_responses_for_app(
         Err(rejected) => return Ok(*rejected),
     };
     if stack.is_none() {
-        extensions.insert(Arc::new(super::forwarder::RawRequestBody {
-            bytes: body_bytes.clone(),
-        }));
+        extensions.insert(super::forwarder::RawRequestBody { bytes: body_bytes });
     }
 
     let mut ctx = RequestContext::new(
@@ -1310,9 +1304,7 @@ async fn handle_codex_standalone_passthrough(
     let body_bytes = decode_codex_request_body(&mut headers, body_bytes)?;
     let body: Value = serde_json::from_slice(&body_bytes)
         .map_err(|e| ProxyError::InvalidRequest(format!("Failed to parse request body: {e}")))?;
-    extensions.insert(Arc::new(super::forwarder::RawRequestBody {
-        bytes: body_bytes.clone(),
-    }));
+    extensions.insert(super::forwarder::RawRequestBody { bytes: body_bytes });
 
     let mut ctx = RequestContext::new(
         &state,
@@ -1405,9 +1397,7 @@ async fn handle_responses_compact_for_app(
         Err(rejected) => return Ok(*rejected),
     };
     if stack.is_none() {
-        extensions.insert(Arc::new(super::forwarder::RawRequestBody {
-            bytes: body_bytes.clone(),
-        }));
+        extensions.insert(super::forwarder::RawRequestBody { bytes: body_bytes });
     }
 
     let mut ctx = RequestContext::new(
@@ -2401,9 +2391,7 @@ pub async fn handle_gemini(
         serde_json::from_slice(&body_bytes)
             .map_err(|e| ProxyError::Internal(format!("Failed to parse request body: {e}")))?
     };
-    extensions.insert(Arc::new(super::forwarder::RawRequestBody {
-        bytes: body_bytes.clone(),
-    }));
+    extensions.insert(super::forwarder::RawRequestBody { bytes: body_bytes });
 
     // Gemini 的模型名称在 URI 中
     let mut ctx = RequestContext::new(

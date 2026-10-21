@@ -54,6 +54,7 @@ pub type SharedProvider = Arc<Provider>;
 ///
 /// handler 只有在 body 仍与客户端发来的字节一致时才放入扩展；forwarder 只有在
 /// 整条改写管道都没把请求体变成 Owned 时才复用它，避免 JSON Value 二次序列化。
+#[derive(Clone)]
 pub(crate) struct RawRequestBody {
     pub(crate) bytes: Bytes,
 }
@@ -2953,7 +2954,7 @@ impl RequestForwarder {
 
         // 请求体没有被任何改写触碰时，直接复用客户端发来的字节，跳过
         // JSON Value -> bytes 的二次序列化；大请求体这里是完整转发的主要 CPU 成本。
-        let raw_body_extension = extensions.get::<Arc<RawRequestBody>>();
+        let raw_body_extension = extensions.get::<RawRequestBody>();
         let raw_body_bytes = matches!(&filtered_body, Cow::Borrowed(_))
             .then_some(raw_body_extension)
             .flatten()
