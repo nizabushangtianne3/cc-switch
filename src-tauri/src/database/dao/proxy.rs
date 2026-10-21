@@ -6,7 +6,9 @@ use crate::error::AppError;
 use crate::proxy::types::*;
 
 use super::super::{lock_conn, Database};
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 pub(crate) const PRICING_SOURCE_RESPONSE: &str = "response";
 pub(crate) const PRICING_SOURCE_REQUEST: &str = "request";
@@ -30,6 +32,30 @@ type ProxyRequestConfigs = (
     OptimizerConfig,
     CopilotOptimizerConfig,
 );
+
+const PROXY_REQUEST_CONFIG_TTL: Duration = Duration::from_secs(1);
+
+struct CachedProxyRequestConfigs {
+    cached_at: Instant,
+    configs: ProxyRequestConfigs,
+}
+
+/// 代理请求热路径配置缓存。
+///
+/// `generation` 让正在查询的旧请求知道写入方已经失效过缓存，避免查询完成后
+/// 把旧快照写回；TTL 只兜住备份导入等绕过 DAO 的直接 SQL 写入。
+#[derive(Default)]
+pub(crate) struct ProxyRequestConfigCache {
+    generation: u64,
+    entries: HashMap<String, CachedProxyRequestConfigs>,
+}
+
+impl ProxyRequestConfigCache {
+    fn invalidate(&mut self) {
+        self.generation += 1;
+        self.entries.clear();
+    }
+}
 
 impl Database {
     // ==================== Global Proxy Config ====================
@@ -96,6 +122,7 @@ impl Database {
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
 
+        self.invalidate_proxy_request_config_cache();
         Ok(())
     }
 
@@ -209,6 +236,22 @@ impl Database {
         self: Arc<Self>,
         app_type: &str,
     ) -> Result<ProxyRequestConfigs, AppError> {
+        let (read_generation, cached) = {
+            let cache = self
+                .proxy_request_config_cache
+                .lock()
+                .map_err(|e| AppError::Database(format!("Proxy config cache lock failed: {e}")))?;
+            let cached = cache
+                .entries
+                .get(app_type)
+                .filter(|entry| entry.cached_at.elapsed() < PROXY_REQUEST_CONFIG_TTL)
+                .map(|entry| entry.configs.clone());
+            (cache.generation, cached)
+        };
+        if let Some(configs) = cached {
+            return Ok(configs);
+        }
+
         let db = Arc::clone(&self);
         let configs = tokio::task::spawn_blocking({
             let app_type = app_type.to_string();
@@ -240,12 +283,28 @@ impl Database {
                 CopilotOptimizerConfig::default(),
             ));
         };
-        Ok((
+        let configs = (
             config,
             rectifier_config,
             optimizer_config,
             copilot_optimizer_config,
-        ))
+        );
+        {
+            let mut cache = self
+                .proxy_request_config_cache
+                .lock()
+                .map_err(|e| AppError::Database(format!("Proxy config cache lock failed: {e}")))?;
+            if cache.generation == read_generation {
+                cache.entries.insert(
+                    app_type.to_string(),
+                    CachedProxyRequestConfigs {
+                        cached_at: Instant::now(),
+                        configs: configs.clone(),
+                    },
+                );
+            }
+        }
+        Ok(configs)
     }
 
     fn get_proxy_request_configs_sync(
@@ -300,6 +359,12 @@ impl Database {
         }
     }
 
+    pub(crate) fn invalidate_proxy_request_config_cache(&self) {
+        if let Ok(mut cache) = self.proxy_request_config_cache.lock() {
+            cache.invalidate();
+        }
+    }
+
     /// 更新应用级代理配置
     pub async fn update_proxy_config_for_app(
         &self,
@@ -339,6 +404,7 @@ impl Database {
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
 
+        self.invalidate_proxy_request_config_cache();
         Ok(())
     }
 
@@ -511,6 +577,7 @@ impl Database {
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
 
+        self.invalidate_proxy_request_config_cache();
         Ok(())
     }
 
@@ -798,6 +865,7 @@ impl Database {
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
 
+        self.invalidate_proxy_request_config_cache();
         Ok(())
     }
 
@@ -948,6 +1016,7 @@ impl Database {
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
 
+        self.invalidate_proxy_request_config_cache();
         Ok(())
     }
 }
@@ -1094,6 +1163,50 @@ mod tests {
             heartbeat < Duration::from_millis(400),
             "代理配置读取不得阻塞异步运行时（实际 {heartbeat:?}）"
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn proxy_request_configs_are_cached_until_a_write_invalidates_them(
+    ) -> Result<(), AppError> {
+        use std::thread;
+        use std::time::{Duration, Instant};
+
+        let db = std::sync::Arc::new(Database::memory()?);
+        let initial = std::sync::Arc::clone(&db)
+            .get_proxy_request_configs("claude")
+            .await?;
+        assert!(!initial.0.enabled);
+
+        let (locked_tx, locked_rx) = std::sync::mpsc::channel();
+        let blocker_db = db.clone();
+        let blocker = thread::spawn(move || {
+            let _guard = blocker_db.conn.lock().expect("占锁失败");
+            locked_tx.send(()).expect("通知占锁失败");
+            thread::sleep(Duration::from_millis(500));
+        });
+        locked_rx.recv().expect("接收占锁通知失败");
+
+        let start = Instant::now();
+        let cached = std::sync::Arc::clone(&db)
+            .get_proxy_request_configs("claude")
+            .await?;
+        let elapsed = start.elapsed();
+        blocker.join().expect("占锁线程 panic");
+
+        assert!(
+            elapsed < Duration::from_millis(400),
+            "缓存命中的配置读取不得等待数据库锁（实际 {elapsed:?}）"
+        );
+        assert_eq!(cached.0.enabled, initial.0.enabled);
+        assert_eq!(cached.0.max_retries, initial.0.max_retries);
+
+        let mut config = cached.0;
+        config.enabled = true;
+        db.update_proxy_config_for_app(config).await?;
+        let refreshed = db.get_proxy_request_configs("claude").await?;
+        assert!(refreshed.0.enabled);
+
         Ok(())
     }
 }

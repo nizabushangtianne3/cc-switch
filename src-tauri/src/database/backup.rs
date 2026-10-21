@@ -247,6 +247,7 @@ impl Database {
             .and_then(|p| p.file_stem().map(|s| s.to_string_lossy().to_string()))
             .unwrap_or_default();
 
+        self.invalidate_proxy_request_config_cache();
         Ok(backup_id)
     }
 

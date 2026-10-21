@@ -117,6 +117,7 @@ impl Database {
             params![key, value],
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
+        self.invalidate_proxy_request_config_cache();
         Ok(())
     }
 

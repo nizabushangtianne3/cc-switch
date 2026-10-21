@@ -79,6 +79,7 @@ pub struct Database {
     pub(crate) conn: Mutex<Connection>,
     /// 请求日志总数缓存，见 `services::usage_stats::LogCountCache`
     pub(crate) log_count_cache: Mutex<Option<crate::services::usage_stats::LogCountCache>>,
+    pub(crate) proxy_request_config_cache: Mutex<dao::proxy::ProxyRequestConfigCache>,
 }
 
 fn register_db_change_hook(conn: &Connection) {
@@ -120,6 +121,7 @@ impl Database {
         let db = Self {
             conn: Mutex::new(conn),
             log_count_cache: Mutex::new(None),
+            proxy_request_config_cache: Mutex::new(dao::proxy::ProxyRequestConfigCache::default()),
         };
         db.create_tables()?;
 
@@ -195,6 +197,7 @@ impl Database {
         let db = Self {
             conn: Mutex::new(conn),
             log_count_cache: Mutex::new(None),
+            proxy_request_config_cache: Mutex::new(dao::proxy::ProxyRequestConfigCache::default()),
         };
         db.create_tables()?;
         db.ensure_model_pricing_seeded()?;
