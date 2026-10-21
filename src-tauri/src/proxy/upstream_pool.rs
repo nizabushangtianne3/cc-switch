@@ -29,7 +29,7 @@ use super::hyper_client::BoxedUpstreamWrite;
 /// 池内条目空闲多久后视为过期（上游 keep-alive 超时的常见值在 5-75s，
 /// 取 60s 覆盖主流网关；过期连接直接丢弃新建，由 fallback 兜住）。
 const ENTRY_TTL: Duration = Duration::from_secs(60);
-/// 目的地数量的上限。超限后先淘汰过期条目，仍满则拒绝入池
+/// 空闲连接总量的上限。超限后先淘汰过期条目，仍满则拒绝入池
 /// （连接随条目丢弃而正常关闭，行为与改造前一致）。
 const MAX_ENTRIES: usize = 32;
 
@@ -82,8 +82,8 @@ impl PooledUpstream {
     }
 }
 
-fn pool() -> &'static Mutex<HashMap<PoolKey, PooledUpstream>> {
-    static POOL: OnceLock<Mutex<HashMap<PoolKey, PooledUpstream>>> = OnceLock::new();
+fn pool() -> &'static Mutex<HashMap<PoolKey, Vec<PooledUpstream>>> {
+    static POOL: OnceLock<Mutex<HashMap<PoolKey, Vec<PooledUpstream>>>> = OnceLock::new();
     POOL.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -91,12 +91,18 @@ fn pool() -> &'static Mutex<HashMap<PoolKey, PooledUpstream>> {
 /// 取出即从池中移除：同一连接同一时刻只服务一个请求。
 pub(crate) fn take(key: &PoolKey) -> Option<PooledUpstream> {
     let mut pool = pool().lock().expect("upstream pool lock");
-    let entry = pool.remove(key)?;
-    if entry.is_expired() || !entry.is_reusable() {
+    let entries = pool.get_mut(key)?;
+    while let Some(entry) = entries.pop() {
+        if !entry.is_expired() && entry.is_reusable() {
+            if entries.is_empty() {
+                pool.remove(key);
+            }
+            return Some(entry);
+        }
         // 丢弃即关闭连接（读半边随驱动退出、写半边落 dropping），走新建。
-        return None;
     }
-    Some(entry)
+    pool.remove(key);
+    None
 }
 
 /// 归还一条确认可复用的连接。
@@ -106,14 +112,19 @@ pub(crate) fn put(key: PoolKey, entry: PooledUpstream) {
         return;
     }
     let mut pool = pool().lock().expect("upstream pool lock");
-    if pool.len() >= MAX_ENTRIES && !pool.contains_key(&key) {
+    let mut count = pool.values().map(Vec::len).sum::<usize>();
+    if count >= MAX_ENTRIES {
         // 先清过期条目腾位；仍满则放弃入池（连接随条目关闭）。
-        pool.retain(|_, entry| !entry.is_expired());
-        if pool.len() >= MAX_ENTRIES {
+        pool.retain(|_, entries| {
+            entries.retain(|entry| !entry.is_expired());
+            !entries.is_empty()
+        });
+        count = pool.values().map(Vec::len).sum::<usize>();
+        if count >= MAX_ENTRIES {
             return;
         }
     }
-    pool.insert(key, entry);
+    pool.entry(key).or_default().push(entry);
 }
 
 /// 仅供测试：把池清空，避免用例间串池。
@@ -177,6 +188,51 @@ mod tests {
         assert!(
             take(&key).is_none(),
             "take 必须移除条目，禁止在途连接被并发取走"
+        );
+    }
+
+    #[tokio::test]
+    async fn pool_retains_multiple_ready_entries_for_same_destination() {
+        super::clear_for_test();
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind loopback");
+        let addr = listener.local_addr().expect("loopback address");
+        let _accept =
+            tokio::spawn(async move { while let Ok((_socket, _)) = listener.accept().await {} });
+
+        let key = PoolKey::new(None, "http", "127.0.0.1", addr.port());
+        let mut entries = Vec::new();
+        let mut keepalive = Vec::new();
+        for _ in 0..2 {
+            let stream = tokio::net::TcpStream::connect(addr).await.expect("connect");
+            let (_read_half, write_half) = tokio::io::split(stream);
+            let (server_io, client_io) = tokio::io::duplex(64 * 1024);
+            let (sender, conn) = hyper::client::conn::http1::handshake::<
+                _,
+                http_body_util::Full<Bytes>,
+            >(hyper_util::rt::TokioIo::new(client_io))
+            .await
+            .expect("handshake");
+            tokio::spawn(async move {
+                let _ = conn.await;
+            });
+            tokio::task::yield_now().await;
+            entries.push(PooledUpstream::new(Box::new(write_half), sender));
+            keepalive.push(server_io);
+        }
+
+        for entry in entries {
+            put(key.clone(), entry);
+        }
+        assert!(take(&key).is_some(), "first pooled entry must be available");
+        assert!(
+            take(&key).is_some(),
+            "concurrent requests to one destination must each get a pooled connection"
+        );
+        assert!(
+            take(&key).is_none(),
+            "pooled entries must not be duplicated"
         );
     }
 }
