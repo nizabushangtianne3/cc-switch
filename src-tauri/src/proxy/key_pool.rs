@@ -2,15 +2,22 @@ use crate::provider::{ApiKeyEntry, ApiKeyStrategy};
 use sha2::{Digest, Sha256};
 use smallvec::SmallVec;
 
+const HEX_DIGITS: [char; 16] = [
+    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
+];
+
 /// Stable, non-reversible identifier for an API key.
 ///
 /// Usage rows store this fingerprint instead of the raw key so statistics can
 /// survive key edits and remain safe to inspect or sync.
 pub fn api_key_fingerprint(key: &str) -> String {
-    Sha256::digest(key.as_bytes())
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+    let digest = Sha256::digest(key.as_bytes());
+    let mut fingerprint = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        fingerprint.push(HEX_DIGITS[usize::from(byte >> 4)]);
+        fingerprint.push(HEX_DIGITS[usize::from(byte & 0x0f)]);
+    }
+    fingerprint
 }
 
 /// 按调度策略给出「同一供应商内 Key 的尝试顺序」。
