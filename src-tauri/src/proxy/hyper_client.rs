@@ -204,7 +204,27 @@ pub(crate) async fn proxy_body_bytes_with_limit(
     mut body: ProxyByteStream,
     max_bytes: usize,
 ) -> Result<Bytes, ProxyError> {
-    let mut collected = bytes::BytesMut::new();
+    let Some(first) = body.next().await else {
+        return Ok(Bytes::new());
+    };
+    let first = first
+        .map_err(|e| ProxyError::ForwardFailed(format!("Failed to read response body: {e}")))?;
+    if first.len() > max_bytes {
+        return Err(ProxyError::ResponseBodyTooLarge(first.len()));
+    }
+
+    let Some(second) = body.next().await else {
+        return Ok(first);
+    };
+    let second = second
+        .map_err(|e| ProxyError::ForwardFailed(format!("Failed to read response body: {e}")))?;
+    if first.len() + second.len() > max_bytes {
+        return Err(ProxyError::ResponseBodyTooLarge(first.len() + second.len()));
+    }
+
+    let mut collected = bytes::BytesMut::with_capacity(first.len() + second.len());
+    collected.extend_from_slice(&first);
+    collected.extend_from_slice(&second);
     while let Some(chunk) = body.next().await {
         let chunk = chunk
             .map_err(|e| ProxyError::ForwardFailed(format!("Failed to read response body: {e}")))?;
@@ -1146,6 +1166,35 @@ mod tests {
         let result =
             proxy_body_bytes_with_limit(response.into_parts().body, MAX_RESPONSE_BODY_BYTES).await;
         assert!(matches!(result, Err(ProxyError::ResponseBodyTooLarge(_))));
+    }
+
+    #[tokio::test]
+    async fn bytes_with_limit_passes_single_chunk_through_without_copy() {
+        let chunk = Bytes::from_static(b"single response chunk");
+        let expected = chunk.clone();
+        let body = futures::stream::iter(vec![Ok::<_, std::io::Error>(chunk)]);
+
+        let result = proxy_body_bytes_with_limit(Box::pin(body), 128)
+            .await
+            .unwrap();
+
+        assert_eq!(result, expected);
+        assert_eq!(result.as_ptr(), expected.as_ptr());
+    }
+
+    #[tokio::test]
+    async fn bytes_with_limit_joins_streamed_chunks() {
+        let body = futures::stream::iter(vec![
+            Ok::<_, std::io::Error>(Bytes::from_static(b"first")),
+            Ok(Bytes::from_static(b"-")),
+            Ok(Bytes::from_static(b"second")),
+        ]);
+
+        let result = proxy_body_bytes_with_limit(Box::pin(body), 128)
+            .await
+            .unwrap();
+
+        assert_eq!(result, Bytes::from_static(b"first-second"));
     }
 
     /// 启动一个最小 HTTP/1.1 服务器：响应 `Content-Length: body_len` 的全零 body，
