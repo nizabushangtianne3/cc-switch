@@ -535,7 +535,6 @@ async fn send_raw_request(
     // Build the raw HTTP request head only; the caller writes the body directly
     // so a large JSON payload is not copied into yet another allocation.
     let raw_head = build_raw_head(method, path_and_query, headers, original_cases, body.len());
-    let key = PoolKey::new(proxy_url, scheme, host, port);
 
     let mut request_buffers = [
         std::io::IoSlice::new(&raw_head),
@@ -563,7 +562,7 @@ async fn send_raw_request(
     }
 
     // 池命中：写下一份手工报文，让既有 hyper 连接驱动解析响应。
-    if let Some(pooled) = upstream_pool::take(&key) {
+    if let Some((key, pooled)) = upstream_pool::take(proxy_url, scheme, host, port) {
         let PooledUpstream {
             mut write_half,
             mut sender,
@@ -644,6 +643,7 @@ async fn send_raw_request(
     });
 
     let resp = parse_hyper_response(&mut sender, method.clone()).await?;
+    let key = PoolKey::new(proxy_url, scheme, host, port);
     let release = PoolRelease {
         key,
         write_half,

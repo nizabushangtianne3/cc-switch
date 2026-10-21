@@ -17,8 +17,7 @@
 //! 驱动独占（我们只往里喂字节），写半边留在池里写下一份手工报文。
 //! 两侧不共享可变状态，没有互斥与唤醒的额外设计。
 
-use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
@@ -33,19 +32,70 @@ const ENTRY_TTL: Duration = Duration::from_secs(60);
 /// （连接随条目丢弃而正常关闭，行为与改造前一致）。
 const MAX_ENTRIES: usize = 32;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum PoolScheme {
+    Http,
+    Https,
+}
+
+impl PoolScheme {
+    fn new(scheme: &str) -> Self {
+        if scheme.eq_ignore_ascii_case("https") {
+            Self::Https
+        } else {
+            Self::Http
+        }
+    }
+}
+
 /// 池键：完整目的地（含上游代理隧道），不同代理不混用连接。
+///
+/// `Arc` 让归还连接时的键克隆只付引用计数；查找用 [`PoolKeyRef`]
+/// 直接借用当前 URI 字段，避免热路径构造字符串。
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct PoolKey {
-    proxy: Option<String>,
-    target: String,
+    proxy: Option<Arc<str>>,
+    scheme: PoolScheme,
+    host: Arc<str>,
+    port: u16,
 }
 
 impl PoolKey {
     pub(crate) fn new(proxy: Option<&str>, scheme: &str, host: &str, port: u16) -> Self {
         Self {
-            proxy: proxy.map(str::to_string),
-            target: format!("{scheme}://{host}:{port}"),
+            proxy: proxy.map(Arc::from),
+            scheme: PoolScheme::new(scheme),
+            host: Arc::from(host),
+            port,
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct PoolKeyRef<'a> {
+    proxy: Option<&'a str>,
+    scheme: PoolScheme,
+    host: &'a str,
+    port: u16,
+}
+
+impl<'a> PoolKeyRef<'a> {
+    fn new(proxy: Option<&'a str>, scheme: &str, host: &'a str, port: u16) -> Self {
+        Self {
+            proxy,
+            scheme: PoolScheme::new(scheme),
+            host,
+            port,
+        }
+    }
+}
+
+impl PartialEq<PoolKeyRef<'_>> for PoolKey {
+    fn eq(&self, other: &PoolKeyRef<'_>) -> bool {
+        self.proxy.as_deref() == other.proxy
+            && self.scheme == other.scheme
+            && self.host.as_ref() == other.host
+            && self.port == other.port
     }
 }
 
@@ -82,27 +132,66 @@ impl PooledUpstream {
     }
 }
 
-fn pool() -> &'static Mutex<HashMap<PoolKey, Vec<PooledUpstream>>> {
-    static POOL: OnceLock<Mutex<HashMap<PoolKey, Vec<PooledUpstream>>>> = OnceLock::new();
-    POOL.get_or_init(|| Mutex::new(HashMap::new()))
+#[derive(Default)]
+struct PoolStore {
+    entries: Vec<(PoolKey, Vec<PooledUpstream>)>,
+}
+
+impl PoolStore {
+    fn take(&mut self, lookup: PoolKeyRef<'_>) -> Option<(PoolKey, PooledUpstream)> {
+        let index = self.entries.iter().position(|(key, _)| *key == lookup)?;
+        let mut result = None;
+        {
+            let (stored_key, entries) = self.entries.get_mut(index)?;
+            while let Some(entry) = entries.pop() {
+                if !entry.is_expired() && entry.is_reusable() {
+                    result = Some((stored_key.clone(), entry));
+                    break;
+                }
+                // 丢弃即关闭连接（读半边随驱动退出、写半边落 dropping），走新建。
+            }
+        }
+        self.entries.retain(|(_, entries)| !entries.is_empty());
+        result
+    }
+
+    fn put(&mut self, key: PoolKey, entry: PooledUpstream) {
+        self.entries.retain_mut(|(_, entries)| {
+            entries.retain(|entry| !entry.is_expired());
+            !entries.is_empty()
+        });
+        let count: usize = self.entries.iter().map(|(_, entries)| entries.len()).sum();
+        if count >= MAX_ENTRIES {
+            return;
+        }
+        if let Some((_, entries)) = self
+            .entries
+            .iter_mut()
+            .find(|(stored_key, _)| *stored_key == key)
+        {
+            entries.push(entry);
+        } else {
+            self.entries.push((key, vec![entry]));
+        }
+    }
+}
+
+fn pool() -> &'static Mutex<PoolStore> {
+    static POOL: OnceLock<Mutex<PoolStore>> = OnceLock::new();
+    POOL.get_or_init(|| Mutex::new(PoolStore::default()))
 }
 
 /// 取出目的地对应的连接（若有且未过期、hyper 确认可复用）。
 /// 取出即从池中移除：同一连接同一时刻只服务一个请求。
-pub(crate) fn take(key: &PoolKey) -> Option<PooledUpstream> {
+pub(crate) fn take(
+    proxy: Option<&str>,
+    scheme: &str,
+    host: &str,
+    port: u16,
+) -> Option<(PoolKey, PooledUpstream)> {
+    let key = PoolKeyRef::new(proxy, scheme, host, port);
     let mut pool = pool().lock().expect("upstream pool lock");
-    let entries = pool.get_mut(key)?;
-    while let Some(entry) = entries.pop() {
-        if !entry.is_expired() && entry.is_reusable() {
-            if entries.is_empty() {
-                pool.remove(key);
-            }
-            return Some(entry);
-        }
-        // 丢弃即关闭连接（读半边随驱动退出、写半边落 dropping），走新建。
-    }
-    pool.remove(key);
-    None
+    pool.take(key)
 }
 
 /// 归还一条确认可复用的连接。
@@ -112,25 +201,13 @@ pub(crate) fn put(key: PoolKey, entry: PooledUpstream) {
         return;
     }
     let mut pool = pool().lock().expect("upstream pool lock");
-    let mut count = pool.values().map(Vec::len).sum::<usize>();
-    if count >= MAX_ENTRIES {
-        // 先清过期条目腾位；仍满则放弃入池（连接随条目关闭）。
-        pool.retain(|_, entries| {
-            entries.retain(|entry| !entry.is_expired());
-            !entries.is_empty()
-        });
-        count = pool.values().map(Vec::len).sum::<usize>();
-        if count >= MAX_ENTRIES {
-            return;
-        }
-    }
-    pool.entry(key).or_default().push(entry);
+    pool.put(key, entry);
 }
 
 /// 仅供测试：把池清空，避免用例间串池。
 #[cfg(test)]
 pub(crate) fn clear_for_test() {
-    pool().lock().expect("upstream pool lock").clear();
+    pool().lock().expect("upstream pool lock").entries.clear();
 }
 
 #[cfg(test)]
@@ -161,7 +238,6 @@ mod tests {
         });
         let stream = tokio::net::TcpStream::connect(addr).await.expect("connect");
 
-        let key = PoolKey::new(None, "http", "127.0.0.1", addr.port());
         let (_read_half, write_half) = tokio::io::split(stream);
         // duplex 对端必须保活：对端被丢弃会让连接立即 EOF 关闭，
         // hyper 的 is_ready 随之变 false，池条目就会被拒绝。
@@ -181,12 +257,12 @@ mod tests {
         tokio::task::yield_now().await;
 
         put(
-            key.clone(),
+            PoolKey::new(None, "http", "127.0.0.1", addr.port()),
             PooledUpstream::new(Box::new(write_half), sender),
         );
-        assert!(take(&key).is_some());
+        assert!(take(None, "http", "127.0.0.1", addr.port()).is_some());
         assert!(
-            take(&key).is_none(),
+            take(None, "http", "127.0.0.1", addr.port()).is_none(),
             "take 必须移除条目，禁止在途连接被并发取走"
         );
     }
@@ -201,7 +277,6 @@ mod tests {
         let _accept =
             tokio::spawn(async move { while let Ok((_socket, _)) = listener.accept().await {} });
 
-        let key = PoolKey::new(None, "http", "127.0.0.1", addr.port());
         let mut entries = Vec::new();
         let mut keepalive = Vec::new();
         for _ in 0..2 {
@@ -223,15 +298,18 @@ mod tests {
         }
 
         for entry in entries {
-            put(key.clone(), entry);
+            put(PoolKey::new(None, "http", "127.0.0.1", addr.port()), entry);
         }
-        assert!(take(&key).is_some(), "first pooled entry must be available");
         assert!(
-            take(&key).is_some(),
+            take(None, "http", "127.0.0.1", addr.port()).is_some(),
+            "first pooled entry must be available"
+        );
+        assert!(
+            take(None, "http", "127.0.0.1", addr.port()).is_some(),
             "concurrent requests to one destination must each get a pooled connection"
         );
         assert!(
-            take(&key).is_none(),
+            take(None, "http", "127.0.0.1", addr.port()).is_none(),
             "pooled entries must not be duplicated"
         );
     }
