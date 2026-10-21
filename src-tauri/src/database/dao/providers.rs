@@ -1445,4 +1445,36 @@ mod ensure_official_seed_tests {
 
         Ok(())
     }
+
+    #[test]
+    fn resolve_current_provider_prefers_a_valid_pointer_without_a_second_query_contract(
+    ) -> Result<(), AppError> {
+        let db = Database::memory()?;
+        let first = Provider::with_id(
+            "current-first".to_string(),
+            "Current First".to_string(),
+            serde_json::json!({}),
+            None,
+        );
+        let second = Provider::with_id(
+            "current-second".to_string(),
+            "Current Second".to_string(),
+            serde_json::json!({}),
+            None,
+        );
+        db.save_provider("claude", &first)?;
+        db.save_provider("claude", &second)?;
+        db.set_current_provider("claude", &second.id)?;
+
+        assert_eq!(
+            db.resolve_current_provider("claude", Some("missing"))?,
+            Some(second.id.clone())
+        );
+        assert_eq!(
+            db.resolve_current_provider("claude", Some(&first.id))?,
+            Some(first.id)
+        );
+
+        Ok(())
+    }
 }

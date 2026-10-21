@@ -1359,20 +1359,19 @@ pub fn get_effective_current_provider(
     db: &crate::database::Database,
     app_type: &AppType,
 ) -> Result<Option<String>, AppError> {
-    if let Some(local_id) = get_current_provider(app_type) {
-        if db.provider_exists(app_type.as_str(), &local_id)? {
-            return Ok(Some(local_id));
+    let local_id = get_current_provider(app_type);
+    let resolved = db.resolve_current_provider(app_type.as_str(), local_id.as_deref())?;
+    if let Some(local_id) = &local_id {
+        if resolved.as_deref() != Some(local_id.as_str()) {
+            log::warn!(
+                "本地 settings 中的供应商 {local_id} ({}) 在数据库中不存在，将清理并 fallback 到数据库",
+                app_type.as_str()
+            );
+            let _ = set_current_provider(app_type, None);
         }
-
-        log::warn!(
-            "本地 settings 中的供应商 {} ({}) 在数据库中不存在，将清理并 fallback 到数据库",
-            local_id,
-            app_type.as_str()
-        );
-        let _ = set_current_provider(app_type, None);
     }
 
-    db.get_current_provider(app_type.as_str())
+    Ok(resolved)
 }
 
 // ===== Skill 同步方式管理函数 =====
