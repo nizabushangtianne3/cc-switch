@@ -85,18 +85,20 @@ pub struct Database {
     pub(crate) proxy_request_config_cache: Mutex<dao::proxy::ProxyRequestConfigCache>,
     pub(crate) failover_queue_cache:
         Mutex<HashMap<String, dao::providers::CachedFailoverQueueProviders>>,
-    pub(crate) provider_queue_generation: Arc<AtomicU64>,
+    pub(crate) provider_row_cache:
+        Mutex<HashMap<(String, String), dao::providers::CachedProviderById>>,
+    pub(crate) provider_table_generation: Arc<AtomicU64>,
 }
 
 fn register_db_change_hook_with_provider_generation(
     conn: &Connection,
-    provider_queue_generation: Arc<AtomicU64>,
+    provider_table_generation: Arc<AtomicU64>,
 ) {
     conn.update_hook(Some(
         move |action: Action, _database: &str, table: &str, _row_id: i64| match action {
             Action::SQLITE_INSERT | Action::SQLITE_UPDATE | Action::SQLITE_DELETE => {
                 if table == "providers" {
-                    provider_queue_generation.fetch_add(1, Ordering::SeqCst);
+                    provider_table_generation.fetch_add(1, Ordering::SeqCst);
                 }
                 crate::services::webdav_auto_sync::notify_db_changed(table);
                 crate::services::s3_auto_sync::notify_db_changed(table);
@@ -128,10 +130,10 @@ impl Database {
             conn.execute("PRAGMA auto_vacuum = INCREMENTAL;", [])
                 .map_err(|e| AppError::Database(e.to_string()))?;
         }
-        let provider_queue_generation = Arc::new(AtomicU64::new(0));
+        let provider_table_generation = Arc::new(AtomicU64::new(0));
         register_db_change_hook_with_provider_generation(
             &conn,
-            Arc::clone(&provider_queue_generation),
+            Arc::clone(&provider_table_generation),
         );
 
         let db = Self {
@@ -139,7 +141,8 @@ impl Database {
             log_count_cache: Mutex::new(None),
             proxy_request_config_cache: Mutex::new(dao::proxy::ProxyRequestConfigCache::default()),
             failover_queue_cache: Mutex::new(HashMap::new()),
-            provider_queue_generation,
+            provider_row_cache: Mutex::new(HashMap::new()),
+            provider_table_generation,
         };
         db.create_tables()?;
 
@@ -210,10 +213,10 @@ impl Database {
             .map_err(|e| AppError::Database(e.to_string()))?;
         conn.execute("PRAGMA auto_vacuum = INCREMENTAL;", [])
             .map_err(|e| AppError::Database(e.to_string()))?;
-        let provider_queue_generation = Arc::new(AtomicU64::new(0));
+        let provider_table_generation = Arc::new(AtomicU64::new(0));
         register_db_change_hook_with_provider_generation(
             &conn,
-            Arc::clone(&provider_queue_generation),
+            Arc::clone(&provider_table_generation),
         );
 
         let db = Self {
@@ -221,7 +224,8 @@ impl Database {
             log_count_cache: Mutex::new(None),
             proxy_request_config_cache: Mutex::new(dao::proxy::ProxyRequestConfigCache::default()),
             failover_queue_cache: Mutex::new(HashMap::new()),
-            provider_queue_generation,
+            provider_row_cache: Mutex::new(HashMap::new()),
+            provider_table_generation,
         };
         db.create_tables()?;
         db.ensure_model_pricing_seeded()?;

@@ -8,11 +8,18 @@ use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 const FAILOVER_QUEUE_PROVIDER_TTL: Duration = Duration::from_secs(1);
+const PROVIDER_BY_ID_TTL: Duration = Duration::from_secs(1);
 
 pub(crate) struct CachedFailoverQueueProviders {
     generation: u64,
     cached_at: Instant,
     providers: Vec<Provider>,
+}
+
+pub(crate) struct CachedProviderById {
+    generation: u64,
+    cached_at: Instant,
+    provider: Option<Provider>,
 }
 
 type OmoProviderRow = (
@@ -247,7 +254,7 @@ impl Database {
     /// generation，因此 DAO 写入能立即生效。TTL 只兜住备份导入等外部写入。
     pub fn get_failover_queue_providers(&self, app_type: &str) -> Result<Vec<Provider>, AppError> {
         let read_generation = self
-            .provider_queue_generation
+            .provider_table_generation
             .load(std::sync::atomic::Ordering::SeqCst);
         {
             let cache = self.failover_queue_cache.lock().map_err(|e| {
@@ -267,7 +274,7 @@ impl Database {
                 AppError::Database(format!("Failover queue cache lock failed: {e}"))
             })?;
             if self
-                .provider_queue_generation
+                .provider_table_generation
                 .load(std::sync::atomic::Ordering::SeqCst)
                 == read_generation
             {
@@ -386,6 +393,51 @@ impl Database {
     }
 
     pub fn get_provider_by_id(
+        &self,
+        id: &str,
+        app_type: &str,
+    ) -> Result<Option<Provider>, AppError> {
+        let generation = self
+            .provider_table_generation
+            .load(std::sync::atomic::Ordering::SeqCst);
+        let key = (id.to_string(), app_type.to_string());
+        {
+            let cache = self
+                .provider_row_cache
+                .lock()
+                .map_err(|e| AppError::Database(format!("Provider cache lock failed: {e}")))?;
+            if let Some(entry) = cache.get(&key).filter(|entry| {
+                entry.generation == generation && entry.cached_at.elapsed() < PROVIDER_BY_ID_TTL
+            }) {
+                return Ok(entry.provider.clone());
+            }
+        }
+
+        let provider = self.get_provider_by_id_sync(id, app_type)?;
+        {
+            let mut cache = self
+                .provider_row_cache
+                .lock()
+                .map_err(|e| AppError::Database(format!("Provider cache lock failed: {e}")))?;
+            if self
+                .provider_table_generation
+                .load(std::sync::atomic::Ordering::SeqCst)
+                == generation
+            {
+                cache.insert(
+                    key,
+                    CachedProviderById {
+                        generation,
+                        cached_at: Instant::now(),
+                        provider: provider.clone(),
+                    },
+                );
+            }
+        }
+        Ok(provider)
+    }
+
+    fn get_provider_by_id_sync(
         &self,
         id: &str,
         app_type: &str,
@@ -576,7 +628,7 @@ impl Database {
         }
 
         tx.commit().map_err(|e| AppError::Database(e.to_string()))?;
-        self.invalidate_failover_queue_cache();
+        self.invalidate_provider_caches();
         Ok(())
     }
 
@@ -676,7 +728,7 @@ impl Database {
         .map_err(|e| AppError::Database(e.to_string()))?;
 
         tx.commit().map_err(|e| AppError::Database(e.to_string()))?;
-        self.invalidate_failover_queue_cache();
+        self.invalidate_provider_caches();
         Ok(())
     }
 
@@ -687,7 +739,7 @@ impl Database {
             params![id, app_type],
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
-        self.invalidate_failover_queue_cache();
+        self.invalidate_provider_caches();
         Ok(())
     }
 
@@ -731,7 +783,7 @@ impl Database {
             ],
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
-        self.invalidate_failover_queue_cache();
+        self.invalidate_provider_caches();
         Ok(())
     }
 
@@ -864,7 +916,7 @@ impl Database {
         }
 
         tx.commit().map_err(|e| AppError::Database(e.to_string()))?;
-        self.invalidate_failover_queue_cache();
+        self.invalidate_provider_caches();
         Ok(())
     }
 
@@ -1336,6 +1388,60 @@ mod ensure_official_seed_tests {
         db.remove_from_failover_queue("claude", &provider.id)?;
         let refreshed = db.get_failover_queue_providers("claude")?;
         assert!(refreshed.is_empty());
+
+        Ok(())
+    }
+
+    #[test]
+    fn provider_by_id_is_cached_until_a_provider_write_invalidates_it() -> Result<(), AppError> {
+        use std::thread;
+        use std::time::{Duration, Instant};
+
+        let db = std::sync::Arc::new(Database::memory()?);
+        let provider = Provider::with_id(
+            "provider-row-cache".to_string(),
+            "Provider Row Cache".to_string(),
+            serde_json::json!({"original": true}),
+            None,
+        );
+        db.save_provider("claude", &provider)?;
+
+        let initial = db
+            .get_provider_by_id(&provider.id, "claude")?
+            .expect("initial provider");
+        assert_eq!(initial.settings_config["original"], true);
+
+        let (locked_tx, locked_rx) = std::sync::mpsc::channel();
+        let blocker_db = std::sync::Arc::clone(&db);
+        let blocker = thread::spawn(move || {
+            let _guard = blocker_db.conn.lock().expect("占锁失败");
+            locked_tx.send(()).expect("通知占锁失败");
+            thread::sleep(Duration::from_millis(500));
+        });
+        locked_rx.recv().expect("接收占锁通知失败");
+
+        let start = Instant::now();
+        let cached = db
+            .get_provider_by_id(&provider.id, "claude")?
+            .expect("cached provider");
+        let elapsed = start.elapsed();
+        blocker.join().expect("占锁线程 panic");
+
+        assert!(
+            elapsed < Duration::from_millis(400),
+            "缓存命中的供应商读取不得等待数据库锁（实际 {elapsed:?}）"
+        );
+        assert_eq!(cached.settings_config["original"], true);
+
+        db.update_provider_settings_config(
+            "claude",
+            &provider.id,
+            &serde_json::json!({"original": false}),
+        )?;
+        let refreshed = db
+            .get_provider_by_id(&provider.id, "claude")?
+            .expect("refreshed provider");
+        assert_eq!(refreshed.settings_config["original"], false);
 
         Ok(())
     }

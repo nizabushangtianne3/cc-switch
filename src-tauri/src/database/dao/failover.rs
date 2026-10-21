@@ -18,10 +18,13 @@ pub struct FailoverQueueItem {
 }
 
 impl Database {
-    pub(crate) fn invalidate_failover_queue_cache(&self) {
-        self.provider_queue_generation
+    pub(crate) fn invalidate_provider_caches(&self) {
+        self.provider_table_generation
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         if let Ok(mut cache) = self.failover_queue_cache.lock() {
+            cache.clear();
+        }
+        if let Ok(mut cache) = self.provider_row_cache.lock() {
             cache.clear();
         }
     }
@@ -65,7 +68,7 @@ impl Database {
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
 
-        self.invalidate_failover_queue_cache();
+        self.invalidate_provider_caches();
         Ok(())
     }
 
@@ -93,7 +96,7 @@ impl Database {
 
         log::info!("已从故障转移队列移除供应商 {provider_id} ({app_type}), 并清除其健康状态");
 
-        self.invalidate_failover_queue_cache();
+        self.invalidate_provider_caches();
         Ok(())
     }
 
@@ -107,7 +110,7 @@ impl Database {
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
 
-        self.invalidate_failover_queue_cache();
+        self.invalidate_provider_caches();
         Ok(())
     }
 
