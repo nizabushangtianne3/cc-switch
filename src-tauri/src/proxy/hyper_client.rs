@@ -793,6 +793,43 @@ fn global_tls_connector() -> &'static tokio_rustls::TlsConnector {
 }
 
 /// Build the raw HTTP/1.1 request head with original header casing.
+#[inline]
+fn raw_head_capacity(
+    method: &http::Method,
+    path_and_query: &str,
+    headers: &http::HeaderMap,
+    body_len: usize,
+) -> usize {
+    let mut capacity = method.as_str().len() + path_and_query.len() + b" HTTP/1.1\r\n".len() + 1;
+    capacity += headers
+        .iter()
+        .map(|(name, value)| name.as_str().len() + value.as_bytes().len() + 4)
+        .sum::<usize>();
+    if !headers.contains_key(http::header::CONTENT_LENGTH) {
+        capacity += b"Content-Length: ".len()
+            + body_len
+                .checked_ilog10()
+                .map_or(1, |digits| usize::try_from(digits).unwrap_or(0) + 1)
+            + 2;
+    }
+    capacity + 2
+}
+
+fn append_decimal(out: &mut Vec<u8>, mut value: usize) {
+    let mut digits = [0u8; 20];
+    let mut length = 0;
+    loop {
+        digits[length] = b'0' + (value % 10) as u8;
+        length += 1;
+        value /= 10;
+        if value == 0 {
+            break;
+        }
+    }
+    out.extend(digits[..length].iter().rev());
+}
+
+/// Build the raw HTTP/1.1 request head with original header casing.
 fn build_raw_head(
     method: &http::Method,
     path_and_query: &str,
@@ -800,7 +837,7 @@ fn build_raw_head(
     original_cases: &OriginalHeaderCases,
     body_len: usize,
 ) -> Vec<u8> {
-    let mut raw = Vec::with_capacity(4096);
+    let mut raw = Vec::with_capacity(raw_head_capacity(method, path_and_query, headers, body_len));
 
     // Request line
     raw.extend_from_slice(method.as_str().as_bytes());
@@ -852,7 +889,7 @@ fn build_raw_head(
     // Add Content-Length if not already present
     if !headers.contains_key(http::header::CONTENT_LENGTH) {
         raw.extend_from_slice(b"Content-Length: ");
-        raw.extend_from_slice(body_len.to_string().as_bytes());
+        append_decimal(&mut raw, body_len);
         raw.extend_from_slice(b"\r\n");
     }
 
@@ -1030,6 +1067,28 @@ mod tests {
             !head.contains("large-request-body"),
             "raw request builder must not copy the body into another allocation"
         );
+    }
+
+    #[test]
+    fn build_raw_head_uses_exact_head_capacity() {
+        let cases = OriginalHeaderCases::from_raw_bytes(
+            b"POST /long/path?query=1 HTTP/1.1\r\nContent-Type: application/json\r\n\r\n",
+        );
+        let mut headers = http::HeaderMap::new();
+        headers.insert(
+            http::header::CONTENT_TYPE,
+            http::HeaderValue::from_static("application/json"),
+        );
+
+        let raw = build_raw_head(
+            &http::Method::POST,
+            "/long/path?query=1",
+            &headers,
+            &cases,
+            12345,
+        );
+
+        assert_eq!(raw.capacity(), raw.len());
     }
 
     #[tokio::test]
