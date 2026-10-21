@@ -39,6 +39,7 @@ use futures::StreamExt;
 use http::Extensions;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use smallvec::{smallvec, SmallVec};
 use std::borrow::Cow;
 use std::sync::Arc;
 use tauri::Manager;
@@ -498,7 +499,7 @@ impl RequestForwarder {
         app_type: &AppType,
         adapter: &dyn ProviderAdapter,
         provider: &Provider,
-    ) -> Option<Vec<String>> {
+    ) -> Option<SmallVec<[usize; 4]>> {
         let has_pool = provider.meta.as_ref().is_some_and(|meta| {
             meta.api_keys
                 .iter()
@@ -519,11 +520,9 @@ impl RequestForwarder {
             return None;
         }
 
-        Some(
-            self.router
-                .select_api_keys(app_type.as_str(), provider, &auth.api_key)
-                .await,
-        )
+        self.router
+            .select_api_key_indices(app_type.as_str(), provider)
+            .await
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1024,12 +1023,18 @@ impl RequestForwarder {
 
             // 本次请求在这家供应商的 Key 尝试顺序：单 Key 供应商/托管 OAuth 只有
             // 一次（`None`，由 forward 自己取认证材料），多 Key 池按调度策略排队。
-            let key_attempts: Vec<Option<String>> = match self
+            let key_attempts: SmallVec<[Option<&str>; 4]> = match self
                 .api_key_attempts(app_type, adapter.as_ref(), provider)
                 .await
             {
-                Some(keys) if !keys.is_empty() => keys.into_iter().map(Some).collect(),
-                _ => vec![None],
+                Some(indices) if !indices.is_empty() => {
+                    let meta = provider.meta.as_ref().expect("key indices imply meta");
+                    indices
+                        .into_iter()
+                        .map(|index| Some(meta.api_keys[index].key.as_str()))
+                        .collect()
+                }
+                _ => smallvec![None],
             };
 
             for (key_index, api_key) in key_attempts.iter().enumerate() {
@@ -2367,11 +2372,18 @@ impl RequestForwarder {
             ) {
                 auth.api_key = match api_key_override {
                     Some(key) => key.to_string(),
-                    None => {
-                        self.router
-                            .select_api_key(app_type.as_str(), provider, &auth.api_key)
-                            .await
-                    }
+                    None => match self
+                        .router
+                        .select_api_key_index(app_type.as_str(), provider)
+                        .await
+                    {
+                        Some(index) => provider
+                            .meta
+                            .as_ref()
+                            .map(|meta| meta.api_keys[index].key.clone())
+                            .unwrap_or_else(|| auth.api_key.clone()),
+                        None => auth.api_key.clone(),
+                    },
                 };
             }
 
