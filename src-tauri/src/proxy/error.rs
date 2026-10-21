@@ -273,7 +273,11 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
         drop(listener);
 
-        let error = reqwest::Client::new()
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .build()
+            .expect("build isolated reqwest client");
+        let error = client
             .get(format!(
                 "http://127.0.0.1:{port}/v1/responses?key=secret-token"
             ))

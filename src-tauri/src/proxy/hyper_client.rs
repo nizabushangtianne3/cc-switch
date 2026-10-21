@@ -16,19 +16,24 @@ use std::pin::Pin;
 use std::sync::{Arc, OnceLock};
 use std::task::{ready, Context, Poll};
 
-/// Our own header case map: maps lowercase header name → original wire-casing bytes.
+/// Our own wire header snapshot for the raw request path.
 ///
 /// This is a backup mechanism independent of hyper's internal `HeaderCaseMap` (which is
 /// `pub(crate)` and cannot be directly inspected or constructed from outside hyper).
 ///
 /// Populated in `server.rs` by peeking at raw TCP bytes before hyper parses them.
-/// Used in `send_request` to manually write headers with original casing when hyper's
-/// own mechanism fails.
+/// Used in `send_request` to emit the original casing and repeated-header order
+/// even though `HeaderMap` does not preserve wire order.
+#[derive(Clone, Debug)]
+pub(crate) struct OriginalHeaderCase {
+    pub name: http::header::HeaderName,
+    pub value: http::HeaderValue,
+    pub wire_name: Vec<u8>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub(crate) struct OriginalHeaderCases {
-    /// Ordered list of (lowercase_name, original_wire_bytes) pairs.
-    /// Multiple entries with the same name are allowed (for repeated headers).
-    pub cases: Vec<(String, Vec<u8>)>,
+    pub cases: Vec<OriginalHeaderCase>,
 }
 
 impl OriginalHeaderCases {
@@ -44,10 +49,17 @@ impl OriginalHeaderCases {
             if header.name.is_empty() {
                 break;
             }
-            cases.push((
-                header.name.to_ascii_lowercase(),
-                header.name.as_bytes().to_vec(),
-            ));
+            let (Ok(name), Ok(value)) = (
+                http::header::HeaderName::from_bytes(header.name.as_bytes()),
+                http::HeaderValue::from_bytes(header.value),
+            ) else {
+                continue;
+            };
+            cases.push(OriginalHeaderCase {
+                name,
+                value,
+                wire_name: header.name.as_bytes().to_vec(),
+            });
         }
 
         Self { cases }
@@ -795,55 +807,44 @@ fn build_raw_head(
     raw.extend_from_slice(path_and_query.as_bytes());
     raw.extend_from_slice(b" HTTP/1.1\r\n");
 
-    // Headers with original casing, emitted in original wire order.
-    //
-    // Strategy:
-    // 1. Walk `original_cases.cases` in order — this preserves the exact
-    //    header sequence the client sent.  For each entry, emit the stored
-    //    original-casing name plus the current value from `headers` (the
-    //    proxy may have rewritten the value, e.g. Authorization).
-    //    Repeated headers with the same name are handled by tracking a
-    //    per-name value cursor so we step through `get_all()` in order.
-    // 2. After the original headers, append any headers that exist in
-    //    `headers` but were not present in the original request (i.e. added
-    //    by the proxy).  These are emitted in lowercase.
-    //
-    // This replaces the old `for name in headers.keys()` loop which iterated
-    // in hash-map order, destroying the original header sequence.
-    let mut emitted: Vec<&str> = Vec::with_capacity(original_cases.cases.len());
-    // Per-name cursor: how many values we have already emitted for each name.
-    let mut value_cursor: std::collections::HashMap<&str, usize> =
-        std::collections::HashMap::with_capacity(original_cases.cases.len());
+    // HeaderMap does not preserve the original wire order. Match rewritten values
+    // against the snapshot first, then append proxy-added headers and extra values.
+    let values: Vec<(&http::header::HeaderName, &http::HeaderValue)> = headers.iter().collect();
+    let mut used = vec![false; values.len()];
 
-    for (lower_name, orig_name_bytes) in &original_cases.cases {
-        if let Ok(header_name) = http::header::HeaderName::from_bytes(lower_name.as_bytes()) {
-            let all_values: Vec<_> = headers.get_all(&header_name).iter().collect();
-            let cursor = value_cursor.entry(lower_name.as_str()).or_insert(0);
-            if let Some(value) = all_values.get(*cursor) {
-                raw.extend_from_slice(orig_name_bytes);
-                raw.extend_from_slice(b": ");
-                raw.extend_from_slice(value.as_bytes());
-                raw.extend_from_slice(b"\r\n");
-                *cursor += 1;
-                emitted.push(lower_name.as_str());
-            }
+    for original in &original_cases.cases {
+        let selected = values
+            .iter()
+            .enumerate()
+            .find_map(|(index, (name, value))| {
+                (!used[index] && name == &original.name && original.value == value).then_some(index)
+            });
+        let selected = selected.or_else(|| {
+            values.iter().enumerate().find_map(|(index, (name, _))| {
+                (!used[index] && name == &original.name).then_some(index)
+            })
+        });
+
+        if let Some(index) = selected {
+            let value = values[index].1;
+            raw.extend_from_slice(&original.wire_name);
+            raw.extend_from_slice(b": ");
+            raw.extend_from_slice(value.as_bytes());
+            raw.extend_from_slice(b"\r\n");
+            used[index] = true;
         }
     }
 
-    // Append proxy-added headers (not present in the original request).
-    for name in headers.keys() {
-        if !emitted
-            .iter()
-            .any(|seen| seen.eq_ignore_ascii_case(name.as_str()))
-        {
-            for value in headers.get_all(name) {
-                raw.extend_from_slice(name.as_str().as_bytes());
-                raw.extend_from_slice(b": ");
-                raw.extend_from_slice(value.as_bytes());
-                raw.extend_from_slice(b"\r\n");
-            }
-            emitted.push(name.as_str());
+    // Proxy-added headers and values not matched by the original wire snapshot.
+    for (index, (name, value)) in values.iter().enumerate() {
+        if used[index] {
+            continue;
         }
+        raw.extend_from_slice(name.as_str().as_bytes());
+        raw.extend_from_slice(b": ");
+        raw.extend_from_slice(value.as_bytes());
+        raw.extend_from_slice(b"\r\n");
+        used[index] = true;
     }
 
     // Add Content-Length if not already present
@@ -964,6 +965,40 @@ mod tests {
         let text = String::from_utf8(raw).unwrap();
         assert!(
             text.starts_with("POST /x HTTP/1.1\r\nX-Cc-Switch: yes\r\nContent-Length: 5\r\n\r\n"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn build_raw_head_emits_repeated_original_headers_in_wire_order() {
+        let cases = OriginalHeaderCases::from_raw_bytes(
+            b"POST /x HTTP/1.1\r\nSet-Cookie: A\r\nSet-Cookie: B\r\n",
+        );
+        let mut headers = http::HeaderMap::new();
+        headers.append("set-cookie", http::HeaderValue::from_static("B"));
+        headers.append("set-cookie", http::HeaderValue::from_static("A"));
+
+        let raw = build_raw_head(&http::Method::POST, "/x", &headers, &cases, 0);
+        let text = String::from_utf8(raw).unwrap();
+        assert!(
+            text.starts_with("POST /x HTTP/1.1\r\nSet-Cookie: A\r\nSet-Cookie: B\r\n"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn build_raw_head_maps_rewritten_repeated_values_in_wire_order() {
+        let cases = OriginalHeaderCases::from_raw_bytes(
+            b"POST /x HTTP/1.1\r\nSet-Cookie: A\r\nSet-Cookie: B\r\n",
+        );
+        let mut headers = http::HeaderMap::new();
+        headers.append("set-cookie", http::HeaderValue::from_static("Y"));
+        headers.append("set-cookie", http::HeaderValue::from_static("X"));
+
+        let raw = build_raw_head(&http::Method::POST, "/x", &headers, &cases, 0);
+        let text = String::from_utf8(raw).unwrap();
+        assert!(
+            text.starts_with("POST /x HTTP/1.1\r\nSet-Cookie: Y\r\nSet-Cookie: X\r\n"),
             "{text}"
         );
     }

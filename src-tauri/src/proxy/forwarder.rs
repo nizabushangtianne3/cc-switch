@@ -8,7 +8,6 @@ use super::{
     content_encoding::{decompress_body_with_limit, get_content_encoding},
     error::*,
     failover_switch::FailoverSwitchManager,
-    json_canonical::short_value_hash,
     log_codes::{fwd as log_fwd, key as log_key},
     opaque_state_rectifier::{
         carries_encrypted_agent_task, detect_opaque_state_rejection, rectify_opaque_state,
@@ -25,6 +24,7 @@ use super::{
     ProxyError,
 };
 use crate::commands::{CodexOAuthState, CopilotAuthState, XaiOAuthState};
+use crate::proxy::json_canonical::short_value_hash;
 use crate::proxy::providers::copilot_auth::{CopilotAuthError, CopilotAuthManager};
 use crate::proxy::providers::copilot_model_map::{
     CopilotProtocol, CopilotTransport, ResolvedCopilotModel,
@@ -2996,9 +2996,8 @@ impl RequestForwarder {
             .unwrap_or("<none>");
         log::info!("[{tag}] >>> 请求目标: {target_for_log} (model={request_model})");
         log::debug!(
-            "[{tag}] >>> 请求体已准备: bytes={}, hash={} (content omitted)",
+            "[{tag}] >>> 请求体已准备: bytes={} (content omitted)",
             body_bytes.len(),
-            short_value_hash(Some(filtered_body.as_ref()))
         );
 
         // 确定超时
