@@ -85,9 +85,11 @@ pub(crate) async fn read_decoded_body(
     tag: &str,
     body_timeout: Duration,
 ) -> Result<(HeaderMap, http::StatusCode, Bytes), ProxyError> {
-    let mut headers = response.headers().clone();
-    let status = response.status();
-    let bytes_future = response.bytes_with_limit(MAX_RESPONSE_BODY_BYTES);
+    let parts = response.into_parts();
+    let mut headers = parts.headers;
+    let status = parts.status;
+    let bytes_future =
+        super::hyper_client::proxy_body_bytes_with_limit(parts.body, MAX_RESPONSE_BODY_BYTES);
     let raw_bytes = if body_timeout.is_zero() {
         bytes_future.await?
     } else {
@@ -168,15 +170,16 @@ pub async fn handle_streaming(
     parser_config: &UsageParserConfig,
     connection_guard: Option<ActiveConnectionGuard>,
 ) -> Response {
-    let status = response.status();
+    let parts = response.into_parts();
+    let status = parts.status;
     log::debug!(
         "[{}] 已接收上游流式响应: status={}, headers={}",
         ctx.tag,
         status.as_u16(),
-        format_headers(response.headers())
+        format_headers(&parts.headers)
     );
     // 检查流式响应是否被压缩（SSE 通常不压缩，如果压缩则 SSE 解析会失败）
-    if let Some(encoding) = get_content_encoding(response.headers()) {
+    if let Some(encoding) = get_content_encoding(&parts.headers) {
         log::warn!(
             "[{}] 流式响应含 content-encoding={encoding}，SSE 解析可能失败。\
              上游在 accept-encoding 透传后压缩了 SSE 流。",
@@ -184,7 +187,7 @@ pub async fn handle_streaming(
         );
     }
 
-    let mut response_headers = response.headers().clone();
+    let mut response_headers = parts.headers;
     strip_hop_by_hop_response_headers(&mut response_headers);
 
     let mut builder = axum::response::Response::builder().status(status);
@@ -195,7 +198,7 @@ pub async fn handle_streaming(
     }
 
     // 创建字节流
-    let stream = response.bytes_stream();
+    let stream = parts.body;
 
     // 创建使用量收集器；关闭 usage logging 时不要在流式热路径上解析每个 SSE event。
     let usage_collector = create_usage_collector(ctx, state, status.as_u16(), parser_config);

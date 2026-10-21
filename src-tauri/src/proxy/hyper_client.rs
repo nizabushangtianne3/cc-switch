@@ -119,6 +119,105 @@ pub enum ProxyResponse {
     },
 }
 
+pub(crate) type ProxyByteStream =
+    std::pin::Pin<Box<dyn Stream<Item = Result<Bytes, std::io::Error>> + Send>>;
+
+pub(crate) struct ProxyResponseParts {
+    pub status: http::StatusCode,
+    pub headers: http::HeaderMap,
+    pub body: ProxyByteStream,
+}
+
+impl ProxyResponse {
+    /// Consume the response, moving headers and body apart without cloning them.
+    ///
+    /// Hyper, buffered, and streamed responses can move their header map directly.
+    /// reqwest does not expose owned headers, so only that fallback still clones.
+    pub(crate) fn into_parts(self) -> ProxyResponseParts {
+        match self {
+            Self::Hyper(response) => {
+                let (parts, body) = response.into_parts();
+                ProxyResponseParts {
+                    status: parts.status,
+                    headers: parts.headers,
+                    body: Box::pin(
+                        futures::stream::unfold(body, |mut body| async {
+                            match body.frame().await {
+                                Some(Ok(frame)) => {
+                                    if let Ok(data) = frame.into_data() {
+                                        if data.is_empty() {
+                                            Some((Ok(Bytes::new()), body))
+                                        } else {
+                                            Some((Ok(data), body))
+                                        }
+                                    } else {
+                                        Some((Ok(Bytes::new()), body))
+                                    }
+                                }
+                                Some(Err(e)) => Some((
+                                    Err(std::io::Error::other(super::error::describe_error_chain(
+                                        &e,
+                                    ))),
+                                    body,
+                                )),
+                                None => None,
+                            }
+                        })
+                        .filter(|result| {
+                            futures::future::ready(!matches!(result, Ok(ref b) if b.is_empty()))
+                        }),
+                    ),
+                }
+            }
+            Self::Reqwest(response) => ProxyResponseParts {
+                status: response.status(),
+                headers: response.headers().clone(),
+                body: Box::pin(response.bytes_stream().map(|result| {
+                    result
+                        .map_err(|e| std::io::Error::other(super::error::describe_reqwest_error(e)))
+                })),
+            },
+            Self::Buffered {
+                status,
+                headers,
+                body,
+            } => ProxyResponseParts {
+                status,
+                headers,
+                body: Box::pin(futures::stream::once(async move { Ok(body) })),
+            },
+            Self::Streamed {
+                status,
+                headers,
+                stream,
+            } => ProxyResponseParts {
+                status,
+                headers,
+                body: stream,
+            },
+        }
+    }
+}
+
+/// Collect an already-owned response body while enforcing the byte budget.
+pub(crate) async fn proxy_body_bytes_with_limit(
+    mut body: ProxyByteStream,
+    max_bytes: usize,
+) -> Result<Bytes, ProxyError> {
+    let mut collected = bytes::BytesMut::new();
+    while let Some(chunk) = body.next().await {
+        let chunk = chunk
+            .map_err(|e| ProxyError::ForwardFailed(format!("Failed to read response body: {e}")))?;
+        if collected.len() + chunk.len() > max_bytes {
+            return Err(ProxyError::ResponseBodyTooLarge(
+                collected.len() + chunk.len(),
+            ));
+        }
+        collected.extend_from_slice(&chunk);
+    }
+    Ok(collected.freeze())
+}
+
 /// 裸写连接的响应体：框架读完时把连接归还 keep-alive 池。
 ///
 /// Linux 上连接驱动可能比 body reader 晚一轮才把 sender 置 ready。body
@@ -295,67 +394,14 @@ impl ProxyResponse {
             }
             response => {
                 // Hyper / Reqwest / Streamed 统一走逐块流式累积，超预算立即报错
-                let mut stream = response.bytes_stream();
-                let mut body = bytes::BytesMut::new();
-                while let Some(chunk) = stream.next().await {
-                    let chunk = chunk.map_err(|e| {
-                        ProxyError::ForwardFailed(format!("Failed to read response body: {e}"))
-                    })?;
-                    if body.len() + chunk.len() > max_bytes {
-                        return Err(ProxyError::ResponseBodyTooLarge(body.len() + chunk.len()));
-                    }
-                    body.extend_from_slice(&chunk);
-                }
-                Ok(body.freeze())
+                proxy_body_bytes_with_limit(response.into_parts().body, max_bytes).await
             }
         }
     }
 
     /// Consume the response and return a byte-chunk stream (for SSE pass-through).
-    pub fn bytes_stream(self) -> impl Stream<Item = Result<Bytes, std::io::Error>> + Send {
-        use futures::StreamExt;
-
-        match self {
-            Self::Hyper(r) => {
-                let body = r.into_body();
-                let stream = futures::stream::unfold(body, |mut body| async {
-                    match body.frame().await {
-                        Some(Ok(frame)) => {
-                            if let Ok(data) = frame.into_data() {
-                                if data.is_empty() {
-                                    Some((Ok(Bytes::new()), body))
-                                } else {
-                                    Some((Ok(data), body))
-                                }
-                            } else {
-                                Some((Ok(Bytes::new()), body))
-                            }
-                        }
-                        Some(Err(e)) => Some((
-                            Err(std::io::Error::other(super::error::describe_error_chain(
-                                &e,
-                            ))),
-                            body,
-                        )),
-                        None => None,
-                    }
-                })
-                .filter(|result| {
-                    futures::future::ready(!matches!(result, Ok(ref b) if b.is_empty()))
-                });
-                Box::pin(stream)
-                    as std::pin::Pin<Box<dyn Stream<Item = Result<Bytes, std::io::Error>> + Send>>
-            }
-            Self::Reqwest(r) => {
-                let stream = r.bytes_stream().map(|r| {
-                    r.map_err(|e| std::io::Error::other(super::error::describe_reqwest_error(e)))
-                });
-                Box::pin(stream)
-            }
-            Self::Buffered { body, .. } => Box::pin(futures::stream::once(async move { Ok(body) }))
-                as std::pin::Pin<Box<dyn Stream<Item = Result<Bytes, std::io::Error>> + Send>>,
-            Self::Streamed { stream, .. } => stream,
-        }
+    pub fn bytes_stream(self) -> ProxyByteStream {
+        self.into_parts().body
     }
 }
 
