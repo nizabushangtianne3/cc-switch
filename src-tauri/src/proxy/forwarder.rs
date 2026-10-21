@@ -197,6 +197,13 @@ fn codex_bearer_access_token(headers: &http::HeaderMap) -> Option<&str> {
     Some(token)
 }
 
+fn serialize_request_body(value: &Value, initial_capacity: usize) -> Result<Bytes, ProxyError> {
+    let mut bytes = Vec::with_capacity(initial_capacity);
+    serde_json::to_writer(&mut bytes, value)
+        .map_err(|e| ProxyError::Internal(format!("Failed to serialize request body: {e}")))?;
+    Ok(Bytes::from(bytes))
+}
+
 fn validate_codex_official_authorization(
     headers: &http::HeaderMap,
     provider: &Provider,
@@ -2946,8 +2953,9 @@ impl RequestForwarder {
 
         // 请求体没有被任何改写触碰时，直接复用客户端发来的字节，跳过
         // JSON Value -> bytes 的二次序列化；大请求体这里是完整转发的主要 CPU 成本。
+        let raw_body_extension = extensions.get::<Arc<RawRequestBody>>();
         let raw_body_bytes = matches!(&filtered_body, Cow::Borrowed(_))
-            .then(|| extensions.get::<Arc<RawRequestBody>>())
+            .then_some(raw_body_extension)
             .flatten()
             .map(|raw| raw.bytes.clone());
 
@@ -2958,9 +2966,10 @@ impl RequestForwarder {
         } else if let Some(bytes) = raw_body_bytes {
             bytes
         } else {
-            Bytes::from(serde_json::to_vec(filtered_body.as_ref()).map_err(|e| {
-                ProxyError::Internal(format!("Failed to serialize request body: {e}"))
-            })?)
+            serialize_request_body(
+                filtered_body.as_ref(),
+                raw_body_extension.map_or(0, |raw| raw.bytes.len()),
+            )?
         };
 
         // 确保 content-type 存在
@@ -5264,6 +5273,24 @@ mod tests {
         let mut prepared = body.clone();
         assert!(!strip_private_params(&mut prepared));
         assert_eq!(prepared, body);
+    }
+
+    #[test]
+    fn request_body_writer_preserves_value_and_key_order() {
+        let body = json!({
+            "z": 1,
+            "model": "claude-3",
+            "messages": [{ "role": "user", "content": "hello" }],
+            "a": 2
+        });
+
+        let without_capacity = serialize_request_body(&body, 0).unwrap();
+        let with_capacity = serialize_request_body(&body, 4096).unwrap();
+        assert_eq!(without_capacity, with_capacity);
+        assert_eq!(
+            &without_capacity[..],
+            br#"{"z":1,"model":"claude-3","messages":[{"role":"user","content":"hello"}],"a":2}"#
+        );
     }
 
     #[test]
