@@ -668,8 +668,10 @@ pub fn create_logged_passthrough_stream(
                         crate::proxy::sse::append_utf8_safe(&mut buffer, &mut utf8_remainder, &bytes);
 
                         // 尝试解析并记录完整的 SSE 事件
-                        while let Some((end, delim)) = next_sse_block_range(&buffer) {
-                            let event_text = &buffer[..end];
+                        let mut consumed = 0;
+                        while let Some((end, delim)) = next_sse_block_range(&buffer[consumed..]) {
+                            let end = consumed + end;
+                            let event_text = &buffer[consumed..end];
                             if !event_text.trim().is_empty() {
                                 let event_name = event_text
                                     .lines()
@@ -703,7 +705,12 @@ pub fn create_logged_passthrough_stream(
                                     }
                                 }
                             }
-                            buffer.drain(..end + delim);
+                            consumed = end + delim;
+                        }
+                        if consumed == buffer.len() {
+                            buffer.clear();
+                        } else if consumed > 0 {
+                            buffer.drain(..consumed);
                         }
                     }
 
@@ -874,6 +881,36 @@ mod tests {
             latency_ms >= first_token_ms + 50,
             "first_token_ms={first_token_ms}, latency_ms={latency_ms}"
         );
+    }
+
+    #[tokio::test]
+    async fn collector_parses_every_complete_event_in_one_chunk() {
+        let recorded = Arc::new(std::sync::Mutex::new(None));
+        let recorded_in_cb = recorded.clone();
+        let collector =
+            SseUsageCollector::new(std::time::Instant::now(), None, move |events, _| {
+                *recorded_in_cb.lock().unwrap() = Some(events.len());
+            });
+
+        let upstream = futures::stream::once(async {
+            Ok::<_, std::io::Error>(Bytes::from(
+                "data: {\"kind\":\"one\"}\n\ndata: {\"kind\":\"two\"}\n\n",
+            ))
+        });
+        let stream = create_logged_passthrough_stream(
+            upstream,
+            "test",
+            Some(collector),
+            StreamingTimeoutConfig {
+                first_byte_timeout: 0,
+                idle_timeout: 0,
+            },
+            None,
+        );
+        futures::pin_mut!(stream);
+        while stream.next().await.is_some() {}
+
+        assert_eq!(*recorded.lock().unwrap(), Some(2));
     }
 
     #[test]

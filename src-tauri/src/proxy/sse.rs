@@ -10,21 +10,31 @@ pub(crate) fn strip_sse_field<'a>(line: &'a str, field: &str) -> Option<&'a str>
 
 #[inline]
 pub(crate) fn next_sse_block_range(buffer: &str) -> Option<(usize, usize)> {
-    let mut best: Option<(usize, usize)> = None;
-
-    // The data line and the following blank line can use different line endings.
-    // Include both mixed forms and prefer the earliest match so no trailing CR
-    // becomes part of the returned block.
-    for delimiter in ["\r\n\r\n", "\r\n\n", "\n\r\n", "\n\n"] {
-        if let Some(pos) = buffer.find(delimiter) {
-            if best.is_none_or(|(best_pos, _)| pos < best_pos) {
-                best = Some((pos, delimiter.len()));
+    // Scan once instead of running four searches over the remaining stream.
+    // The delimiters all start with CR or LF and the first match is the one
+    // that must be consumed, even when another delimiter follows immediately.
+    let bytes = buffer.as_bytes();
+    for (index, byte) in bytes.iter().enumerate() {
+        let delimiter_len = match byte {
+            b'\r' if bytes.get(index + 1) == Some(&b'\n') => {
+                match (bytes.get(index + 2), bytes.get(index + 3)) {
+                    (Some(b'\r'), Some(b'\n')) => 4,
+                    (Some(b'\n'), _) => 3,
+                    _ => 0,
+                }
             }
+            b'\n' => match (bytes.get(index + 1), bytes.get(index + 2)) {
+                (Some(b'\r'), Some(b'\n')) => 3,
+                (Some(b'\n'), _) => 2,
+                _ => 0,
+            },
+            _ => 0,
+        };
+        if delimiter_len > 0 {
+            return Some((index, delimiter_len));
         }
     }
-
-    let (pos, len) = best?;
-    Some((pos, len))
+    None
 }
 
 /// Append raw bytes to a UTF-8 `String` buffer, correctly handling multi-byte
@@ -124,6 +134,17 @@ mod tests {
         assert_eq!(delim, 2);
         buffer.drain(..end + delim);
         assert_eq!(buffer, "rest");
+    }
+
+    #[test]
+    fn next_sse_block_range_returns_the_earliest_delimiter() {
+        let mut buffer = String::from("data: first\n\n\r\ndata: second\r\n\r\nrest");
+
+        let (end, delimiter) = next_sse_block_range(&buffer).expect("earliest block");
+        assert_eq!(&buffer[..end], "data: first");
+        assert_eq!(delimiter, 2);
+        buffer.drain(..end + delimiter);
+        assert_eq!(buffer, "\r\ndata: second\r\n\r\nrest");
     }
 
     #[test]
