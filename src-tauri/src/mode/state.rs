@@ -410,6 +410,17 @@ pub fn stack_mode(store: &DeviceStore, app: &str) -> Result<bool, AppError> {
         .is_some_and(|state| state.mode == Some(Mode::Proxy) && state.stack.enabled))
 }
 
+/// 一次读出路由决策需要的模式状态和 Stack 开关；状态文件只读一次。
+pub fn routing_state(store: &DeviceStore, app: &str) -> Result<(ModeState, bool), AppError> {
+    let _guard = state_lock().lock().unwrap_or_else(|e| e.into_inner());
+    let state = load(store)?;
+    let app_state = state.apps.get(app);
+    let mode = app_state.map(AppLiveState::mode_state).unwrap_or_default();
+    let stack_mode =
+        app_state.is_some_and(|state| state.mode == Some(Mode::Proxy) && state.stack.enabled);
+    Ok((mode, stack_mode))
+}
+
 /// 有未完成操作的应用。
 pub fn apps_with_pending(store: &DeviceStore) -> Result<Vec<String>, AppError> {
     let _guard = state_lock().lock().unwrap_or_else(|e| e.into_inner());
@@ -476,6 +487,39 @@ mod tests {
         assert_eq!(
             raw,
             json!({"version": 2, "future": true, "apps": {"codex": {"mode": "proxy"}}})
+        );
+    }
+
+    #[test]
+    fn routing_state_reads_mode_and_stack_from_one_snapshot() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = DeviceStore::at(dir.path());
+
+        assert_eq!(
+            routing_state(&store, "claude").unwrap(),
+            (ModeState::default(), false)
+        );
+
+        let mut state = load(&store).unwrap();
+        let app_state = state.apps.entry("claude".to_string()).or_default();
+        app_state.mode = Some(Mode::Proxy);
+        app_state.proxy_route = Some("provider".to_string());
+        app_state.stack = StackState {
+            enabled: true,
+            ..StackState::default()
+        };
+        save(&store, &state).unwrap();
+
+        assert_eq!(
+            routing_state(&store, "claude").unwrap(),
+            (
+                ModeState {
+                    mode: Some(Mode::Proxy),
+                    proxy_route: Some("provider".to_string()),
+                    ..ModeState::default()
+                },
+                true
+            )
         );
     }
 

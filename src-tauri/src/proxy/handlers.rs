@@ -320,7 +320,7 @@ async fn handle_messages_for_app(
     let method = parts.method;
     let uri = parts.uri;
     let headers = parts.headers;
-    let extensions = parts.extensions;
+    let mut extensions = parts.extensions;
     let body_bytes = body
         .collect()
         .await
@@ -332,6 +332,11 @@ async fn handle_messages_for_app(
         Ok(stack) => stack,
         Err(rejected) => return Ok(*rejected),
     };
+    if stack.is_none() {
+        extensions.insert(Arc::new(super::forwarder::RawRequestBody {
+            bytes: body_bytes.clone(),
+        }));
+    }
 
     let mut ctx = RequestContext::new(
         &state,
@@ -917,7 +922,7 @@ pub async fn handle_chat_completions(
     let method = parts.method;
     let uri = parts.uri;
     let mut headers = parts.headers;
-    let extensions = parts.extensions;
+    let mut extensions = parts.extensions;
     let body_bytes = req_body
         .collect()
         .await
@@ -930,6 +935,11 @@ pub async fn handle_chat_completions(
         Ok(stack) => stack,
         Err(rejected) => return Ok(*rejected),
     };
+    if stack.is_none() {
+        extensions.insert(Arc::new(super::forwarder::RawRequestBody {
+            bytes: body_bytes.clone(),
+        }));
+    }
 
     let mut ctx = RequestContext::new(
         &state,
@@ -1037,7 +1047,7 @@ async fn handle_responses_for_app(
     let method = parts.method;
     let uri = parts.uri;
     let mut headers = parts.headers;
-    let extensions = parts.extensions;
+    let mut extensions = parts.extensions;
     let body_bytes = req_body
         .collect()
         .await
@@ -1050,6 +1060,11 @@ async fn handle_responses_for_app(
         Ok(stack) => stack,
         Err(rejected) => return Ok(*rejected),
     };
+    if stack.is_none() {
+        extensions.insert(Arc::new(super::forwarder::RawRequestBody {
+            bytes: body_bytes.clone(),
+        }));
+    }
 
     let mut ctx = RequestContext::new(
         &state,
@@ -1285,7 +1300,7 @@ async fn handle_codex_standalone_passthrough(
     let method = parts.method;
     let uri = parts.uri;
     let mut headers = parts.headers;
-    let extensions = parts.extensions;
+    let mut extensions = parts.extensions;
     let body_bytes = req_body
         .collect()
         .await
@@ -1294,6 +1309,9 @@ async fn handle_codex_standalone_passthrough(
     let body_bytes = decode_codex_request_body(&mut headers, body_bytes)?;
     let body: Value = serde_json::from_slice(&body_bytes)
         .map_err(|e| ProxyError::InvalidRequest(format!("Failed to parse request body: {e}")))?;
+    extensions.insert(Arc::new(super::forwarder::RawRequestBody {
+        bytes: body_bytes.clone(),
+    }));
 
     let mut ctx = RequestContext::new(
         &state,
@@ -1371,7 +1389,7 @@ async fn handle_responses_compact_for_app(
     let method = parts.method;
     let uri = parts.uri;
     let mut headers = parts.headers;
-    let extensions = parts.extensions;
+    let mut extensions = parts.extensions;
     let body_bytes = req_body
         .collect()
         .await
@@ -1385,6 +1403,11 @@ async fn handle_responses_compact_for_app(
         Ok(stack) => stack,
         Err(rejected) => return Ok(*rejected),
     };
+    if stack.is_none() {
+        extensions.insert(Arc::new(super::forwarder::RawRequestBody {
+            bytes: body_bytes.clone(),
+        }));
+    }
 
     let mut ctx = RequestContext::new(
         &state,
@@ -2363,7 +2386,7 @@ pub async fn handle_gemini(
     let (parts, req_body) = request.into_parts();
     let method = parts.method;
     let headers = parts.headers;
-    let extensions = parts.extensions;
+    let mut extensions = parts.extensions;
     let body_bytes = req_body
         .collect()
         .await
@@ -2377,6 +2400,9 @@ pub async fn handle_gemini(
         serde_json::from_slice(&body_bytes)
             .map_err(|e| ProxyError::Internal(format!("Failed to parse request body: {e}")))?
     };
+    extensions.insert(Arc::new(super::forwarder::RawRequestBody {
+        bytes: body_bytes.clone(),
+    }));
 
     // Gemini 的模型名称在 URI 中
     let mut ctx = RequestContext::new(

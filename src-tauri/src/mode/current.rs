@@ -63,7 +63,33 @@ pub fn provider_for(
 
 /// 正在用的那一行（见 [`Purpose::InUse`]）。
 pub fn provider_in_use(db: &Database, app: &AppType) -> Result<Option<Provider>, AppError> {
-    match proxy_route_row(db, app)? {
+    let mode = mode_state(app);
+    provider_in_use_with_state(db, app, mode)
+}
+
+/// 请求热路径的一次读取版本：模式状态和 Stack 开关来自同一个状态快照。
+pub fn provider_in_use_and_stack_mode(db: &Database, app: &AppType) -> (Option<Provider>, bool) {
+    if !app.has_route_mode() {
+        return (direct_provider(db, app).unwrap_or(None), false);
+    }
+
+    let (mode, stack_mode) = state::routing_state(&DeviceStore::for_device(), app.as_str())
+        .unwrap_or_else(|err| {
+            log::warn!("读取 {} 的路由状态失败，按直连处理: {err}", app.as_str());
+            (ModeState::default(), false)
+        });
+    let provider = provider_in_use_with_state(db, app, mode).unwrap_or(None);
+    (provider, stack_mode)
+}
+
+/// 代理模式下代理路由那一行；不在代理模式、或者路由那家在库里不存在（按直连处理）时
+/// 为 `None`。
+fn provider_in_use_with_state(
+    db: &Database,
+    app: &AppType,
+    mode: ModeState,
+) -> Result<Option<Provider>, AppError> {
+    match proxy_route_row_with_state(db, app, mode)? {
         Some(route) => Ok(Some(route)),
         None => direct_provider(db, app),
     }
@@ -73,6 +99,14 @@ pub fn provider_in_use(db: &Database, app: &AppType) -> Result<Option<Provider>,
 /// 为 `None`。
 fn proxy_route_row(db: &Database, app: &AppType) -> Result<Option<Provider>, AppError> {
     let mode = mode_state(app);
+    proxy_route_row_with_state(db, app, mode)
+}
+
+fn proxy_route_row_with_state(
+    db: &Database,
+    app: &AppType,
+    mode: ModeState,
+) -> Result<Option<Provider>, AppError> {
     if !mode.is_proxy() {
         return Ok(None);
     }

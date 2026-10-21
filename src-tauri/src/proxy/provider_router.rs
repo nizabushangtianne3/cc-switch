@@ -95,7 +95,14 @@ impl ProviderRouter {
             result.push(Arc::new(current_provider.expect("checked above")));
         } else if auto_failover_enabled {
             // 故障转移开启：仅按队列顺序依次尝试（P1 → P2 → ...）
-            for provider in self.db.get_failover_queue_providers(app_type)? {
+            let db = Arc::clone(&self.db);
+            let queue_app_type = app_type.to_string();
+            let providers = tokio::task::spawn_blocking(move || {
+                db.get_failover_queue_providers(&queue_app_type)
+            })
+            .await
+            .map_err(|error| AppError::Database(format!("故障转移队列读取任务失败: {error}")))??;
+            for provider in providers {
                 if !provider_supports_failover(app_type, &provider) {
                     continue;
                 }

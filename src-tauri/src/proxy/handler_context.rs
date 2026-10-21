@@ -105,6 +105,7 @@ impl RequestContext {
         // 应用级代理配置和运行时配置一次锁读完，避免代理热路径重复获取 DB 锁。
         let (mut app_config, rectifier_config, optimizer_config, copilot_optimizer_config) = state
             .db
+            .clone()
             .get_proxy_request_configs(app_type_str)
             .await
             .map_err(|e| ProxyError::DatabaseError(e.to_string()))?;
@@ -141,9 +142,18 @@ impl RequestContext {
                 (provider, providers, provider_id, target.original_model)
             }
             None => {
-                let current_provider = crate::mode::current::provider_in_use(&state.db, &app_type)
-                    .ok()
-                    .flatten();
+                // 模式状态和当前供应商读取涉及文件/SQLite IO，移到阻塞线程池，
+                // 避免请求高峰占用 tokio worker。
+                let routing_db = state.db.clone();
+                let routing_app_type = app_type.clone();
+                let (current_provider, stack_mode) = tokio::task::spawn_blocking(move || {
+                    crate::mode::current::provider_in_use_and_stack_mode(
+                        &routing_db,
+                        &routing_app_type,
+                    )
+                })
+                .await
+                .unwrap_or((None, false));
                 let current_provider_id = current_provider
                     .as_ref()
                     .map(|provider| provider.id.clone())
@@ -158,8 +168,7 @@ impl RequestContext {
 
                 // Stack 模式不做故障转移：只发往默认那家，和故障转移关着时一样跳过熔断器选家；
                 // 队列留着，回到路由模式恢复。故障转移本来就关着时不用读模式。
-                let stack_mode = app_config.auto_failover_enabled
-                    && crate::mode::stack::stack_mode_now(&app_type);
+                let stack_mode = app_config.auto_failover_enabled && stack_mode;
                 let providers = if stack_mode {
                     app_config.auto_failover_enabled = false;
                     vec![Arc::new(

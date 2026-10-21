@@ -6,6 +6,7 @@ use crate::error::AppError;
 use crate::proxy::types::*;
 
 use super::super::{lock_conn, Database};
+use std::sync::Arc;
 
 pub(crate) const PRICING_SOURCE_RESPONSE: &str = "response";
 pub(crate) const PRICING_SOURCE_REQUEST: &str = "request";
@@ -22,6 +23,13 @@ fn validate_pricing_source(value: &str) -> Result<&str, AppError> {
         ))
     }
 }
+
+type ProxyRequestConfigs = (
+    AppProxyConfig,
+    RectifierConfig,
+    OptimizerConfig,
+    CopilotOptimizerConfig,
+);
 
 impl Database {
     // ==================== Global Proxy Config ====================
@@ -195,19 +203,55 @@ impl Database {
         }
     }
 
-    /// 一次锁内读取代理请求热路径的全部配置（带 1s TTL 缓存）。
+    /// 一次锁内读取代理请求热路径的全部配置；SQLite 读取在 blocking 线程执行，
+    /// 避免高峰请求占用 tokio worker。
     pub async fn get_proxy_request_configs(
+        self: Arc<Self>,
+        app_type: &str,
+    ) -> Result<ProxyRequestConfigs, AppError> {
+        let db = Arc::clone(&self);
+        let configs = tokio::task::spawn_blocking({
+            let app_type = app_type.to_string();
+            move || db.get_proxy_request_configs_sync(&app_type)
+        })
+        .await
+        .map_err(|e| AppError::Database(format!("Proxy config read task failed: {e}")))??;
+
+        let Some((config, rectifier_config, optimizer_config, copilot_optimizer_config)) = configs
+        else {
+            self.init_proxy_config_rows().await?;
+            return Ok((
+                AppProxyConfig {
+                    app_type: app_type.to_string(),
+                    enabled: false,
+                    auto_failover_enabled: false,
+                    max_retries: 3,
+                    streaming_first_byte_timeout: 60,
+                    streaming_idle_timeout: 120,
+                    non_streaming_timeout: 600,
+                    circuit_failure_threshold: 4,
+                    circuit_success_threshold: 2,
+                    circuit_timeout_seconds: 60,
+                    circuit_error_rate_threshold: 0.6,
+                    circuit_min_requests: 10,
+                },
+                RectifierConfig::default(),
+                OptimizerConfig::default(),
+                CopilotOptimizerConfig::default(),
+            ));
+        };
+        Ok((
+            config,
+            rectifier_config,
+            optimizer_config,
+            copilot_optimizer_config,
+        ))
+    }
+
+    fn get_proxy_request_configs_sync(
         &self,
         app_type: &str,
-    ) -> Result<
-        (
-            AppProxyConfig,
-            RectifierConfig,
-            OptimizerConfig,
-            CopilotOptimizerConfig,
-        ),
-        AppError,
-    > {
+    ) -> Result<Option<ProxyRequestConfigs>, AppError> {
         let result = {
             let conn = lock_conn!(self.conn);
             let mut stmt = conn.prepare_cached(
@@ -242,39 +286,16 @@ impl Database {
 
         let (config, runtime_configs) = result;
         match config {
-            Err(rusqlite::Error::QueryReturnedNoRows) => {
-                self.init_proxy_config_rows().await?;
-                let (rectifier_config, optimizer_config, copilot_optimizer_config) =
-                    runtime_configs.unwrap_or_default();
-                Ok((
-                    AppProxyConfig {
-                        app_type: app_type.to_string(),
-                        enabled: false,
-                        auto_failover_enabled: false,
-                        max_retries: 3,
-                        streaming_first_byte_timeout: 60,
-                        streaming_idle_timeout: 120,
-                        non_streaming_timeout: 600,
-                        circuit_failure_threshold: 4,
-                        circuit_success_threshold: 2,
-                        circuit_timeout_seconds: 60,
-                        circuit_error_rate_threshold: 0.6,
-                        circuit_min_requests: 10,
-                    },
-                    rectifier_config,
-                    optimizer_config,
-                    copilot_optimizer_config,
-                ))
-            }
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             config => {
                 let (rectifier_config, optimizer_config, copilot_optimizer_config) =
                     runtime_configs.unwrap_or_default();
-                Ok((
+                Ok(Some((
                     config?,
                     rectifier_config,
                     optimizer_config,
                     copilot_optimizer_config,
-                ))
+                )))
             }
         }
     }
@@ -1041,6 +1062,37 @@ mod tests {
         assert!(
             heartbeat < Duration::from_millis(400),
             "健康写库不得阻塞异步运行时（实际 {heartbeat:?}）"
+        );
+        Ok(())
+    }
+
+    // 代理请求热路径的配置读取同样不能占用 tokio worker。
+    #[tokio::test]
+    async fn proxy_request_config_read_does_not_block_the_async_runtime() -> Result<(), AppError> {
+        use std::thread;
+        use std::time::{Duration, Instant};
+
+        let db = std::sync::Arc::new(Database::memory()?);
+        let (locked_tx, locked_rx) = std::sync::mpsc::channel();
+        let blocker_db = db.clone();
+        let blocker = thread::spawn(move || {
+            let _guard = blocker_db.conn.lock().expect("占锁失败");
+            locked_tx.send(()).expect("通知占锁失败");
+            thread::sleep(Duration::from_millis(500));
+        });
+        locked_rx.recv().expect("接收占锁通知失败");
+
+        let start = Instant::now();
+        let reader = tokio::spawn(async move { db.get_proxy_request_configs("claude").await });
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let heartbeat = start.elapsed();
+
+        blocker.join().expect("占锁线程 panic");
+        reader.await.expect("配置读取任务 panic")?;
+
+        assert!(
+            heartbeat < Duration::from_millis(400),
+            "代理配置读取不得阻塞异步运行时（实际 {heartbeat:?}）"
         );
         Ok(())
     }

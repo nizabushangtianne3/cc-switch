@@ -1425,6 +1425,96 @@ mod tests {
         mock_handle.abort();
     }
 
+    /// 纯透传路径必须复用客户端的原始 JSON 字节；空格、键序等缓存敏感
+    /// 形状不能在 handler 里 parse -> Value -> serialize 时被归一化。
+    #[tokio::test]
+    async fn claude_messages_passthrough_preserves_request_bytes() {
+        let captured = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+        let capture_handler = {
+            let captured = captured.clone();
+            move |request: axum::extract::Request| {
+                let captured = captured.clone();
+                async move {
+                    let (_parts, body) = request.into_parts();
+                    let body = axum::body::to_bytes(body, 1024 * 1024)
+                        .await
+                        .expect("read mock request body");
+                    captured.lock().await.push(body.to_vec());
+
+                    (
+                        StatusCode::OK,
+                        [(header::CONTENT_TYPE, "application/json")],
+                        r#"{"id":"msg_raw","type":"message","role":"assistant","model":"claude-3-5-haiku-20241022","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}"#,
+                    )
+                }
+            }
+        };
+        let mock_app = Router::new().route("/v1/messages", post(capture_handler));
+        let mock_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind mock upstream");
+        let mock_addr = mock_listener.local_addr().expect("mock upstream address");
+        let mock_handle = tokio::spawn(async move {
+            axum::serve(mock_listener, mock_app)
+                .await
+                .expect("serve mock upstream");
+        });
+
+        let db = Arc::new(Database::memory().expect("memory database"));
+        let provider = Provider::with_id(
+            "claude-raw-passthrough".to_string(),
+            "Claude Raw Passthrough".to_string(),
+            json!({
+                "env": {
+                    "ANTHROPIC_BASE_URL": format!("http://{mock_addr}"),
+                    "ANTHROPIC_AUTH_TOKEN": "sk-test-raw"
+                }
+            }),
+            None,
+        );
+        db.save_provider("claude", &provider)
+            .expect("save raw passthrough provider");
+        db.set_current_provider("claude", &provider.id)
+            .expect("select raw passthrough provider");
+
+        let proxy = ProxyServer::new(
+            ProxyConfig {
+                listen_port: 0,
+                ..ProxyConfig::default()
+            },
+            db,
+            None,
+        );
+        let proxy_info = proxy.start().await.expect("start test proxy");
+        let client = reqwest::Client::new();
+        const RAW_BODY: &str = r#"{
+  "model": "claude-3-5-haiku-20241022",
+  "max_tokens": 64,
+  "messages": [{ "role": "user", "content": "hi" }]
+}"#;
+
+        let response = client
+            .post(format!("http://127.0.0.1:{}/v1/messages", proxy_info.port))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(RAW_BODY)
+            .send()
+            .await
+            .expect("send raw claude request");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let requests = captured.lock().await;
+        assert_eq!(requests.len(), 1);
+        assert_eq!(
+            String::from_utf8(requests[0].clone()).expect("upstream body"),
+            RAW_BODY,
+            "unchanged request body must be forwarded byte-for-byte"
+        );
+        drop(requests);
+
+        proxy.stop().await.expect("stop test proxy");
+        mock_handle.abort();
+    }
+
     /// Claude 流式路径端到端：stream=true → SSE 透传 → 事件序列完整送达客户端。
     #[tokio::test]
     async fn claude_messages_streaming_passes_events_through() {
@@ -1931,7 +2021,7 @@ mod tests {
             &http::Method::POST,
             headers,
             &extensions,
-            b"{}".to_vec(),
+            bytes::Bytes::from_static(br#"{}"#),
             std::time::Duration::from_secs(10),
             None,
         )

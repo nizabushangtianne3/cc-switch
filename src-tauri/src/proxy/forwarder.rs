@@ -49,6 +49,14 @@ const PROXY_AUTH_PLACEHOLDER: &str = "PROXY_MANAGED";
 /// 跨请求生命周期共享的 Provider。避免在上下文、成功结果和错误回填间深拷贝配置。
 pub type SharedProvider = Arc<Provider>;
 
+/// 已解码但未被 Stack 路由改写的原始请求体。
+///
+/// handler 只有在 body 仍与客户端发来的字节一致时才放入扩展；forwarder 只有在
+/// 整条改写管道都没把请求体变成 Owned 时才复用它，避免 JSON Value 二次序列化。
+pub(crate) struct RawRequestBody {
+    pub(crate) bytes: Bytes,
+}
+
 /// Whether the upstream belongs to the OpenCode gateway (`opencode.ai`).
 ///
 /// That gateway (<https://opencode.ai/docs/go/>) expects clients to identify
@@ -2924,14 +2932,23 @@ impl RequestForwarder {
             ordered_headers.insert(name, value);
         }
 
-        // 序列化请求体。GET/HEAD 是 idempotent/safe 方法，按 HTTP 语义不应携带 body；
+        // 请求体没有被任何改写触碰时，直接复用客户端发来的字节，跳过
+        // JSON Value -> bytes 的二次序列化；大请求体这里是完整转发的主要 CPU 成本。
+        let raw_body_bytes = matches!(&filtered_body, Cow::Borrowed(_))
+            .then(|| extensions.get::<Arc<RawRequestBody>>())
+            .flatten()
+            .map(|raw| raw.bytes.clone());
+
+        // GET/HEAD 是 idempotent/safe 方法，按 HTTP 语义不应携带 body；
         // 强行附带 JSON body 会让某些上游（如 Google Gemini 的 models.list）拒绝请求。
-        let body_bytes = if matches!(method, &http::Method::GET | &http::Method::HEAD) {
-            Vec::new()
+        let body_bytes: Bytes = if matches!(method, &http::Method::GET | &http::Method::HEAD) {
+            Bytes::new()
+        } else if let Some(bytes) = raw_body_bytes {
+            bytes
         } else {
-            serde_json::to_vec(filtered_body.as_ref()).map_err(|e| {
+            Bytes::from(serde_json::to_vec(filtered_body.as_ref()).map_err(|e| {
                 ProxyError::Internal(format!("Failed to serialize request body: {e}"))
-            })?
+            })?)
         };
 
         // 确保 content-type 存在

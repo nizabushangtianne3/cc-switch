@@ -108,9 +108,9 @@ pub enum ProxyResponse {
 
 /// 裸写连接的响应体：框架读完时把连接归还 keep-alive 池。
 ///
-/// 归还与否由 hyper 判定（`sender.is_ready()`），本类型只负责在正确的
-/// 时机（`poll_frame` 返回 None 或 body 被丢弃）触发；框架未读完就
-/// 中断的连接 hyper 不会标记 ready，归还函数内部直接拒绝入池。
+/// Linux 上连接驱动可能比 body reader 晚一轮才把 sender 置 ready。body
+/// 读完但尚未 ready 时先返回 Pending，等 hyper 驱动推进后再归还；连接
+/// close / 中断时 `poll_ready` 会报错，连接随各半边落地正常关闭。
 pub(crate) struct PoolBody {
     inner: Pin<Box<Incoming>>,
     release: Option<PoolRelease>,
@@ -124,21 +124,23 @@ struct PoolRelease {
 }
 
 impl PoolRelease {
-    /// body 框架完整结束：hyper 确认可复用才入池；不可复用（close /
-    /// body 未读完就中断）时丢弃，连接随各半边落地正常关闭。
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), hyper::Error>> {
+        self.sender.poll_ready(cx)
+    }
+
+    /// 只在 hyper 确认可复用时入池；不可复用（close / body 未读完就中断）
+    /// 时丢弃，连接随各半边落地正常关闭。
     fn release(self) {
-        upstream_pool::put(
-            self.key,
-            upstream_pool::PooledUpstream::new(self.write_half, self.sender),
-        );
+        let entry = upstream_pool::PooledUpstream::new(self.write_half, self.sender);
+        if entry.is_reusable() {
+            upstream_pool::put(self.key, entry);
+        }
     }
 }
 
 impl PoolBody {
-    fn release(&mut self) {
-        if let Some(release) = self.release.take() {
-            release.release();
-        }
+    fn drop_release(&mut self) {
+        self.release = None;
     }
 }
 
@@ -153,11 +155,28 @@ impl http_body::Body for PoolBody {
         let this = self.get_mut();
         let frame = ready!(this.inner.as_mut().poll_frame(cx));
         match &frame {
-            // body 框架完整结束：归还池（hyper 判定不可复用时拒绝入池）
-            None => this.release(),
+            None => {
+                let release_result = match this.release.as_mut() {
+                    Some(release) => match release.poll_ready(cx) {
+                        Poll::Ready(result) => Some(result),
+                        Poll::Pending => return Poll::Pending,
+                    },
+                    None => None,
+                };
+                match release_result {
+                    Some(Ok(())) => {
+                        if let Some(release) = this.release.take() {
+                            release.release();
+                        }
+                    }
+                    // 连接已坏：显式放弃复用，避免半死连接被再次取出
+                    Some(Err(_)) => this.drop_release(),
+                    None => {}
+                }
+            }
             // 连接已坏：显式放弃复用，避免半死连接被再次取出
             Some(Err(_)) => {
-                let _ = this.release.take();
+                this.drop_release();
             }
             _ => {}
         }
@@ -176,8 +195,8 @@ impl http_body::Body for PoolBody {
 impl Drop for PoolBody {
     fn drop(&mut self) {
         // 未走到 poll_frame(None) 就被丢弃（客户端断开、上游错误）时，
-        // hyper 不会标记 ready，put 内部直接拒绝入池，连接正常关闭。
-        self.release();
+        // 不等待 driver，也不能把连接送回池，直接正常关闭。
+        self.drop_release();
     }
 }
 
@@ -352,7 +371,7 @@ pub async fn send_request(
     method: &http::Method,
     headers: http::HeaderMap,
     original_extensions: &http::Extensions,
-    body: Vec<u8>,
+    body: Bytes,
     timeout: std::time::Duration,
     proxy_url: Option<&str>,
 ) -> Result<ProxyResponse, ProxyError> {
@@ -396,7 +415,7 @@ pub async fn send_request(
     let mut req = http::Request::builder()
         .method(method.clone())
         .uri(&uri)
-        .body(http_body_util::Full::new(Bytes::from(body)))
+        .body(http_body_util::Full::new(body))
         .map_err(|e| ProxyError::ForwardFailed(format!("Failed to build request: {e}")))?;
 
     *req.headers_mut() = headers;
@@ -1209,7 +1228,7 @@ mod tests {
                 &http::Method::POST,
                 headers.clone(),
                 &extensions,
-                b"{}".to_vec(),
+                Bytes::from_static(br#"{}"#),
                 std::time::Duration::from_secs(10),
                 None,
             )
@@ -1243,7 +1262,7 @@ mod tests {
                 &http::Method::POST,
                 headers.clone(),
                 &extensions,
-                b"{}".to_vec(),
+                Bytes::from_static(br#"{}"#),
                 std::time::Duration::from_secs(10),
                 None,
             )
