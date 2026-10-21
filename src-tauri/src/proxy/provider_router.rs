@@ -58,6 +58,7 @@ impl ProviderRouter {
             crate::mode::current::provider_in_use(&self.db, &app_enum)
                 .ok()
                 .flatten()
+                .map(std::sync::Arc::new)
         });
         let auto_failover_enabled = match self.db.get_proxy_config_for_app(app_type).await {
             Ok(config) => config.auto_failover_enabled,
@@ -76,7 +77,7 @@ impl ProviderRouter {
     pub async fn select_providers_with_current(
         &self,
         app_type: &str,
-        current_provider: Option<Provider>,
+        current_provider: Option<std::sync::Arc<Provider>>,
         auto_failover_enabled: bool,
     ) -> Result<Vec<Arc<Provider>>, AppError> {
         let mut result = Vec::new();
@@ -92,7 +93,7 @@ impl ProviderRouter {
             // Keep it as a single route even if an old failover setting remains
             // enabled; retrying would reuse its inbound token for another card.
             total_providers = 1;
-            result.push(Arc::new(current_provider.expect("checked above")));
+            result.push(current_provider.expect("checked above"));
         } else if auto_failover_enabled {
             // 故障转移开启：仅按队列顺序依次尝试（P1 → P2 → ...）
             let db = Arc::clone(&self.db);
@@ -121,7 +122,7 @@ impl ProviderRouter {
             // 故障转移关闭：仅使用当前供应商，跳过熔断器检查
             if let Some(current) = current_provider {
                 total_providers = 1;
-                result.push(Arc::new(current));
+                result.push(current);
             }
         }
 

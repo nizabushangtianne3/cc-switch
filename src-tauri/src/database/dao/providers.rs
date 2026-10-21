@@ -5,6 +5,7 @@ use crate::settings::CustomEndpoint;
 use indexmap::IndexMap;
 use rusqlite::{params, OptionalExtension};
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 const FAILOVER_QUEUE_PROVIDER_TTL: Duration = Duration::from_secs(1);
@@ -19,7 +20,7 @@ pub(crate) struct CachedFailoverQueueProviders {
 pub(crate) struct CachedProviderById {
     generation: u64,
     cached_at: Instant,
-    provider: Option<Provider>,
+    provider: Option<Arc<Provider>>,
 }
 
 type OmoProviderRow = (
@@ -397,6 +398,16 @@ impl Database {
         id: &str,
         app_type: &str,
     ) -> Result<Option<Provider>, AppError> {
+        Ok(self
+            .get_shared_provider_by_id(id, app_type)?
+            .map(|provider| provider.as_ref().clone()))
+    }
+
+    pub fn get_shared_provider_by_id(
+        &self,
+        id: &str,
+        app_type: &str,
+    ) -> Result<Option<Arc<Provider>>, AppError> {
         let generation = self
             .provider_table_generation
             .load(std::sync::atomic::Ordering::SeqCst);
@@ -413,7 +424,7 @@ impl Database {
             }
         }
 
-        let provider = self.get_provider_by_id_sync(id, app_type)?;
+        let provider = self.get_provider_by_id_sync(id, app_type)?.map(Arc::new);
         {
             let mut cache = self
                 .provider_row_cache
@@ -1442,6 +1453,29 @@ mod ensure_official_seed_tests {
             .get_provider_by_id(&provider.id, "claude")?
             .expect("refreshed provider");
         assert_eq!(refreshed.settings_config["original"], false);
+
+        Ok(())
+    }
+
+    #[test]
+    fn shared_provider_by_id_reuses_the_cached_arc() -> Result<(), AppError> {
+        let db = Database::memory()?;
+        let provider = Provider::with_id(
+            "shared-provider".to_string(),
+            "Shared Provider".to_string(),
+            serde_json::json!({}),
+            None,
+        );
+        db.save_provider("claude", &provider)?;
+
+        let first = db
+            .get_shared_provider_by_id(&provider.id, "claude")?
+            .expect("first provider");
+        let second = db
+            .get_shared_provider_by_id(&provider.id, "claude")?
+            .expect("second provider");
+
+        assert!(std::sync::Arc::ptr_eq(&first, &second));
 
         Ok(())
     }

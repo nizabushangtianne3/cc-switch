@@ -10,6 +10,8 @@ use crate::error::AppError;
 use crate::live::engine::DeviceStore;
 use crate::provider::Provider;
 
+use std::sync::Arc;
+
 use super::state::{self, ModeState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -54,8 +56,8 @@ pub fn provider_for(
     purpose: Purpose,
 ) -> Result<Option<String>, AppError> {
     if purpose == Purpose::InUse {
-        if let Some(route) = proxy_route_row(db, app)? {
-            return Ok(Some(route.id));
+        if let Some(route) = proxy_route_row_shared(db, app)? {
+            return Ok(Some(route.id.clone()));
         }
     }
     crate::settings::get_effective_current_provider(db, app)
@@ -63,14 +65,21 @@ pub fn provider_for(
 
 /// 正在用的那一行（见 [`Purpose::InUse`]）。
 pub fn provider_in_use(db: &Database, app: &AppType) -> Result<Option<Provider>, AppError> {
+    Ok(provider_in_use_shared(db, app)?.map(|provider| provider.as_ref().clone()))
+}
+
+fn provider_in_use_shared(db: &Database, app: &AppType) -> Result<Option<Arc<Provider>>, AppError> {
     let mode = mode_state(app);
-    provider_in_use_with_state(db, app, mode)
+    provider_in_use_shared_with_state(db, app, mode)
 }
 
 /// 请求热路径的一次读取版本：模式状态和 Stack 开关来自同一个状态快照。
-pub fn provider_in_use_and_stack_mode(db: &Database, app: &AppType) -> (Option<Provider>, bool) {
+pub fn provider_in_use_and_stack_mode(
+    db: &Database,
+    app: &AppType,
+) -> (Option<Arc<Provider>>, bool) {
     if !app.has_route_mode() {
-        return (direct_provider(db, app).unwrap_or(None), false);
+        return (direct_provider_shared(db, app).unwrap_or(None), false);
     }
 
     let (mode, stack_mode) = state::routing_state(&DeviceStore::for_device(), app.as_str())
@@ -78,42 +87,33 @@ pub fn provider_in_use_and_stack_mode(db: &Database, app: &AppType) -> (Option<P
             log::warn!("读取 {} 的路由状态失败，按直连处理: {err}", app.as_str());
             (ModeState::default(), false)
         });
-    let provider = provider_in_use_with_state(db, app, mode).unwrap_or(None);
+    let provider = provider_in_use_shared_with_state(db, app, mode).unwrap_or(None);
     (provider, stack_mode)
 }
 
-/// 代理模式下代理路由那一行；不在代理模式、或者路由那家在库里不存在（按直连处理）时
-/// 为 `None`。
-fn provider_in_use_with_state(
+fn provider_in_use_shared_with_state(
     db: &Database,
     app: &AppType,
     mode: ModeState,
-) -> Result<Option<Provider>, AppError> {
-    match proxy_route_row_with_state(db, app, mode)? {
+) -> Result<Option<Arc<Provider>>, AppError> {
+    match proxy_route_row_shared_with_state(db, app, mode)? {
         Some(route) => Ok(Some(route)),
-        None => direct_provider(db, app),
+        None => direct_provider_shared(db, app),
     }
 }
 
-/// 代理模式下代理路由那一行；不在代理模式、或者路由那家在库里不存在（按直连处理）时
-/// 为 `None`。
-fn proxy_route_row(db: &Database, app: &AppType) -> Result<Option<Provider>, AppError> {
-    let mode = mode_state(app);
-    proxy_route_row_with_state(db, app, mode)
-}
-
-fn proxy_route_row_with_state(
+fn proxy_route_row_shared_with_state(
     db: &Database,
     app: &AppType,
     mode: ModeState,
-) -> Result<Option<Provider>, AppError> {
+) -> Result<Option<Arc<Provider>>, AppError> {
     if !mode.is_proxy() {
         return Ok(None);
     }
     let Some(route) = mode.proxy_route else {
         return Ok(None);
     };
-    let row = db.get_provider_by_id(&route, app.as_str())?;
+    let row = db.get_shared_provider_by_id(&route, app.as_str())?;
     if row.is_none() {
         log::warn!(
             "{} 的代理路由 {route} 在数据库中不存在，按直连指针处理",
@@ -123,10 +123,19 @@ fn proxy_route_row_with_state(
     Ok(row)
 }
 
+fn proxy_route_row_shared(db: &Database, app: &AppType) -> Result<Option<Arc<Provider>>, AppError> {
+    let mode = mode_state(app);
+    proxy_route_row_shared_with_state(db, app, mode)
+}
+
 /// 直连指针指向的那一行。
 pub fn direct_provider(db: &Database, app: &AppType) -> Result<Option<Provider>, AppError> {
+    Ok(direct_provider_shared(db, app)?.map(|provider| provider.as_ref().clone()))
+}
+
+fn direct_provider_shared(db: &Database, app: &AppType) -> Result<Option<Arc<Provider>>, AppError> {
     match provider_for(db, app, Purpose::Direct)? {
-        Some(id) => db.get_provider_by_id(&id, app.as_str()),
+        Some(id) => db.get_shared_provider_by_id(&id, app.as_str()),
         None => Ok(None),
     }
 }

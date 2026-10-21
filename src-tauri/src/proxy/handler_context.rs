@@ -171,9 +171,7 @@ impl RequestContext {
                 let stack_mode = app_config.auto_failover_enabled && stack_mode;
                 let providers = if stack_mode {
                     app_config.auto_failover_enabled = false;
-                    vec![Arc::new(
-                        current_provider.ok_or(ProxyError::NoProvidersConfigured)?,
-                    )]
+                    vec![current_provider.ok_or(ProxyError::NoProvidersConfigured)?]
                 } else {
                     // 使用共享的 ProviderRouter 选择 Provider（熔断器状态跨请求保持）
                     // 注意：只在这里调用一次，结果传递给 forwarder，避免重复消耗 HalfOpen 名额
