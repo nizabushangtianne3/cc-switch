@@ -703,7 +703,8 @@ async fn handle_claude_transform(
         aggregate_codex_oauth_responses_sse && hosted_web_search_max_uses.is_some();
     let (mut response_headers, direct_anthropic_response, upstream_response) =
         if enforce_codex_web_search_limit_while_aggregating {
-            if let Some(encoding) = get_content_encoding(response.headers()) {
+            let parts = response.into_parts();
+            if let Some(encoding) = get_content_encoding(&parts.headers) {
                 // Transformed requests advertise `accept-encoding: identity`.
                 // If an upstream ignores that contract, fail closed rather than
                 // buffering a compressed stream and losing early cancellation.
@@ -711,9 +712,9 @@ async fn handle_claude_transform(
                     "Cannot enforce Anthropic WebSearch max_uses on a compressed Codex SSE response ({encoding})"
                 )));
             }
-            let response_headers = response.headers().clone();
+            let response_headers = parts.headers;
             let message = responses_sse_stream_to_anthropic_message(
-                response.bytes_stream(),
+                parts.body,
                 hosted_web_search_name.clone(),
                 hosted_web_search_max_uses,
                 body_timeout,
