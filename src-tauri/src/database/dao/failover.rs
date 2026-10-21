@@ -18,6 +18,14 @@ pub struct FailoverQueueItem {
 }
 
 impl Database {
+    pub(crate) fn invalidate_failover_queue_cache(&self) {
+        self.provider_queue_generation
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if let Ok(mut cache) = self.failover_queue_cache.lock() {
+            cache.clear();
+        }
+    }
+
     /// 获取故障转移队列（按 sort_index 排序）
     pub fn get_failover_queue(&self, app_type: &str) -> Result<Vec<FailoverQueueItem>, AppError> {
         let conn = lock_conn!(self.conn);
@@ -57,6 +65,7 @@ impl Database {
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
 
+        self.invalidate_failover_queue_cache();
         Ok(())
     }
 
@@ -84,6 +93,7 @@ impl Database {
 
         log::info!("已从故障转移队列移除供应商 {provider_id} ({app_type}), 并清除其健康状态");
 
+        self.invalidate_failover_queue_cache();
         Ok(())
     }
 
@@ -97,6 +107,7 @@ impl Database {
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
 
+        self.invalidate_failover_queue_cache();
         Ok(())
     }
 

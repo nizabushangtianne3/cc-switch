@@ -45,6 +45,9 @@ use crate::config::get_app_config_dir;
 use crate::error::AppError;
 use rusqlite::{hooks::Action, Connection};
 use serde::Serialize;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::sync::Mutex;
 
 // DAO 方法通过 impl Database 提供，无需额外导出
@@ -80,12 +83,21 @@ pub struct Database {
     /// 请求日志总数缓存，见 `services::usage_stats::LogCountCache`
     pub(crate) log_count_cache: Mutex<Option<crate::services::usage_stats::LogCountCache>>,
     pub(crate) proxy_request_config_cache: Mutex<dao::proxy::ProxyRequestConfigCache>,
+    pub(crate) failover_queue_cache:
+        Mutex<HashMap<String, dao::providers::CachedFailoverQueueProviders>>,
+    pub(crate) provider_queue_generation: Arc<AtomicU64>,
 }
 
-fn register_db_change_hook(conn: &Connection) {
+fn register_db_change_hook_with_provider_generation(
+    conn: &Connection,
+    provider_queue_generation: Arc<AtomicU64>,
+) {
     conn.update_hook(Some(
-        |action: Action, _database: &str, table: &str, _row_id: i64| match action {
+        move |action: Action, _database: &str, table: &str, _row_id: i64| match action {
             Action::SQLITE_INSERT | Action::SQLITE_UPDATE | Action::SQLITE_DELETE => {
+                if table == "providers" {
+                    provider_queue_generation.fetch_add(1, Ordering::SeqCst);
+                }
                 crate::services::webdav_auto_sync::notify_db_changed(table);
                 crate::services::s3_auto_sync::notify_db_changed(table);
             }
@@ -116,12 +128,18 @@ impl Database {
             conn.execute("PRAGMA auto_vacuum = INCREMENTAL;", [])
                 .map_err(|e| AppError::Database(e.to_string()))?;
         }
-        register_db_change_hook(&conn);
+        let provider_queue_generation = Arc::new(AtomicU64::new(0));
+        register_db_change_hook_with_provider_generation(
+            &conn,
+            Arc::clone(&provider_queue_generation),
+        );
 
         let db = Self {
             conn: Mutex::new(conn),
             log_count_cache: Mutex::new(None),
             proxy_request_config_cache: Mutex::new(dao::proxy::ProxyRequestConfigCache::default()),
+            failover_queue_cache: Mutex::new(HashMap::new()),
+            provider_queue_generation,
         };
         db.create_tables()?;
 
@@ -192,12 +210,18 @@ impl Database {
             .map_err(|e| AppError::Database(e.to_string()))?;
         conn.execute("PRAGMA auto_vacuum = INCREMENTAL;", [])
             .map_err(|e| AppError::Database(e.to_string()))?;
-        register_db_change_hook(&conn);
+        let provider_queue_generation = Arc::new(AtomicU64::new(0));
+        register_db_change_hook_with_provider_generation(
+            &conn,
+            Arc::clone(&provider_queue_generation),
+        );
 
         let db = Self {
             conn: Mutex::new(conn),
             log_count_cache: Mutex::new(None),
             proxy_request_config_cache: Mutex::new(dao::proxy::ProxyRequestConfigCache::default()),
+            failover_queue_cache: Mutex::new(HashMap::new()),
+            provider_queue_generation,
         };
         db.create_tables()?;
         db.ensure_model_pricing_seeded()?;

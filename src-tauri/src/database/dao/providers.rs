@@ -5,6 +5,15 @@ use crate::settings::CustomEndpoint;
 use indexmap::IndexMap;
 use rusqlite::{params, OptionalExtension};
 use std::collections::{HashMap, HashSet};
+use std::time::{Duration, Instant};
+
+const FAILOVER_QUEUE_PROVIDER_TTL: Duration = Duration::from_secs(1);
+
+pub(crate) struct CachedFailoverQueueProviders {
+    generation: u64,
+    cached_at: Instant,
+    providers: Vec<Provider>,
+}
 
 type OmoProviderRow = (
     String,
@@ -234,8 +243,48 @@ impl Database {
 
     /// 读取故障转移队列中的完整 Provider，顺序与前端队列一致。
     ///
-    /// 队列路由和队列展示都不消费 `custom_endpoints`，这里保持轻量不查 endpoint 表。
+    /// 路由热路径使用 1 秒快照；providers 表任何行变化都会由数据库 hook 提升
+    /// generation，因此 DAO 写入能立即生效。TTL 只兜住备份导入等外部写入。
     pub fn get_failover_queue_providers(&self, app_type: &str) -> Result<Vec<Provider>, AppError> {
+        let read_generation = self
+            .provider_queue_generation
+            .load(std::sync::atomic::Ordering::SeqCst);
+        {
+            let cache = self.failover_queue_cache.lock().map_err(|e| {
+                AppError::Database(format!("Failover queue cache lock failed: {e}"))
+            })?;
+            if let Some(entry) = cache.get(app_type).filter(|entry| {
+                entry.generation == read_generation
+                    && entry.cached_at.elapsed() < FAILOVER_QUEUE_PROVIDER_TTL
+            }) {
+                return Ok(entry.providers.clone());
+            }
+        }
+
+        let providers = self.get_failover_queue_providers_sync(app_type)?;
+        {
+            let mut cache = self.failover_queue_cache.lock().map_err(|e| {
+                AppError::Database(format!("Failover queue cache lock failed: {e}"))
+            })?;
+            if self
+                .provider_queue_generation
+                .load(std::sync::atomic::Ordering::SeqCst)
+                == read_generation
+            {
+                cache.insert(
+                    app_type.to_string(),
+                    CachedFailoverQueueProviders {
+                        generation: read_generation,
+                        cached_at: Instant::now(),
+                        providers: providers.clone(),
+                    },
+                );
+            }
+        }
+        Ok(providers)
+    }
+
+    fn get_failover_queue_providers_sync(&self, app_type: &str) -> Result<Vec<Provider>, AppError> {
         let conn = lock_conn!(self.conn);
         let mut stmt = conn.prepare_cached(
             "SELECT id, name, settings_config, website_url, category, created_at, sort_index, notes, icon, icon_color, meta, in_failover_queue
@@ -527,6 +576,7 @@ impl Database {
         }
 
         tx.commit().map_err(|e| AppError::Database(e.to_string()))?;
+        self.invalidate_failover_queue_cache();
         Ok(())
     }
 
@@ -626,6 +676,7 @@ impl Database {
         .map_err(|e| AppError::Database(e.to_string()))?;
 
         tx.commit().map_err(|e| AppError::Database(e.to_string()))?;
+        self.invalidate_failover_queue_cache();
         Ok(())
     }
 
@@ -636,6 +687,7 @@ impl Database {
             params![id, app_type],
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
+        self.invalidate_failover_queue_cache();
         Ok(())
     }
 
@@ -679,6 +731,7 @@ impl Database {
             ],
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
+        self.invalidate_failover_queue_cache();
         Ok(())
     }
 
@@ -810,7 +863,9 @@ impl Database {
             .map_err(|e| AppError::Database(e.to_string()))?;
         }
 
-        tx.commit().map_err(|e| AppError::Database(e.to_string()))
+        tx.commit().map_err(|e| AppError::Database(e.to_string()))?;
+        self.invalidate_failover_queue_cache();
+        Ok(())
     }
 
     pub fn clear_omo_provider_current_by_category(
@@ -1123,6 +1178,8 @@ mod ensure_official_seed_tests {
         Database, CLAUDE_DESKTOP_OFFICIAL_PROVIDER_ID, CODEX_OFFICIAL_PROVIDER_ID,
         GROKBUILD_OFFICIAL_PROVIDER_ID,
     };
+    use crate::error::AppError;
+    use crate::provider::Provider;
 
     #[test]
     fn ensure_inserts_when_missing() {
@@ -1233,5 +1290,53 @@ mod ensure_official_seed_tests {
         let result =
             db.ensure_official_seed_by_id(CLAUDE_DESKTOP_OFFICIAL_PROVIDER_ID, AppType::Claude);
         assert!(result.is_err(), "(id, app_type) mismatch should be Err");
+    }
+
+    #[test]
+    fn failover_queue_providers_are_cached_until_a_provider_write_invalidates_them(
+    ) -> Result<(), AppError> {
+        use std::thread;
+        use std::time::{Duration, Instant};
+
+        let db = std::sync::Arc::new(Database::memory()?);
+        let provider = Provider::with_id(
+            "failover-cache".to_string(),
+            "Failover Cache".to_string(),
+            serde_json::json!({}),
+            None,
+        );
+        db.save_provider("claude", &provider)?;
+        db.add_to_failover_queue("claude", &provider.id)?;
+
+        let initial = db.get_failover_queue_providers("claude")?;
+        assert_eq!(initial.len(), 1);
+        assert_eq!(initial[0].id, provider.id);
+
+        let (locked_tx, locked_rx) = std::sync::mpsc::channel();
+        let blocker_db = std::sync::Arc::clone(&db);
+        let blocker = thread::spawn(move || {
+            let _guard = blocker_db.conn.lock().expect("占锁失败");
+            locked_tx.send(()).expect("通知占锁失败");
+            thread::sleep(Duration::from_millis(500));
+        });
+        locked_rx.recv().expect("接收占锁通知失败");
+
+        let start = Instant::now();
+        let cached = db.get_failover_queue_providers("claude")?;
+        let elapsed = start.elapsed();
+        blocker.join().expect("占锁线程 panic");
+
+        assert!(
+            elapsed < Duration::from_millis(400),
+            "缓存命中的队列读取不得等待数据库锁（实际 {elapsed:?}）"
+        );
+        assert_eq!(cached.len(), 1);
+        assert_eq!(cached[0].id, provider.id);
+
+        db.remove_from_failover_queue("claude", &provider.id)?;
+        let refreshed = db.get_failover_queue_providers("claude")?;
+        assert!(refreshed.is_empty());
+
+        Ok(())
     }
 }
