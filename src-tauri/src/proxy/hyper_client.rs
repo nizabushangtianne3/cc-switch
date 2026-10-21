@@ -12,6 +12,7 @@ use http_body_util::BodyExt;
 use hyper::body::{Frame, Incoming};
 use hyper_rustls::HttpsConnectorBuilder;
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
+use smallvec::SmallVec;
 use std::pin::Pin;
 use std::sync::{Arc, OnceLock};
 use std::task::{ready, Context, Poll};
@@ -809,8 +810,9 @@ fn build_raw_head(
 
     // HeaderMap does not preserve the original wire order. Match rewritten values
     // against the snapshot first, then append proxy-added headers and extra values.
-    let values: Vec<(&http::header::HeaderName, &http::HeaderValue)> = headers.iter().collect();
-    let mut used = vec![false; values.len()];
+    let values: SmallVec<[(&http::header::HeaderName, &http::HeaderValue); 16]> =
+        headers.iter().collect();
+    let mut used = SmallVec::<[bool; 16]>::from_elem(false, values.len());
 
     for original in &original_cases.cases {
         let selected = values
