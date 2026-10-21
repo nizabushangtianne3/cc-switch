@@ -18,6 +18,7 @@ use axum::http::{header::HeaderMap, HeaderName};
 use axum::response::{IntoResponse, Response};
 use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
+use serde::Deserialize;
 use serde_json::Value;
 use std::{
     sync::{
@@ -413,6 +414,17 @@ impl SseUsageCollector {
     }
 }
 
+#[derive(Deserialize)]
+struct SseTypeProbe<'a> {
+    #[serde(rename = "type", borrow)]
+    r#type: Option<&'a str>,
+}
+
+/// 只读取顶层 `type`，避免高频 chunk 构建完整 JSON Value。
+fn sse_data_type(data: &str) -> Option<&str> {
+    serde_json::from_str::<SseTypeProbe<'_>>(data).ok()?.r#type
+}
+
 /// 判断一行 SSE data 是否标志着模型开始输出（口径同 Sub2API 的 semantic TTFT）：
 /// 跳过只宣告响应开始或保活的元数据事件，其余非空事件都算。Chat Completions /
 /// Gemini 的分块没有事件类型，一律算。
@@ -428,11 +440,11 @@ fn sse_data_starts_output(event_name: Option<&str>, data: &str) -> bool {
         );
     }
 
-    let parsed = serde_json::from_str::<Value>(data).ok();
-    let event_type = parsed
-        .as_ref()
-        .and_then(|value| value.get("type"))
-        .and_then(Value::as_str);
+    let event_type = if data.starts_with('{') {
+        sse_data_type(data)
+    } else {
+        None
+    };
     !matches!(
         event_type,
         Some("response.created") | Some("response.in_progress") | Some("ping") | Some("keepalive")
