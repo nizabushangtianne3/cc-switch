@@ -14,7 +14,7 @@ const PROVIDER_BY_ID_TTL: Duration = Duration::from_secs(1);
 pub(crate) struct CachedFailoverQueueProviders {
     generation: u64,
     cached_at: Instant,
-    providers: Vec<Provider>,
+    providers: Vec<Arc<Provider>>,
 }
 
 pub(crate) struct CachedProviderById {
@@ -253,7 +253,10 @@ impl Database {
     ///
     /// 路由热路径使用 1 秒快照；providers 表任何行变化都会由数据库 hook 提升
     /// generation，因此 DAO 写入能立即生效。TTL 只兜住备份导入等外部写入。
-    pub fn get_failover_queue_providers(&self, app_type: &str) -> Result<Vec<Provider>, AppError> {
+    pub fn get_shared_failover_queue_providers(
+        &self,
+        app_type: &str,
+    ) -> Result<Vec<Arc<Provider>>, AppError> {
         let read_generation = self
             .provider_table_generation
             .load(std::sync::atomic::Ordering::SeqCst);
@@ -269,7 +272,11 @@ impl Database {
             }
         }
 
-        let providers = self.get_failover_queue_providers_sync(app_type)?;
+        let providers = self
+            .get_failover_queue_providers_sync(app_type)?
+            .into_iter()
+            .map(Arc::new)
+            .collect::<Vec<_>>();
         {
             let mut cache = self.failover_queue_cache.lock().map_err(|e| {
                 AppError::Database(format!("Failover queue cache lock failed: {e}"))
@@ -290,6 +297,14 @@ impl Database {
             }
         }
         Ok(providers)
+    }
+
+    pub fn get_failover_queue_providers(&self, app_type: &str) -> Result<Vec<Provider>, AppError> {
+        Ok(self
+            .get_shared_failover_queue_providers(app_type)?
+            .into_iter()
+            .map(|provider| provider.as_ref().clone())
+            .collect())
     }
 
     fn get_failover_queue_providers_sync(&self, app_type: &str) -> Result<Vec<Provider>, AppError> {
@@ -1476,6 +1491,38 @@ mod ensure_official_seed_tests {
             .expect("second provider");
 
         assert!(std::sync::Arc::ptr_eq(&first, &second));
+
+        Ok(())
+    }
+
+    #[test]
+    fn shared_failover_queue_reuses_cached_provider_arcs() -> Result<(), AppError> {
+        let db = Database::memory()?;
+        let first = Provider::with_id(
+            "queue-first".to_string(),
+            "Queue First".to_string(),
+            serde_json::json!({}),
+            None,
+        );
+        let second = Provider::with_id(
+            "queue-second".to_string(),
+            "Queue Second".to_string(),
+            serde_json::json!({}),
+            None,
+        );
+        db.save_provider("claude", &first)?;
+        db.save_provider("claude", &second)?;
+        db.add_to_failover_queue("claude", &first.id)?;
+        db.add_to_failover_queue("claude", &second.id)?;
+
+        let initial = db.get_shared_failover_queue_providers("claude")?;
+        let repeated = db.get_shared_failover_queue_providers("claude")?;
+
+        assert_eq!(initial.len(), 2);
+        assert_eq!(repeated.len(), 2);
+        for (before, after) in initial.iter().zip(repeated.iter()) {
+            assert!(std::sync::Arc::ptr_eq(before, after));
+        }
 
         Ok(())
     }

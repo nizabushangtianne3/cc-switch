@@ -99,7 +99,7 @@ impl ProviderRouter {
             let db = Arc::clone(&self.db);
             let queue_app_type = app_type.to_string();
             let providers = tokio::task::spawn_blocking(move || {
-                db.get_failover_queue_providers(&queue_app_type)
+                db.get_shared_failover_queue_providers(&queue_app_type)
             })
             .await
             .map_err(|error| AppError::Database(format!("故障转移队列读取任务失败: {error}")))??;
@@ -113,7 +113,7 @@ impl ProviderRouter {
                 let breaker = self.get_or_create_circuit_breaker(&circuit_key).await;
 
                 if breaker.is_available().await {
-                    result.push(Arc::new(provider));
+                    result.push(provider);
                 } else {
                     circuit_open_count += 1;
                 }

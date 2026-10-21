@@ -40,17 +40,17 @@ fn load_supported_failover_queue(
         return db.get_failover_queue(app_type).map_err(|e| e.to_string());
     }
     Ok(db
-        .get_failover_queue_providers(app_type)
+        .get_shared_failover_queue_providers(app_type)
         .map_err(|e| e.to_string())?
         .into_iter()
         .filter(|provider| {
             crate::proxy::provider_router::provider_supports_failover(app_type, provider)
         })
         .map(|provider| FailoverQueueItem {
-            provider_id: provider.id,
-            provider_name: provider.name,
+            provider_id: provider.id.clone(),
+            provider_name: provider.name.clone(),
             sort_index: provider.sort_index,
-            provider_notes: provider.notes,
+            provider_notes: provider.notes.clone(),
         })
         .collect())
 }
