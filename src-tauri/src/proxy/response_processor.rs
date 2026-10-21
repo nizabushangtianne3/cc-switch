@@ -230,13 +230,7 @@ pub async fn handle_non_streaming(
     // guard 在函数 scope 内持有，整包响应读取完成后随函数返回一并 drop
     _connection_guard: Option<ActiveConnectionGuard>,
 ) -> Result<Response, ProxyError> {
-    // 整包超时：仅在故障转移开启且配置值非零时生效
-    let body_timeout =
-        if ctx.app_config.auto_failover_enabled && ctx.app_config.non_streaming_timeout > 0 {
-            Duration::from_secs(ctx.app_config.non_streaming_timeout as u64)
-        } else {
-            Duration::ZERO
-        };
+    let body_timeout = ctx.app_config.non_streaming_body_timeout();
     let (mut response_headers, status, body_bytes) =
         read_decoded_body(response, ctx.tag, body_timeout).await?;
     strip_hop_by_hop_response_headers(&mut response_headers);
@@ -1214,33 +1208,38 @@ mod tests {
         Ok(())
     }
 
-    /// 测试辅助：同步写一条 usage 记录，保持旧 log_usage_internal 的调用形状。
-    async fn log_usage_for_test(
-        state: &ProxyState,
-        provider_id: &str,
+    struct TestUsageLog<'a> {
+        state: &'a ProxyState,
+        provider_id: &'a str,
         app_type: &'static str,
-        model: &str,
-        request_model: &str,
-        outbound_model: &str,
+        model: &'a str,
+        request_model: &'a str,
+        outbound_model: &'a str,
         usage: TokenUsage,
         status_code: u16,
-    ) {
-        crate::proxy::usage::logger::write_usage_record(crate::proxy::usage::logger::UsageRecord {
-            state: state.clone(),
-            provider_id: provider_id.to_string(),
-            app_type,
-            model: model.to_string(),
-            request_model: request_model.to_string(),
-            outbound_model: outbound_model.to_string(),
-            usage,
-            latency_ms: 10,
-            first_token_ms: None,
-            is_streaming: false,
-            status_code,
-            session_id: None,
-            api_key_id: None,
-        })
-        .await;
+    }
+
+    impl TestUsageLog<'_> {
+        async fn write(self) {
+            crate::proxy::usage::logger::write_usage_record(
+                crate::proxy::usage::logger::UsageRecord {
+                    state: self.state.clone(),
+                    provider_id: self.provider_id.to_string(),
+                    app_type: self.app_type,
+                    model: self.model.to_string(),
+                    request_model: self.request_model.to_string(),
+                    outbound_model: self.outbound_model.to_string(),
+                    usage: self.usage,
+                    latency_ms: 10,
+                    first_token_ms: None,
+                    is_streaming: false,
+                    status_code: self.status_code,
+                    session_id: None,
+                    api_key_id: None,
+                },
+            )
+            .await;
+        }
     }
 
     #[tokio::test]
@@ -1280,16 +1279,17 @@ mod tests {
             message_id: None,
         };
 
-        log_usage_for_test(
-            &state,
-            "provider-1",
+        TestUsageLog {
+            state: &state,
+            provider_id: "provider-1",
             app_type,
-            "resp-model",
-            "req-model",
-            "req-model",
+            model: "resp-model",
+            request_model: "req-model",
+            outbound_model: "req-model",
             usage,
-            200,
-        )
+            status_code: 200,
+        }
+        .write()
         .await;
 
         let conn = crate::database::lock_conn!(db.conn);
@@ -1343,16 +1343,17 @@ mod tests {
 
         // 路由接管场景：客户端请求 req-model（$2/M），代理实际发出 outbound-model
         // （$4/M），上游回显 resp-model。「按请求计价」必须锚定实际发出的模型。
-        log_usage_for_test(
-            &state,
-            "provider-3",
+        TestUsageLog {
+            state: &state,
+            provider_id: "provider-3",
             app_type,
-            "resp-model",
-            "req-model",
-            "outbound-model",
+            model: "resp-model",
+            request_model: "req-model",
+            outbound_model: "outbound-model",
             usage,
-            200,
-        )
+            status_code: 200,
+        }
+        .write()
         .await;
 
         let conn = crate::database::lock_conn!(db.conn);
@@ -1433,16 +1434,17 @@ mod tests {
         locked_rx.recv().expect("接收占锁通知失败");
 
         let writer = tokio::spawn(async move {
-            log_usage_for_test(
-                &state,
-                "provider-busy",
+            TestUsageLog {
+                state: &state,
+                provider_id: "provider-busy",
                 app_type,
-                "resp-model",
-                "req-model",
-                "req-model",
+                model: "resp-model",
+                request_model: "req-model",
+                outbound_model: "req-model",
                 usage,
-                200,
-            )
+                status_code: 200,
+            }
+            .write()
             .await;
         });
 

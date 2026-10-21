@@ -1090,7 +1090,6 @@ mod tests {
         counter: Arc<std::sync::atomic::AtomicUsize>,
         close_after_first: bool,
     ) -> http::Uri {
-        use std::sync::atomic::AtomicUsize;
         use std::sync::atomic::Ordering;
 
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))

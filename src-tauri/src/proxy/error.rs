@@ -378,8 +378,6 @@ mod tests {
     #[test]
     fn upstream_error_body_passes_json_through_and_wraps_plain_text() {
         use axum::response::IntoResponse;
-        use http_body_util::BodyExt;
-
         // JSON body 原样透传
         let response = ProxyError::UpstreamError {
             status: 400,

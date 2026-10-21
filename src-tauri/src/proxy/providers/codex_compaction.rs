@@ -647,7 +647,7 @@ mod tests {
         // #7976：历史里回放的 `web_search_call` 引用 `web_search` 工具定义，摘要回合删掉
         // 定义会让部分上游直接拒绝整个压缩请求。定义保留，`tool_choice: "none"` 保证摘要
         // 回合不发起新调用（原请求没有 `tool_choice` 时也要补上）。
-        let mut body = json!({
+        let body = json!({
             "model": "gpt-6.1-sol",
             "stream": true,
             "store": false,
@@ -673,7 +673,7 @@ mod tests {
     #[test]
     fn summary_turn_without_tools_drops_stale_tool_fields() {
         // 没有 tools 的请求保持原行为：不引入 tool_choice，陈旧的调用相关字段清掉。
-        let mut body = json!({
+        let body = json!({
             "model": "kimi-k3",
             "input": [
                 { "type": "message", "role": "user", "content": "hi" },

@@ -693,12 +693,7 @@ async fn handle_claude_transform(
     }
 
     // 非流式响应转换 (OpenAI/Responses → Anthropic)
-    let body_timeout =
-        if ctx.app_config.auto_failover_enabled && ctx.app_config.non_streaming_timeout > 0 {
-            std::time::Duration::from_secs(ctx.app_config.non_streaming_timeout as u64)
-        } else {
-            std::time::Duration::ZERO
-        };
+    let body_timeout = ctx.app_config.non_streaming_body_timeout();
     let enforce_codex_web_search_limit_while_aggregating =
         aggregate_codex_oauth_responses_sse && hosted_web_search_max_uses.is_some();
     let (mut response_headers, direct_anthropic_response, upstream_response) =
@@ -1599,12 +1594,7 @@ async fn handle_codex_xai_native_responses_rewrite(
     // Non-streaming: restore the flattened function-call names in the full body,
     // then account usage from the (restore-neutral) Responses payload.
     let _connection_guard = connection_guard;
-    let body_timeout =
-        if ctx.app_config.auto_failover_enabled && ctx.app_config.non_streaming_timeout > 0 {
-            std::time::Duration::from_secs(ctx.app_config.non_streaming_timeout as u64)
-        } else {
-            std::time::Duration::ZERO
-        };
+    let body_timeout = ctx.app_config.non_streaming_body_timeout();
     let (mut response_headers, status, body_bytes) =
         read_decoded_body(response, ctx.tag, body_timeout).await?;
     strip_hop_by_hop_response_headers(&mut response_headers);
@@ -1775,12 +1765,7 @@ async fn handle_codex_chat_to_responses_transform(
     }
 
     let _connection_guard = connection_guard;
-    let body_timeout =
-        if ctx.app_config.auto_failover_enabled && ctx.app_config.non_streaming_timeout > 0 {
-            std::time::Duration::from_secs(ctx.app_config.non_streaming_timeout as u64)
-        } else {
-            std::time::Duration::ZERO
-        };
+    let body_timeout = ctx.app_config.non_streaming_body_timeout();
     let (mut response_headers, status, body_bytes) =
         read_decoded_body(response, ctx.tag, body_timeout).await?;
     let body_str = String::from_utf8_lossy(&body_bytes);
@@ -1926,12 +1911,7 @@ async fn handle_codex_anthropic_to_responses_transform(
         );
     }
 
-    let body_timeout =
-        if ctx.app_config.auto_failover_enabled && ctx.app_config.non_streaming_timeout > 0 {
-            std::time::Duration::from_secs(ctx.app_config.non_streaming_timeout as u64)
-        } else {
-            std::time::Duration::ZERO
-        };
+    let body_timeout = ctx.app_config.non_streaming_body_timeout();
     let (mut response_headers, status, body_bytes) =
         read_decoded_body(response, ctx.tag, body_timeout).await?;
     let body_str = String::from_utf8_lossy(&body_bytes);
@@ -2125,12 +2105,7 @@ async fn handle_codex_chat_error_response(
     ctx: &RequestContext,
     status: axum::http::StatusCode,
 ) -> Result<axum::response::Response, ProxyError> {
-    let body_timeout =
-        if ctx.app_config.auto_failover_enabled && ctx.app_config.non_streaming_timeout > 0 {
-            std::time::Duration::from_secs(ctx.app_config.non_streaming_timeout as u64)
-        } else {
-            std::time::Duration::ZERO
-        };
+    let body_timeout = ctx.app_config.non_streaming_body_timeout();
     let (mut response_headers, _status, body_bytes) =
         read_decoded_body(response, ctx.tag, body_timeout).await?;
 

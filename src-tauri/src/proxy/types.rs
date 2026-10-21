@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
 /// 代理服务器配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -186,6 +187,17 @@ pub struct AppProxyConfig {
     pub circuit_error_rate_threshold: f64,
     /// 计算错误率的最小请求数
     pub circuit_min_requests: u32,
+}
+
+impl AppProxyConfig {
+    /// 整包读取超时仅在故障转移开启且配置值非零时生效。
+    pub(crate) fn non_streaming_body_timeout(&self) -> Duration {
+        if self.auto_failover_enabled && self.non_streaming_timeout > 0 {
+            Duration::from_secs(self.non_streaming_timeout as u64)
+        } else {
+            Duration::ZERO
+        }
+    }
 }
 
 /// 整流器配置

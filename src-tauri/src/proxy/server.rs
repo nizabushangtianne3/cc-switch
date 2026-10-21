@@ -2484,4 +2484,149 @@ mod tests {
         proxy.stop().await.expect("stop test proxy");
         mock_handle.abort();
     }
+
+    /// 原生 Responses 第三方上游的压缩回合端到端：请求侧去掉 Codex 私有
+    /// `compaction_trigger`，响应侧在上游普通消息后补回唯一一个 compaction 条目。
+    #[tokio::test]
+    async fn codex_native_compaction_turn_becomes_summary_event() {
+        use crate::proxy::providers::codex_compaction::{
+            encode_compaction_summary, COMPACT_PROMPT, SUMMARY_PREFIX,
+        };
+
+        let captured = Arc::new(Mutex::new(Vec::<CapturedRequest>::new()));
+        let capture_handler = {
+            let captured = captured.clone();
+            move |request: axum::extract::Request| {
+                let captured = captured.clone();
+                async move {
+                    let (parts, body) = request.into_parts();
+                    let body = axum::body::to_bytes(body, 1024 * 1024)
+                        .await
+                        .expect("read mock request body");
+                    captured.lock().await.push(CapturedRequest {
+                        path_and_query: parts
+                            .uri
+                            .path_and_query()
+                            .map(|value| value.as_str().to_string())
+                            .unwrap_or_else(|| parts.uri.path().to_string()),
+                        authorization: parts
+                            .headers
+                            .get(header::AUTHORIZATION)
+                            .and_then(|value| value.to_str().ok())
+                            .map(ToString::to_string),
+                        body: serde_json::from_slice(&body).unwrap_or(Value::Null),
+                    });
+
+                    const SSE_BODY: &str = "event: response.created\n\
+                        data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_compact\",\"status\":\"in_progress\",\"output\":[]}}\n\
+                        \n\
+                        event: response.output_item.done\n\
+                        data: {\"type\":\"response.output_item.done\",\"output_index\":0,\"item\":{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"prior work summarized\"}]}}\n\
+                        \n\
+                        event: response.completed\n\
+                        data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_compact\",\"status\":\"completed\",\"output\":[{\"type\":\"message\"}]}}\n\
+                        \n";
+                    (
+                        StatusCode::OK,
+                        [(header::CONTENT_TYPE, "text/event-stream")],
+                        SSE_BODY.to_string(),
+                    )
+                }
+            }
+        };
+        let mock_app = Router::new().fallback(capture_handler);
+        let mock_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind mock upstream");
+        let mock_addr = mock_listener.local_addr().expect("mock upstream address");
+        let mock_handle = tokio::spawn(async move {
+            axum::serve(mock_listener, mock_app)
+                .await
+                .expect("serve mock upstream");
+        });
+
+        let db = Arc::new(Database::memory().expect("memory database"));
+        let provider = Provider::with_id(
+            "codex-native-compaction".to_string(),
+            "Codex Native Compaction".to_string(),
+            json!({
+                "auth": { "OPENAI_API_KEY": "upstream-secret" },
+                "config": format!(
+                    "model_provider = \"custom\"\nmodel = \"gpt-5.6-sol\"\n\n[model_providers.custom]\nname = \"custom\"\nbase_url = \"http://{mock_addr}/v1\"\nwire_api = \"responses\"\n"
+                )
+            }),
+            None,
+        );
+        db.save_provider("codex", &provider)
+            .expect("save codex native compaction provider");
+        db.set_current_provider("codex", &provider.id)
+            .expect("select codex native compaction provider");
+
+        let proxy = ProxyServer::new(
+            ProxyConfig {
+                listen_port: 0,
+                ..ProxyConfig::default()
+            },
+            db,
+            None,
+        );
+        let proxy_info = proxy.start().await.expect("start test proxy");
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("http://127.0.0.1:{}/v1/responses", proxy_info.port))
+            .header(header::AUTHORIZATION, "Bearer client-secret")
+            .json(&json!({
+                "model": "gpt-5.6-sol",
+                "stream": true,
+                "input": [
+                    {
+                        "type": "compaction",
+                        "encrypted_content": encode_compaction_summary("prior work")
+                    },
+                    {
+                        "role": "user",
+                        "content": [{ "type": "input_text", "text": "hi" }]
+                    },
+                    { "type": "compaction_trigger" }
+                ]
+            }))
+            .send()
+            .await
+            .expect("send codex compaction request");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response.text().await.expect("read compaction SSE body");
+        assert!(body.contains("event: response.created"), "{body}");
+        assert_eq!(
+            body.matches("event: response.output_item.done").count(),
+            2,
+            "{body}"
+        );
+        assert_eq!(
+            body.matches("event: response.completed").count(),
+            1,
+            "{body}"
+        );
+        assert_eq!(body.matches("\"type\":\"compaction\"").count(), 2, "{body}");
+
+        let requests = captured.lock().await;
+        assert_eq!(requests.len(), 1);
+        assert!(requests[0].path_and_query.contains("/responses"));
+        assert_eq!(
+            requests[0].authorization.as_deref(),
+            Some("Bearer upstream-secret")
+        );
+        assert_eq!(
+            requests[0].body["input"][0]["content"][0]["text"],
+            format!("{SUMMARY_PREFIX}\nprior work")
+        );
+        assert_eq!(requests[0].body["input"][1]["content"][0]["text"], "hi");
+        assert_eq!(
+            requests[0].body["input"][2]["content"][0]["text"],
+            COMPACT_PROMPT
+        );
+        drop(requests);
+
+        proxy.stop().await.expect("stop test proxy");
+        mock_handle.abort();
+    }
 }
