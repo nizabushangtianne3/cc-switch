@@ -3137,12 +3137,17 @@ impl RequestForwarder {
             }
             Ok((response, resolved_claude_api_format, outbound_model))
         } else {
-            let status_code = status.as_u16();
+            let parts = response.into_parts();
+            let status_code = parts.status.as_u16();
             // 错误响应同样可能被上游压缩（content-encoding）。reqwest 未启用任何
             // 自动解压 feature，这里拿到的是原始字节；不解压的话，压缩过的错误体会
             // 在 from_utf8 处变成非 UTF-8 而被丢弃，隐藏掉上游的限流/鉴权等详情。
-            let encoding = get_content_encoding(response.headers());
-            let raw = response.bytes_with_limit(MAX_RESPONSE_BODY_BYTES).await?;
+            let encoding = get_content_encoding(&parts.headers);
+            let raw = super::hyper_client::proxy_body_bytes_with_limit(
+                parts.body,
+                MAX_RESPONSE_BODY_BYTES,
+            )
+            .await?;
             let decoded = match encoding {
                 Some(encoding) => {
                     match decompress_body_with_limit(&encoding, &raw, MAX_RESPONSE_BODY_BYTES) {
@@ -3180,12 +3185,13 @@ impl RequestForwarder {
             return Ok(response);
         }
 
-        let status = response.status();
-        let headers = response.headers().clone();
+        let parts = response.into_parts();
+        let status = parts.status;
+        let headers = parts.headers;
         let body_timeout = self.non_streaming_timeout;
         let body = tokio::time::timeout(
             body_timeout,
-            response.bytes_with_limit(MAX_RESPONSE_BODY_BYTES),
+            super::hyper_client::proxy_body_bytes_with_limit(parts.body, MAX_RESPONSE_BODY_BYTES),
         )
         .await
         .map_err(|_| {
@@ -3205,10 +3211,13 @@ impl RequestForwarder {
         &self,
         response: ProxyResponse,
     ) -> Result<ProxyResponse, ProxyError> {
-        let status = response.status();
-        let headers = response.headers().clone();
+        let parts = response.into_parts();
+        let status = parts.status;
+        let headers = parts.headers;
         let encoding = get_content_encoding(&headers);
-        let raw = response.bytes_with_limit(MAX_RESPONSE_BODY_BYTES).await?;
+        let raw =
+            super::hyper_client::proxy_body_bytes_with_limit(parts.body, MAX_RESPONSE_BODY_BYTES)
+                .await?;
         let decoded: std::borrow::Cow<'_, [u8]> = match encoding {
             Some(encoding) => {
                 match decompress_body_with_limit(&encoding, &raw, MAX_RESPONSE_BODY_BYTES) {
@@ -3232,10 +3241,13 @@ impl RequestForwarder {
         &self,
         response: ProxyResponse,
     ) -> Result<ProxyResponse, ProxyError> {
-        let status = response.status();
-        let headers = response.headers().clone();
+        let parts = response.into_parts();
+        let status = parts.status;
+        let headers = parts.headers;
         let encoding = get_content_encoding(&headers);
-        let raw = response.bytes_with_limit(MAX_RESPONSE_BODY_BYTES).await?;
+        let raw =
+            super::hyper_client::proxy_body_bytes_with_limit(parts.body, MAX_RESPONSE_BODY_BYTES)
+                .await?;
         let decoded: std::borrow::Cow<'_, [u8]> = match encoding {
             Some(encoding) => {
                 match decompress_body_with_limit(&encoding, &raw, MAX_RESPONSE_BODY_BYTES) {
@@ -3261,9 +3273,10 @@ impl RequestForwarder {
     ) -> Result<ProxyResponse, ProxyError> {
         const MAX_PRIME_BYTES: usize = 256 * 1024;
 
-        let status = response.status();
-        let headers = response.headers().clone();
-        let mut stream = Box::pin(response.bytes_stream());
+        let parts = response.into_parts();
+        let status = parts.status;
+        let headers = parts.headers;
+        let mut stream = parts.body;
         let mut replay_chunks: Vec<Bytes> = Vec::new();
         let mut parse_buffer = String::new();
         let mut utf8_remainder = Vec::new();
@@ -3362,9 +3375,10 @@ impl RequestForwarder {
             timeout => timeout.min(MAX_HOLD),
         };
         let deadline = tokio::time::Instant::now() + window;
-        let status = response.status();
-        let headers = response.headers().clone();
-        let mut stream = Box::pin(response.bytes_stream());
+        let parts = response.into_parts();
+        let status = parts.status;
+        let headers = parts.headers;
+        let mut stream = parts.body;
         let mut replay_chunks: Vec<Bytes> = Vec::new();
         let mut held_bytes = 0usize;
         let mut parse_buffer = String::new();
@@ -3411,10 +3425,11 @@ impl RequestForwarder {
             return Ok(response);
         }
 
-        let status = response.status();
-        let headers = response.headers().clone();
+        let parts = response.into_parts();
+        let status = parts.status;
+        let headers = parts.headers;
         let timeout = self.streaming_first_byte_timeout;
-        let mut stream = Box::pin(response.bytes_stream());
+        let mut stream = parts.body;
 
         let first = tokio::time::timeout(timeout, stream.next())
             .await
@@ -5379,10 +5394,12 @@ mod tests {
             .expect("response should be buffered");
 
         assert_eq!(
-            prepared
-                .bytes_with_limit(MAX_RESPONSE_BODY_BYTES)
-                .await
-                .unwrap(),
+            crate::proxy::hyper_client::proxy_body_bytes_with_limit(
+                prepared.into_parts().body,
+                MAX_RESPONSE_BODY_BYTES,
+            )
+            .await
+            .unwrap(),
             Bytes::from_static(b"{\"ok\":true}")
         );
     }
@@ -5427,10 +5444,12 @@ mod tests {
             .expect("stream should be primed");
 
         assert_eq!(
-            prepared
-                .bytes_with_limit(MAX_RESPONSE_BODY_BYTES)
-                .await
-                .unwrap(),
+            crate::proxy::hyper_client::proxy_body_bytes_with_limit(
+                prepared.into_parts().body,
+                MAX_RESPONSE_BODY_BYTES,
+            )
+            .await
+            .unwrap(),
             Bytes::from_static(b"firstsecond")
         );
     }

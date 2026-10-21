@@ -378,27 +378,6 @@ impl ProxyResponse {
             .unwrap_or(false)
     }
 
-    /// Consume the response and collect the full body into `Bytes`, aborting the
-    /// read as soon as the accumulated body exceeds `max_bytes`.
-    ///
-    /// 所有变体都在累积过程中逐块检查、超限即断开（drop stream 中止上游连接），
-    /// 而不是先收满再比较——否则超大明文 body 仍会完整进入内存，限制形同虚设。
-    pub async fn bytes_with_limit(self, max_bytes: usize) -> Result<Bytes, ProxyError> {
-        match self {
-            Self::Buffered { body, .. } => {
-                // 调用方已把 body 完整缓冲，无法中途截停，只能事后比较
-                if body.len() > max_bytes {
-                    return Err(ProxyError::ResponseBodyTooLarge(body.len()));
-                }
-                Ok(body)
-            }
-            response => {
-                // Hyper / Reqwest / Streamed 统一走逐块流式累积，超预算立即报错
-                proxy_body_bytes_with_limit(response.into_parts().body, max_bytes).await
-            }
-        }
-    }
-
     /// Consume the response and return a byte-chunk stream (for SSE pass-through).
     pub fn bytes_stream(self) -> ProxyByteStream {
         self.into_parts().body
@@ -1143,7 +1122,8 @@ mod tests {
         let response =
             ProxyResponse::buffered(http::StatusCode::OK, http::HeaderMap::new(), oversized);
 
-        let result = response.bytes_with_limit(MAX_RESPONSE_BODY_BYTES).await;
+        let result =
+            proxy_body_bytes_with_limit(response.into_parts().body, MAX_RESPONSE_BODY_BYTES).await;
         assert!(matches!(result, Err(ProxyError::ResponseBodyTooLarge(_))));
     }
 
@@ -1163,7 +1143,8 @@ mod tests {
                 .await;
         });
 
-        let result = response.bytes_with_limit(MAX_RESPONSE_BODY_BYTES).await;
+        let result =
+            proxy_body_bytes_with_limit(response.into_parts().body, MAX_RESPONSE_BODY_BYTES).await;
         assert!(matches!(result, Err(ProxyError::ResponseBodyTooLarge(_))));
     }
 
@@ -1258,9 +1239,11 @@ mod tests {
         let response = sender.send_request(request).await.unwrap();
         assert_eq!(response.status(), http::StatusCode::OK);
 
-        let result = wrap_hyper_response(response, None)
-            .bytes_with_limit(LIMIT)
-            .await;
+        let result = proxy_body_bytes_with_limit(
+            wrap_hyper_response(response, None).into_parts().body,
+            LIMIT,
+        )
+        .await;
         assert!(matches!(result, Err(ProxyError::ResponseBodyTooLarge(_))));
 
         // 关键断言：若退回"先 collect 收满再比较"，服务器会把 16 MiB 全部写完
@@ -1280,9 +1263,9 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), reqwest::StatusCode::OK);
 
-        let result = ProxyResponse::Reqwest(response)
-            .bytes_with_limit(LIMIT)
-            .await;
+        let result =
+            proxy_body_bytes_with_limit(ProxyResponse::Reqwest(response).into_parts().body, LIMIT)
+                .await;
         assert!(matches!(result, Err(ProxyError::ResponseBodyTooLarge(_))));
 
         assert_server_aborted_early(written, BODY_LEN).await;
@@ -1376,7 +1359,9 @@ mod tests {
             )
             .await
             .expect("request 1");
-            let body = resp.bytes_with_limit(1024).await.expect("body");
+            let body = proxy_body_bytes_with_limit(resp.into_parts().body, 1024)
+                .await
+                .expect("body");
             assert_eq!(&body[..], br#"{"ok":true}"#);
         }
 
@@ -1410,7 +1395,9 @@ mod tests {
             )
             .await
             .expect("request");
-            let body = resp.bytes_with_limit(1024).await.expect("body");
+            let body = proxy_body_bytes_with_limit(resp.into_parts().body, 1024)
+                .await
+                .expect("body");
             assert_eq!(&body[..], br#"{"ok":true}"#);
         }
 
