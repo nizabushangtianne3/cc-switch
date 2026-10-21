@@ -506,6 +506,31 @@ async fn send_raw_request(
     let raw_head = build_raw_head(method, path_and_query, headers, original_cases, body.len());
     let key = PoolKey::new(proxy_url, scheme, host, port);
 
+    let mut request_buffers = [
+        std::io::IoSlice::new(&raw_head),
+        std::io::IoSlice::new(body),
+    ];
+
+    async fn write_all_vectored<W>(
+        writer: &mut W,
+        mut buffers: &mut [std::io::IoSlice<'_>],
+    ) -> Result<(), ProxyError>
+    where
+        W: tokio::io::AsyncWrite + Unpin,
+    {
+        while !buffers.is_empty() {
+            let written = writer
+                .write_vectored(buffers)
+                .await
+                .map_err(|e| ProxyError::ForwardFailed(format!("Write failed: {e}")))?;
+            if written == 0 {
+                return Err(ProxyError::ForwardFailed("Write failed: EOF".into()));
+            }
+            std::io::IoSlice::advance_slices(&mut buffers, written);
+        }
+        Ok(())
+    }
+
     // 池命中：写下一份手工报文，让既有 hyper 连接驱动解析响应。
     if let Some(pooled) = upstream_pool::take(&key) {
         let PooledUpstream {
@@ -514,14 +539,7 @@ async fn send_raw_request(
             ..
         } = pooled;
         let sent = async {
-            write_half
-                .write_all(&raw_head)
-                .await
-                .map_err(|e| ProxyError::ForwardFailed(format!("Write failed: {e}")))?;
-            write_half
-                .write_all(body)
-                .await
-                .map_err(|e| ProxyError::ForwardFailed(format!("Write failed: {e}")))?;
+            write_all_vectored(&mut write_half, &mut request_buffers).await?;
             write_half
                 .flush()
                 .await
@@ -575,14 +593,7 @@ async fn send_raw_request(
     // 读半边交给 hyper 的连接驱动解析响应；写半边写手工报文并入池。
     let reader = RawPeerReader { read: read_half };
 
-    write_half
-        .write_all(&raw_head)
-        .await
-        .map_err(|e| ProxyError::ForwardFailed(format!("Write failed: {e}")))?;
-    write_half
-        .write_all(body)
-        .await
-        .map_err(|e| ProxyError::ForwardFailed(format!("Write failed: {e}")))?;
+    write_all_vectored(&mut write_half, &mut request_buffers).await?;
     write_half
         .flush()
         .await
