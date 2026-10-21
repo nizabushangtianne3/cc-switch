@@ -165,7 +165,7 @@ pub fn get_upstream_proxy_status() -> UpstreamProxyStatus {
     let url = http_client::get_current_proxy_url();
     UpstreamProxyStatus {
         enabled: url.is_some(),
-        proxy_url: url,
+        proxy_url: url.map(|url| url.to_string()),
     }
 }
 

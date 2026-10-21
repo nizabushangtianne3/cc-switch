@@ -7,7 +7,7 @@ use once_cell::sync::OnceCell;
 use reqwest::Client;
 use std::env;
 use std::net::IpAddr;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 /// 全局 HTTP 客户端实例
@@ -17,7 +17,7 @@ static GLOBAL_CLIENT: OnceCell<RwLock<Client>> = OnceCell::new();
 static DIRECT_CLIENT: OnceCell<Client> = OnceCell::new();
 
 /// 当前代理 URL（用于日志和状态查询）
-static CURRENT_PROXY_URL: OnceCell<RwLock<Option<String>>> = OnceCell::new();
+static CURRENT_PROXY_URL: OnceCell<RwLock<Option<Arc<str>>>> = OnceCell::new();
 
 /// CC Switch 代理服务器当前监听的端口
 static CC_SWITCH_PROXY_PORT: OnceCell<RwLock<u16>> = OnceCell::new();
@@ -70,7 +70,7 @@ pub fn init(proxy_url: Option<&str>) -> Result<(), String> {
     }
 
     // 初始化代理 URL 记录
-    let _ = CURRENT_PROXY_URL.set(RwLock::new(effective_url.map(|s| s.to_string())));
+    let _ = CURRENT_PROXY_URL.set(RwLock::new(effective_url.map(Arc::from)));
 
     log::info!(
         "[GlobalProxy] Initialized: {}",
@@ -128,55 +128,11 @@ pub fn apply_proxy(proxy_url: Option<&str>) -> Result<(), String> {
             log::error!("[GlobalProxy] [GP-002] Failed to acquire URL write lock: {e}");
             "Failed to update proxy URL record: lock poisoned".to_string()
         })?;
-        *url = effective_url.map(|s| s.to_string());
+        *url = effective_url.map(Arc::from);
     }
 
     log::info!(
         "[GlobalProxy] Applied: {}",
-        effective_url
-            .map(mask_url)
-            .unwrap_or_else(|| "direct connection".to_string())
-    );
-
-    Ok(())
-}
-
-/// 更新代理配置（热更新）
-///
-/// 可在运行时调用以更改代理设置，无需重启应用。
-/// 注意：此函数同时验证和应用，如果需要先验证后持久化再应用，
-/// 请使用 validate_proxy + apply_proxy 组合。
-///
-/// # Arguments
-/// * `proxy_url` - 新的代理 URL，None 或空字符串表示直连
-#[allow(dead_code)]
-pub fn update_proxy(proxy_url: Option<&str>) -> Result<(), String> {
-    let effective_url = proxy_url.filter(|s| !s.trim().is_empty());
-    let new_client = build_client(effective_url)?;
-
-    // 更新客户端
-    if let Some(lock) = GLOBAL_CLIENT.get() {
-        let mut client = lock.write().map_err(|e| {
-            log::error!("[GlobalProxy] [GP-001] Failed to acquire write lock: {e}");
-            "Failed to update proxy: lock poisoned".to_string()
-        })?;
-        *client = new_client;
-    } else {
-        // 如果还没初始化，则初始化
-        return init(proxy_url);
-    }
-
-    // 更新代理 URL 记录
-    if let Some(lock) = CURRENT_PROXY_URL.get() {
-        let mut url = lock.write().map_err(|e| {
-            log::error!("[GlobalProxy] [GP-002] Failed to acquire URL write lock: {e}");
-            "Failed to update proxy URL record: lock poisoned".to_string()
-        })?;
-        *url = effective_url.map(|s| s.to_string());
-    }
-
-    log::info!(
-        "[GlobalProxy] Updated: {}",
         effective_url
             .map(mask_url)
             .unwrap_or_else(|| "direct connection".to_string())
@@ -213,11 +169,11 @@ pub fn get_for_url(url: &str) -> Client {
 }
 
 /// 发往 `url` 时应使用的上游代理：本机地址返回 None（直连），其余返回当前全局代理
-pub fn proxy_url_for(url: &str) -> Option<String> {
+pub fn proxy_url_for(url: &str) -> Option<Arc<str>> {
     upstream_proxy_for(url, get_current_proxy_url())
 }
 
-fn upstream_proxy_for(url: &str, current: Option<String>) -> Option<String> {
+fn upstream_proxy_for(url: &str, current: Option<Arc<str>>) -> Option<Arc<str>> {
     if is_loopback_url(url) {
         None
     } else {
@@ -265,8 +221,8 @@ fn host_is_loopback(host: &str) -> bool {
 
 /// 获取当前代理 URL
 ///
-/// 返回当前配置的代理 URL，None 表示直连。
-pub fn get_current_proxy_url() -> Option<String> {
+/// 返回当前配置的代理 URL，None 表示直连。热路径只克隆 `Arc` 引用计数。
+pub fn get_current_proxy_url() -> Option<Arc<str>> {
     CURRENT_PROXY_URL
         .get()
         .and_then(|lock| lock.read().ok())
@@ -475,7 +431,7 @@ mod tests {
 
     #[test]
     fn test_upstream_proxy_for_skips_loopback() {
-        let current = Some("http://127.0.0.1:7890".to_string());
+        let current: Option<Arc<str>> = Some(Arc::from("http://127.0.0.1:7890"));
         assert_eq!(
             upstream_proxy_for("http://localhost:11434/v1/messages", current.clone()),
             None

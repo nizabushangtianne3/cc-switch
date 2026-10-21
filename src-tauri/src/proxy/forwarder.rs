@@ -3020,7 +3020,7 @@ impl RequestForwarder {
         };
 
         // 获取全局代理 URL（上游是本机地址时直连，不送进代理）
-        let upstream_proxy_url: Option<String> = super::http_client::proxy_url_for(&url);
+        let upstream_proxy_url = super::http_client::proxy_url_for(&url);
 
         // SOCKS5 代理不支持 CONNECT 隧道，需要用 reqwest
         let is_socks_proxy = upstream_proxy_url
