@@ -501,8 +501,9 @@ async fn send_raw_request(
         .unwrap_or(if scheme == "https" { 443 } else { 80 });
     let path_and_query = uri.path_and_query().map(|pq| pq.as_str()).unwrap_or("/");
 
-    // Build raw HTTP request bytes
-    let raw = build_raw_request(method, path_and_query, headers, original_cases, body);
+    // Build the raw HTTP request head only; the caller writes the body directly
+    // so a large JSON payload is not copied into yet another allocation.
+    let raw_head = build_raw_head(method, path_and_query, headers, original_cases, body.len());
     let key = PoolKey::new(proxy_url, scheme, host, port);
 
     // 池命中：写下一份手工报文，让既有 hyper 连接驱动解析响应。
@@ -514,7 +515,11 @@ async fn send_raw_request(
         } = pooled;
         let sent = async {
             write_half
-                .write_all(&raw)
+                .write_all(&raw_head)
+                .await
+                .map_err(|e| ProxyError::ForwardFailed(format!("Write failed: {e}")))?;
+            write_half
+                .write_all(body)
                 .await
                 .map_err(|e| ProxyError::ForwardFailed(format!("Write failed: {e}")))?;
             write_half
@@ -571,7 +576,11 @@ async fn send_raw_request(
     let reader = RawPeerReader { read: read_half };
 
     write_half
-        .write_all(&raw)
+        .write_all(&raw_head)
+        .await
+        .map_err(|e| ProxyError::ForwardFailed(format!("Write failed: {e}")))?;
+    write_half
+        .write_all(body)
         .await
         .map_err(|e| ProxyError::ForwardFailed(format!("Write failed: {e}")))?;
     write_half
@@ -740,15 +749,15 @@ fn global_tls_connector() -> &'static tokio_rustls::TlsConnector {
     })
 }
 
-/// Build raw HTTP/1.1 request bytes with original header casing.
-fn build_raw_request(
+/// Build the raw HTTP/1.1 request head with original header casing.
+fn build_raw_head(
     method: &http::Method,
     path_and_query: &str,
     headers: &http::HeaderMap,
     original_cases: &OriginalHeaderCases,
-    body: &[u8],
+    body_len: usize,
 ) -> Vec<u8> {
-    let mut raw = Vec::with_capacity(4096 + body.len());
+    let mut raw = Vec::with_capacity(4096);
 
     // Request line
     raw.extend_from_slice(method.as_str().as_bytes());
@@ -810,13 +819,12 @@ fn build_raw_request(
     // Add Content-Length if not already present
     if !headers.contains_key(http::header::CONTENT_LENGTH) {
         raw.extend_from_slice(b"Content-Length: ");
-        raw.extend_from_slice(body.len().to_string().as_bytes());
+        raw.extend_from_slice(body_len.to_string().as_bytes());
         raw.extend_from_slice(b"\r\n");
     }
 
-    // End of headers + body
+    // End of headers; the body is written separately by the caller.
     raw.extend_from_slice(b"\r\n");
-    raw.extend_from_slice(body);
 
     raw
 }
@@ -915,20 +923,45 @@ mod tests {
     }
 
     #[test]
-    fn build_raw_request_preserves_original_header_casing() {
+    fn build_raw_head_preserves_original_header_casing() {
         let cases =
             OriginalHeaderCases::from_raw_bytes(b"POST /x HTTP/1.1\r\nX-Cc-Switch: yes\r\n\r\n");
         let mut headers = http::HeaderMap::new();
         headers.insert("x-cc-switch", http::HeaderValue::from_static("yes"));
 
-        let raw = build_raw_request(&http::Method::POST, "/x", &headers, &cases, b"hello");
+        let raw = build_raw_head(&http::Method::POST, "/x", &headers, &cases, 5);
 
         let text = String::from_utf8(raw).unwrap();
         assert!(
-            text.starts_with(
-                "POST /x HTTP/1.1\r\nX-Cc-Switch: yes\r\nContent-Length: 5\r\n\r\nhello"
-            ),
+            text.starts_with("POST /x HTTP/1.1\r\nX-Cc-Switch: yes\r\nContent-Length: 5\r\n\r\n"),
             "{text}"
+        );
+    }
+
+    #[test]
+    fn build_raw_head_keeps_body_out_of_the_head_buffer() {
+        let cases = OriginalHeaderCases::from_raw_bytes(
+            b"POST /x HTTP/1.1\r\nContent-Type: application/json\r\n\r\n",
+        );
+        let mut headers = http::HeaderMap::new();
+        headers.insert(
+            http::header::CONTENT_TYPE,
+            http::HeaderValue::from_static("application/json"),
+        );
+
+        let raw = build_raw_head(
+            &http::Method::POST,
+            "/x",
+            &headers,
+            &cases,
+            b"large-request-body".len(),
+        );
+        let head = String::from_utf8(raw).unwrap();
+
+        assert!(head.ends_with("Content-Length: 18\r\n\r\n"), "{head}");
+        assert!(
+            !head.contains("large-request-body"),
+            "raw request builder must not copy the body into another allocation"
         );
     }
 
