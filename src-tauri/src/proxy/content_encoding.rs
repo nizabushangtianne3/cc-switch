@@ -5,6 +5,7 @@
 //! 共用同一套解压逻辑。
 
 use axum::http::header::HeaderMap;
+use std::borrow::Cow;
 use std::io::Read;
 
 /// 把 content-encoding 值拆成有序 coding 列表（去掉 identity 与空值）。
@@ -179,20 +180,35 @@ pub(crate) fn is_supported_content_encoding(content_encoding: &str) -> bool {
 ///
 /// HTTP 允许重复 content-encoding 头，语义等同逗号拼接，故用 `get_all` 合并；
 /// 返回值可能含多个逗号分隔的 coding，交由 [`decompress_body`] 反向解码。
-pub(crate) fn get_content_encoding(headers: &HeaderMap) -> Option<String> {
-    let combined = headers
+pub(crate) fn get_content_encoding(headers: &HeaderMap) -> Option<Cow<'_, str>> {
+    let mut values = headers
         .get_all("content-encoding")
         .iter()
-        .filter_map(|v| v.to_str().ok())
+        .filter_map(|value| value.to_str().ok())
         .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .collect::<Vec<_>>()
-        .join(", ")
-        .to_lowercase();
-    if split_codings(&combined).is_empty() {
-        return None;
+        .filter(|coding| !coding.is_empty());
+
+    let first = values.next()?;
+
+    // 单值是绝大多数。已经全小写就直接借走，整个函数一次分配都不做；含大写
+    // 才小写化，两种分支都要过一遍 identity / 空值的有效性口径。
+    let Some(second) = values.next() else {
+        if first.bytes().any(|byte| byte.is_ascii_uppercase()) {
+            let lowered = first.to_lowercase();
+            return (!split_codings(&lowered).is_empty()).then_some(Cow::Owned(lowered));
+        }
+        return (!split_codings(first).is_empty()).then_some(Cow::Borrowed(first));
+    };
+
+    // HTTP 允许重复 content-encoding 头，语义等同逗号拼接。
+    let mut combined = String::with_capacity(first.len() + second.len() + 2);
+    combined.push_str(first);
+    for value in std::iter::once(second).chain(values) {
+        combined.push_str(", ");
+        combined.push_str(value);
     }
-    Some(combined)
+    let combined = combined.to_lowercase();
+    (!split_codings(&combined).is_empty()).then_some(Cow::Owned(combined))
 }
 
 #[cfg(test)]
@@ -408,5 +424,26 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.append("content-encoding", HeaderValue::from_static("identity"));
         assert_eq!(get_content_encoding(&headers), None);
+    }
+
+    #[test]
+    fn get_content_encoding_borrows_an_already_lowercase_single_header() {
+        let mut headers = HeaderMap::new();
+        headers.append("content-encoding", HeaderValue::from_static("gzip"));
+
+        // 单值且已全小写时走借支分支：内容一致，但返回的是 Borrowed 而非 Owned。
+        let encoding = get_content_encoding(&headers).expect("gzip is supported");
+        assert!(matches!(encoding, Cow::Borrowed(_)), "单值全小写应零分配");
+        assert_eq!(&*encoding, "gzip");
+    }
+
+    #[test]
+    fn get_content_encoding_lowercases_a_single_uppercase_header() {
+        let mut headers = HeaderMap::new();
+        headers.append("content-encoding", HeaderValue::from_static("GZIP"));
+
+        let encoding = get_content_encoding(&headers).expect("GZIP normalises to gzip");
+        assert!(matches!(encoding, Cow::Owned(_)), "含大写必须复制一份再小写化");
+        assert_eq!(&*encoding, "gzip");
     }
 }
