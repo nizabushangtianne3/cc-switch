@@ -1,3 +1,6 @@
+use bytes::Bytes;
+use serde_json::Value;
+
 #[inline]
 pub(crate) fn strip_sse_field<'a>(line: &'a str, field: &str) -> Option<&'a str> {
     // 逐字段零分配：SSE 每行都要过这里，format! 的两次临时分配
@@ -162,6 +165,27 @@ impl Utf8TailDecoder {
     }
 }
 
+/// Frame one event as SSE bytes: `event: <name>\ndata: <json>\n\n`.
+///
+/// Writing straight into a single buffer avoids the two extra copies the
+/// callers used to pay: `serde_json::to_string` produced an intermediate String,
+/// `format!` copied it into a second String, and `Bytes::from` copied that into
+/// the chunk. `Bytes::from(Vec)` takes ownership, so a emitted event now costs
+/// one allocation and one write.
+///
+/// The payload is a `serde_json::Value`, which always serialises; a write error
+/// therefore cannot occur, and the prior `unwrap_or_default()` behaviour (an
+/// empty `data:` line) is preserved for the impossible case.
+pub(crate) fn frame_sse_event(event_name: &str, payload: &Value) -> Bytes {
+    let mut frame = Vec::with_capacity(event_name.len() + 64);
+    frame.extend_from_slice(b"event: ");
+    frame.extend_from_slice(event_name.as_bytes());
+    frame.extend_from_slice(b"\ndata: ");
+    let _ = serde_json::to_writer(&mut frame, payload);
+    frame.extend_from_slice(b"\n\n");
+    Bytes::from(frame)
+}
+
 /// Byte count of the UTF-8 character introduced by `lead`.
 #[inline]
 fn utf8_char_len(lead: u8) -> usize {
@@ -187,7 +211,10 @@ fn utf8_char_len(lead: u8) -> usize {
 /// exceeds 3 bytes, which cannot happen with well-formed UTF-8 streams.
 #[cfg(test)]
 mod tests {
-    use super::{next_sse_block_range, strip_sse_field, Utf8TailDecoder};
+    use super::{
+        frame_sse_event, next_sse_block_range, strip_sse_field, Utf8TailDecoder,
+    };
+    use bytes::Bytes;
 
     #[test]
     fn strip_sse_field_accepts_optional_space() {
@@ -475,5 +502,48 @@ mod tests {
             "每一轮悬挂+无效至少产出一个替换字符，实际 {replacements}"
         );
         assert_eq!(buffer.trim_start_matches('\u{FFFD}'), "done");
+    }
+
+    #[test]
+    fn frame_sse_event_frames_a_payload_between_the_separators() {
+        let payload = serde_json::json!({"type": "content_block_delta", "index": 3});
+        let framed = frame_sse_event("content_block_delta", &payload);
+
+        assert_eq!(
+            framed,
+            Bytes::from(
+                // preserve_order 下按声明序输出，不是字母序
+                "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":3}\n\n"
+            )
+        );
+    }
+
+    #[test]
+    fn frame_sse_event_round_trips_through_the_block_splitter() {
+        // 成帧出来的字节必须能被本模块的扫描器切成完整的一块
+        let payload = serde_json::json!({"type": "message_delta", "delta": {"stop_reason": "end_turn"}});
+        let framed = frame_sse_event("message_delta", &payload);
+        let text = std::str::from_utf8(&framed).expect("valid utf-8");
+
+        let (end, delim) = next_sse_block_range(text).expect("one block");
+        assert_eq!(
+            &text[..end],
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}"
+        );
+        assert_eq!(end + delim, text.len());
+        assert_eq!(
+            strip_sse_field(text.lines().next().unwrap(), "event"),
+            Some("message_delta")
+        );
+    }
+
+    #[test]
+    fn frame_sse_event_keeps_multibyte_payloads_intact() {
+        let payload = serde_json::json!({"type": "content_block_delta", "delta": {"text": "\u{4F60}\u{597D}"}});
+        let framed = frame_sse_event("content_block_delta", &payload);
+        let text = std::str::from_utf8(&framed).expect("valid utf-8");
+
+        assert!(text.contains("\u{4F60}\u{597D}"), "{text}");
+        assert!(text.ends_with("\n\n"), "{text}");
     }
 }

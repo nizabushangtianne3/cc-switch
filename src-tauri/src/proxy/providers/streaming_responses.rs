@@ -28,10 +28,7 @@ fn response_object_from_event(data: &Value) -> &Value {
 }
 
 fn anthropic_sse(event_name: &str, payload: &Value) -> Bytes {
-    Bytes::from(format!(
-        "event: {event_name}\ndata: {}\n\n",
-        serde_json::to_string(payload).unwrap_or_default()
-    ))
+    crate::proxy::sse::frame_sse_event(event_name, payload)
 }
 
 fn responses_error_details(data: &Value, fallback: &str) -> (String, String) {

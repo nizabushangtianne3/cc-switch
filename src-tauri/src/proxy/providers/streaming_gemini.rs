@@ -228,10 +228,7 @@ fn build_shadow_assistant_parts(
 }
 
 fn encode_sse(event_name: &str, payload: &Value) -> Bytes {
-    Bytes::from(format!(
-        "event: {event_name}\ndata: {}\n\n",
-        serde_json::to_string(payload).unwrap_or_default()
-    ))
+    crate::proxy::sse::frame_sse_event(event_name, payload)
 }
 
 pub fn create_anthropic_sse_stream_from_gemini<E: std::error::Error + Send + 'static>(

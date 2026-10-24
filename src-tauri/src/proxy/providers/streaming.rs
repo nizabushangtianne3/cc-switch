@@ -151,11 +151,9 @@ fn build_message_delta_event(stop_reason: Option<String>, usage_json: Option<Val
 }
 
 fn sse_event_string(event: Value) -> String {
-    format!(
-        "event: {}\ndata: {}\n\n",
-        event.get("type").and_then(|v| v.as_str()).unwrap_or(""),
-        serde_json::to_string(&event).unwrap_or_default()
-    )
+    let event_name = event.get("type").and_then(|v| v.as_str()).unwrap_or("");
+    // 复用同一套字节成帧；Vec 的分配由 String::from_utf8 接手，不多一次拷贝
+    String::from_utf8(crate::proxy::sse::frame_sse_event(event_name, &event).into()).unwrap_or_default()
 }
 
 /// 生成一个 thinking/text 增量所需的 Anthropic SSE 事件序列
