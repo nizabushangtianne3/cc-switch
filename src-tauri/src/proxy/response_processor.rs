@@ -15,7 +15,7 @@ use super::{
     ProxyError,
 };
 use axum::http::{header::HeaderMap, HeaderName};
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
 use serde::Deserialize;
@@ -162,6 +162,22 @@ pub fn is_sse_response(response: &ProxyResponse, request_is_stream: bool) -> boo
             && response.content_type().is_none())
 }
 
+/// 用整张 HeaderMap 构造响应，绕开逐头 append。
+///
+/// `Response::builder().header()` 每来一个就 append 一次，十几个响应头就要付
+/// 十几次哈希插入；这里直接搬走已经过滤好的表，构造一次到位。行为与逐头 append
+/// 完全一致——进来的是 hyper 解析后重新组织过的同一张表。
+fn response_with_headers(
+    status: http::StatusCode,
+    headers: HeaderMap,
+    body: axum::body::Body,
+) -> axum::response::Response {
+    let mut response = axum::response::Response::new(body);
+    *response.status_mut() = status;
+    *response.headers_mut() = headers;
+    response
+}
+
 /// 处理流式响应
 pub async fn handle_streaming(
     response: ProxyResponse,
@@ -190,13 +206,6 @@ pub async fn handle_streaming(
     let mut response_headers = parts.headers;
     strip_hop_by_hop_response_headers(&mut response_headers);
 
-    let mut builder = axum::response::Response::builder().status(status);
-
-    // 复制响应头
-    for (key, value) in &response_headers {
-        builder = builder.header(key, value);
-    }
-
     // 创建字节流
     let stream = parts.body;
 
@@ -216,13 +225,7 @@ pub async fn handle_streaming(
     );
 
     let body = axum::body::Body::from_stream(logged_stream);
-    match builder.body(body) {
-        Ok(resp) => resp,
-        Err(e) => {
-            log::error!("[{}] 构建流式响应失败: {e}", ctx.tag);
-            ProxyError::Internal(format!("Failed to build streaming response: {e}")).into_response()
-        }
-    }
+    response_with_headers(status, response_headers, body)
 }
 
 /// 处理非流式响应
@@ -261,17 +264,8 @@ pub async fn handle_non_streaming(
         log::debug!("[{}] usage logging 已关闭，跳过非流式 usage 解析", ctx.tag);
     }
 
-    // 构建响应
-    let mut builder = axum::response::Response::builder().status(status);
-    for (key, value) in response_headers.iter() {
-        builder = builder.header(key, value);
-    }
-
     let body = axum::body::Body::from(body_bytes);
-    builder.body(body).map_err(|e| {
-        log::error!("[{}] 构建响应失败: {e}", ctx.tag);
-        ProxyError::Internal(format!("Failed to build response: {e}"))
-    })
+    Ok(response_with_headers(status, response_headers, body))
 }
 
 /// 通用响应处理入口
@@ -968,6 +962,35 @@ mod tests {
         assert!(formatted.contains("cf-ray=abc123-SJC"), "{formatted}");
         assert!(!formatted.contains("super-secret"), "{formatted}");
         assert!(!formatted.contains("cookie-secret"), "{formatted}");
+    }
+
+    #[test]
+    fn response_with_headers_moves_the_whole_map_including_repeats() {
+        let mut headers = HeaderMap::new();
+        headers.insert("content-type", "text/event-stream".parse().unwrap());
+        headers.append("set-cookie", "a=1".parse().unwrap());
+        headers.append("set-cookie", "b=2".parse().unwrap());
+        headers.insert("x-request-id", "req-1".parse().unwrap());
+
+        let response = response_with_headers(
+            http::StatusCode::BAD_GATEWAY,
+            headers,
+            axum::body::Body::from("payload"),
+        );
+
+        assert_eq!(response.status(), http::StatusCode::BAD_GATEWAY);
+        let moved = response.headers();
+        assert_eq!(moved["content-type"], "text/event-stream");
+        assert_eq!(moved["x-request-id"], "req-1");
+        // 逐头 append 保留的重复头，整表搬移同样必须保留
+        assert_eq!(
+            moved
+                .get_all("set-cookie")
+                .iter()
+                .map(|value| value.to_str().unwrap())
+                .collect::<Vec<_>>(),
+            vec!["a=1", "b=2"]
+        );
     }
 
     #[tokio::test]
