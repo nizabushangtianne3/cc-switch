@@ -38,9 +38,6 @@ pub enum ProxyError {
     #[error("未配置供应商")]
     NoProvidersConfigured,
 
-    #[allow(dead_code)]
-    #[error("Provider不健康: {0}")]
-    ProviderUnhealthy(String),
 
     #[error("上游错误 (状态码 {status}): {body:?}")]
     UpstreamError { status: u16, body: Option<String> },
@@ -65,10 +62,6 @@ pub enum ProxyError {
     #[error("超时: {0}")]
     Timeout(String),
 
-    /// 流式响应空闲超时
-    #[allow(dead_code)]
-    #[error("流式响应空闲超时: {0}秒无数据")]
-    StreamIdleTimeout(u64),
 
     /// 认证错误
     #[error("认证失败: {0}")]
@@ -137,9 +130,6 @@ impl IntoResponse for ProxyError {
                     ProxyError::NoProvidersConfigured => {
                         (StatusCode::SERVICE_UNAVAILABLE, self.to_string())
                     }
-                    ProxyError::ProviderUnhealthy(_) => {
-                        (StatusCode::SERVICE_UNAVAILABLE, self.to_string())
-                    }
                     ProxyError::MaxRetriesExceeded => {
                         (StatusCode::SERVICE_UNAVAILABLE, self.to_string())
                     }
@@ -152,9 +142,6 @@ impl IntoResponse for ProxyError {
                     }
                     ProxyError::InvalidRequest(_) => (StatusCode::BAD_REQUEST, self.to_string()),
                     ProxyError::Timeout(_) => (StatusCode::GATEWAY_TIMEOUT, self.to_string()),
-                    ProxyError::StreamIdleTimeout(_) => {
-                        (StatusCode::GATEWAY_TIMEOUT, self.to_string())
-                    }
                     ProxyError::AuthError(_) => (StatusCode::UNAUTHORIZED, self.to_string()),
                     ProxyError::Internal(_) => {
                         (StatusCode::INTERNAL_SERVER_ERROR, self.to_string())
@@ -187,8 +174,6 @@ pub enum ErrorCategory {
     Retryable, // 网络超时、5xx 错误
     /// 不可重试错误（4xx、认证失败）
     NonRetryable, // 认证失败、参数错误、4xx 错误
-    #[allow(dead_code)]
-    ClientAbort, // 客户端主动中断
 }
 
 /// 把错误连同 `source()` 原因链拼成一行。
@@ -215,25 +200,6 @@ pub fn describe_reqwest_error(error: reqwest::Error) -> String {
     describe_error_chain(&error.without_url())
 }
 
-/// 判断错误是否可重试
-#[allow(dead_code)]
-pub fn categorize_error(error: &reqwest::Error) -> ErrorCategory {
-    if error.is_timeout() || error.is_connect() {
-        return ErrorCategory::Retryable;
-    }
-
-    if let Some(status) = error.status() {
-        if status.is_server_error() {
-            ErrorCategory::Retryable
-        } else if status.is_client_error() {
-            ErrorCategory::NonRetryable
-        } else {
-            ErrorCategory::Retryable
-        }
-    } else {
-        ErrorCategory::Retryable
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -325,10 +291,6 @@ mod tests {
                 StatusCode::SERVICE_UNAVAILABLE,
             ),
             (
-                ProxyError::ProviderUnhealthy("x".into()),
-                StatusCode::SERVICE_UNAVAILABLE,
-            ),
-            (
                 ProxyError::MaxRetriesExceeded,
                 StatusCode::SERVICE_UNAVAILABLE,
             ),
@@ -346,10 +308,6 @@ mod tests {
                 StatusCode::BAD_REQUEST,
             ),
             (ProxyError::Timeout("x".into()), StatusCode::GATEWAY_TIMEOUT),
-            (
-                ProxyError::StreamIdleTimeout(5),
-                StatusCode::GATEWAY_TIMEOUT,
-            ),
             (ProxyError::AuthError("x".into()), StatusCode::UNAUTHORIZED),
             (
                 ProxyError::Internal("x".into()),

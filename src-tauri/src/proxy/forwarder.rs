@@ -1500,8 +1500,8 @@ impl RequestForwarder {
                         }
 
                         // 先分类错误，决定是否计入 provider 健康度
-                        // —— NonRetryable / ClientAbort 是客户端层错误，无论换哪家 provider 都会被拒绝，
-                        //    不应污染熔断器和数据库健康度（与 release_permit_neutral 同语义）。
+// NonRetryable 是客户端层错误，无论换哪家 Provider 都会被拒绝，不应污染熔断器和
+// 数据库健康度（与 release_permit_neutral 同语义）。
                         let category = self.categorize_proxy_error(&e, provider);
 
                         match category {
@@ -1556,7 +1556,7 @@ impl RequestForwarder {
                                 // 继续尝试下一个供应商
                                 continue;
                             }
-                            ErrorCategory::NonRetryable | ErrorCategory::ClientAbort => {
+                            ErrorCategory::NonRetryable => {
                                 // 不可重试：客户端层错误或客户端断连 → 不污染健康度，仅释放 HalfOpen permit
                                 return Err(self
                                     .finish_neutral_failure(
@@ -3649,7 +3649,6 @@ impl RequestForwarder {
             // 网络和上游错误：都应该尝试下一个供应商
             ProxyError::Timeout(_) => ErrorCategory::Retryable,
             ProxyError::ForwardFailed(_) => ErrorCategory::Retryable,
-            ProxyError::ProviderUnhealthy(_) => ErrorCategory::Retryable,
             // 上游 HTTP 错误：按状态码分桶。
             //
             // 客户端请求自身有问题的状态码无论换哪个 provider 都会被拒绝，
@@ -3670,7 +3669,6 @@ impl RequestForwarder {
             ProxyError::ConfigError(_) => ErrorCategory::Retryable,
             ProxyError::TransformError(_) => ErrorCategory::Retryable,
             ProxyError::AuthError(_) => ErrorCategory::Retryable,
-            ProxyError::StreamIdleTimeout(_) => ErrorCategory::Retryable,
             // 无可用供应商：所有供应商都试过了，无法重试
             ProxyError::NoAvailableProvider => ErrorCategory::NonRetryable,
             // 其他错误（数据库/内部错误等）：不是换供应商能解决的问题

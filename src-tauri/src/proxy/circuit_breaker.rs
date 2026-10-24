@@ -288,6 +288,9 @@ impl CircuitBreaker {
     }
 
     /// 获取当前状态
+    ///
+    /// 断路器状态读取只服务于单元测试与诊断，`--lib` 视角下没有调用方，
+    /// 因此保留 #[allow(dead_code)]；删掉它会让 forwarder 的熔断用例编不过。
     #[allow(dead_code)]
     pub async fn get_state(&self) -> CircuitState {
         *self.state.read().await

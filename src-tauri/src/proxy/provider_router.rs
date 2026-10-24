@@ -281,7 +281,11 @@ impl ProviderRouter {
         }
     }
 
+
     /// 获取熔断器状态
+    ///
+    /// 测试与 Tauri 命令层都从这里读统计；`--lib` 视角下只有测试用得到，
+    /// 所以保留 #[allow(dead_code)]，删掉它会让三个 forwarder 用例编不过。
     #[allow(dead_code)]
     pub async fn get_circuit_breaker_stats(
         &self,

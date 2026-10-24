@@ -60,9 +60,6 @@ pub struct RequestContext {
     pub tag: &'static str,
     /// 应用类型字符串（如 "claude"、"codex"、"gemini"）
     pub app_type_str: &'static str,
-    /// 应用类型（预留，目前通过 app_type_str 使用）
-    #[allow(dead_code)]
-    pub app_type: AppType,
     /// Session ID（从客户端请求提取或新生成）
     pub session_id: String,
     /// Session ID 是否由客户端提供。生成的 UUID 不能作为上游缓存 key，否则每个请求都会换 key。
@@ -222,7 +219,6 @@ impl RequestContext {
             api_key_id: None,
             tag,
             app_type_str,
-            app_type,
             session_id,
             session_client_provided: session_result.client_provided,
             rectifier_config,

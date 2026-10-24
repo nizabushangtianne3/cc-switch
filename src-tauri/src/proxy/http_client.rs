@@ -229,11 +229,6 @@ pub fn get_current_proxy_url() -> Option<Arc<str>> {
         .and_then(|url| url.clone())
 }
 
-/// 检查是否正在使用代理
-#[allow(dead_code)]
-pub fn is_proxy_enabled() -> bool {
-    get_current_proxy_url().is_some()
-}
 
 /// 两种客户端共用的参数
 fn base_builder() -> reqwest::ClientBuilder {
