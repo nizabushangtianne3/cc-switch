@@ -36,8 +36,8 @@ impl AuthInfo {
 
     /// 返回遮蔽后的 API Key（用于日志输出）
     ///
-    /// 显示前4位和后4位，中间用 `...` 代替
-    /// 如果 key 长度不足8位，则返回 `***`
+    /// 生产路径目前没有调用方，只有下面这组单测在锁遮蔽口径；保留它比
+    /// 将来在日志处重新实现一份更容易验证，因此 #[allow(dead_code)] 写明来由。
     #[allow(dead_code)]
     pub fn masked_key(&self) -> String {
         if self.api_key.chars().count() > 8 {
