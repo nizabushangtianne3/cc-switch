@@ -6,7 +6,7 @@
 //! 支持检测官方 Codex 客户端 (codex_vscode, codex_cli_rs)
 
 use super::{AuthInfo, AuthStrategy, ProviderAdapter};
-use crate::provider::{CodexChatReasoningConfig, Provider};
+use crate::provider::{first_non_empty_field, CodexChatReasoningConfig, Provider};
 use crate::proxy::error::ProxyError;
 use serde_json::Value as JsonValue;
 use std::collections::HashSet;
@@ -966,26 +966,15 @@ impl CodexAdapter {
         }
 
         // 3. 尝试直接获取
-        if let Some(key) = provider
-            .settings_config
-            .get("apiKey")
-            .or_else(|| provider.settings_config.get("api_key"))
-            .and_then(|v| v.as_str())
-            .map(str::trim)
-            .filter(|key| !key.is_empty())
+        if let Some(key) = first_non_empty_field(&provider.settings_config, &["apiKey", "api_key"])
         {
             return Some(key.to_string());
         }
 
         // 4. 尝试从 config 对象中获取
         if let Some(config) = provider.settings_config.get("config") {
-            if let Some(key) = config
-                .get("api_key")
-                .or_else(|| config.get("apiKey"))
-                .and_then(|v| v.as_str())
-                .map(str::trim)
-                .filter(|key| !key.is_empty())
-            {
+            // 这里两个 key 的顺序和顶层恰好相反：Codex CLI 的 config 对象写 api_key
+            if let Some(key) = first_non_empty_field(config, &["api_key", "apiKey"]) {
                 return Some(key.to_string());
             }
 

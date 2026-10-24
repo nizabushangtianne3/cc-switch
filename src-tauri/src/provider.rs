@@ -43,6 +43,21 @@ pub struct Provider {
     pub in_failover_queue: bool,
 }
 
+/// 从一个 JSON 对象里按顺序取第一个非空字符串字段，返回值已 trim。
+///
+/// 三个适配器各自写了一遍 `get(apiKey).or_else(|| get(api_key)) → as_str →
+/// trim → 非空`，Codex 还有一份作用在嵌套的 config 对象上、两个 key 的顺序
+/// 恰好相反。取哪个 key、什么顺序交给调用方的 key 列表决定，规则只留一份。
+pub(crate) fn first_non_empty_field<'a>(object: &'a Value, keys: &[&str]) -> Option<&'a str> {
+    keys.iter().find_map(|key| {
+        object
+            .get(*key)
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+    })
+}
+
 impl Provider {
     /// 从现有ID创建供应商
     pub fn with_id(
@@ -1144,6 +1159,7 @@ pub struct OpenCodeModelLimit {
 #[cfg(test)]
 mod tests {
     use super::{
+        first_non_empty_field,
         ClaudeModelConfig, CodexCopilotApiFormat, CodexModelConfig, GeminiModelConfig,
         LocalProxyRequestOverrides, OpenCodeProviderConfig, Provider, ProviderManager,
         ProviderMeta, UniversalProvider,
@@ -1908,5 +1924,45 @@ mod tests {
     fn settings_config_base_url_is_none_when_no_key_matches() {
         let p = provider_with(json!({ "base_url": 42 }));
         assert_eq!(p.settings_config_base_url(&["base_url", "baseURL"]), None);
+    }
+
+    #[test]
+    fn first_non_empty_field_takes_the_first_present_key() {
+        let object = json!({ "apiKey": "sk-a", "api_key": "sk-b" });
+        assert_eq!(
+            first_non_empty_field(&object, &["apiKey", "api_key"]),
+            Some("sk-a")
+        );
+        assert_eq!(
+            first_non_empty_field(&object, &["api_key", "apiKey"]),
+            Some("sk-b")
+        );
+    }
+
+    #[test]
+    fn first_non_empty_field_trims_and_rejects_blank() {
+        let object = json!({ "apiKey": "   ", "api_key": "  sk-b  " });
+        assert_eq!(
+            first_non_empty_field(&object, &["apiKey", "api_key"]),
+            Some("sk-b"),
+            "纯空白的第一个 key 要让位给下一个"
+        );
+
+        let blank = json!({ "apiKey": "\t\n " });
+        assert_eq!(first_non_empty_field(&blank, &["apiKey", "api_key"]), None);
+    }
+
+    #[test]
+    fn first_non_empty_field_skips_non_string_values() {
+        let object = json!({ "apiKey": 7, "api_key": null, "other": "sk-c" });
+        assert_eq!(
+            first_non_empty_field(&object, &["apiKey", "api_key", "other"]),
+            Some("sk-c")
+        );
+    }
+
+    #[test]
+    fn first_non_empty_field_is_none_when_object_is_missing_keys() {
+        assert_eq!(first_non_empty_field(&json!({}), &["apiKey"]), None);
     }
 }

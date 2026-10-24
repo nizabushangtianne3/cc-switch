@@ -16,7 +16,7 @@
 
 use super::codex_oauth_auth::{CODEX_OAUTH_CLIENT_VERSION, CODEX_OAUTH_ORIGINATOR};
 use super::{AuthInfo, AuthStrategy, ProviderAdapter, ProviderType};
-use crate::provider::Provider;
+use crate::provider::{first_non_empty_field, Provider};
 use crate::proxy::error::ProxyError;
 use serde_json::{json, Value};
 
@@ -679,13 +679,7 @@ impl ClaudeAdapter {
         }
 
         // 尝试直接获取
-        if let Some(key) = provider
-            .settings_config
-            .get("apiKey")
-            .or_else(|| provider.settings_config.get("api_key"))
-            .and_then(|v| v.as_str())
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
+        if let Some(key) = first_non_empty_field(&provider.settings_config, &["apiKey", "api_key"])
         {
             log::debug!("[Claude] 使用 apiKey/api_key");
             return Some(key.to_string());
