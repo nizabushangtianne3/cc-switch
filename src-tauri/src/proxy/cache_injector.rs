@@ -3,6 +3,7 @@
 //! 在请求转发前自动注入 cache_control 标记，启用 Bedrock Prompt Caching
 
 use super::types::OptimizerConfig;
+use smallvec::SmallVec;
 use serde_json::{json, Value};
 
 /// 在请求体关键位置注入 cache_control 断点
@@ -28,7 +29,9 @@ pub fn inject(body: &mut Value, config: &OptimizerConfig) {
         return;
     }
 
-    let mut injected = Vec::new();
+    // 最多四个断点（tools / system / msgs-latest / msgs-prior-user），
+    // 内联存储，别为一条日志每请求多付一次堆分配。
+    let mut injected: SmallVec<[&str; 4]> = SmallVec::new();
 
     // (a) tools 末尾
     if budget > 0 {
@@ -102,12 +105,16 @@ pub fn inject(body: &mut Value, config: &OptimizerConfig) {
         }
     }
 
-    log::info!(
-        "[OPT] cache: {}bp({},{},pre={existing})",
-        injected.len(),
-        injected.join("+"),
-        "5m",
-    );
+    // log::info! 的格式参数是无条件求值的：直接在这里 join 会让每个注入过
+    // 断点的请求都白付一次字符串拼接，而 release 默认关闭 info 日志。
+    if log::log_enabled!(log::Level::Info) {
+        log::info!(
+            "[OPT] cache: {}bp({},{},pre={existing})",
+            injected.len(),
+            injected.join("+"),
+            "5m",
+        );
+    }
 }
 
 fn inject_message_breakpoint(message: &mut Value) -> bool {
