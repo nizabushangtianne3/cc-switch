@@ -1,5 +1,5 @@
 use super::codex_chat_common::{is_empty_value, response_item_call_id};
-use crate::proxy::sse::{next_sse_block_range, strip_sse_field, Utf8TailDecoder};
+use crate::proxy::sse::{next_sse_block_range, scan_sse_block, Utf8TailDecoder};
 use bytes::Bytes;
 use futures::{Stream, StreamExt};
 use serde_json::Value;
@@ -401,14 +401,10 @@ async fn inspect_sse_block(
         return;
     }
 
-    let mut data_parts = Vec::new();
-    for line in block.lines() {
-        if let Some(data) = strip_sse_field(line, "data") {
-            data_parts.push(data.to_string());
-        }
-    }
-
-    let data = data_parts.join("\n");
+    let (_, payload) = scan_sse_block(block);
+    let Some(data) = payload else {
+        return;
+    };
     if data.trim().is_empty() || data.trim() == "[DONE]" {
         return;
     }

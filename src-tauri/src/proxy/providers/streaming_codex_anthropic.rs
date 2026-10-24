@@ -22,7 +22,7 @@ use super::transform_codex_chat::{
 };
 use super::transform_responses::sanitize_anthropic_tool_use_input_json;
 use crate::proxy::json_canonical::canonicalize_tool_arguments_str;
-use crate::proxy::sse::{next_sse_block_range, strip_sse_field, Utf8TailDecoder};
+use crate::proxy::sse::{next_sse_block_range, scan_sse_block, Utf8TailDecoder};
 use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
 use serde_json::{json, Map, Value};
@@ -573,20 +573,11 @@ fn process_anthropic_sse_block(
     if block.trim().is_empty() {
         return (Vec::new(), false);
     }
-    let mut event_name: Option<String> = None;
-    let mut data_parts: Vec<String> = Vec::new();
-    for line in block.lines() {
-        if let Some(event) = strip_sse_field(line, "event") {
-            event_name = Some(event.trim().to_string());
-        }
-        if let Some(data) = strip_sse_field(line, "data") {
-            data_parts.push(data.to_string());
-        }
-    }
-    if data_parts.is_empty() {
+    let (event_name, payload) = scan_sse_block(block);
+    let Some(payload) = payload else {
         return (Vec::new(), false);
-    }
-    let Ok(data) = serde_json::from_str::<Value>(&data_parts.join("\n")) else {
+    };
+    let Ok(data) = serde_json::from_str::<Value>(&payload) else {
         return (Vec::new(), false);
     };
     let msg_type = data

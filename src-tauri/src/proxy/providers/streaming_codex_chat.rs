@@ -13,7 +13,7 @@ use super::{
     },
 };
 use crate::proxy::json_canonical::canonicalize_tool_arguments_str;
-use crate::proxy::sse::{next_sse_block_range, strip_sse_field, Utf8TailDecoder};
+use crate::proxy::sse::{next_sse_block_range, scan_sse_block, Utf8TailDecoder};
 use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
 use serde_json::{json, Value};
@@ -760,24 +760,16 @@ pub fn create_responses_sse_stream_from_chat_with_context<E: std::error::Error +
 
                     while let Some((end, delim)) = next_sse_block_range(&buffer) {
                         let block = &buffer[..end];
-                        let mut event_name: Option<String> = None;
-                        let mut data_parts: Vec<String> = Vec::new();
-                        for line in block.lines() {
-                            if let Some(event) = strip_sse_field(line, "event") {
-                                event_name = Some(event.trim().to_string());
-                            }
-                            if let Some(data) = strip_sse_field(line, "data") {
-                                data_parts.push(data.to_string());
-                            }
-                        }
+                        let (event_name, payload) = scan_sse_block(block);
+                        // [DONE] 的判定只需要一个 bool；先取出来，drain 之后照样能用
+                        let is_done = payload.as_deref().is_some_and(|text| text.trim() == "[DONE]");
+                        let parsed = payload
+                            .as_deref()
+                            .map(|text| serde_json::from_str::<Value>(text))
+                            .transpose();
                         buffer.drain(..end + delim);
 
-                        if data_parts.is_empty() {
-                            continue;
-                        }
-
-                        let data = data_parts.join("\n");
-                        if data.trim() == "[DONE]" {
+                        if is_done {
                             for event in state.finalize() {
                                 yield Ok(event);
                             }
@@ -785,9 +777,10 @@ pub fn create_responses_sse_stream_from_chat_with_context<E: std::error::Error +
                             return;
                         }
 
-                        let chunk: Value = match serde_json::from_str(&data) {
-                            Ok(value) => value,
-                            Err(_) => continue,
+                        // 没有 data 行或 data 不是合法 JSON：跳过这个块
+                        let chunk: Value = match parsed {
+                            Ok(Some(value)) => value,
+                            _ => continue,
                         };
 
                         if event_name.as_deref() == Some("error") || chunk.get("error").is_some() {

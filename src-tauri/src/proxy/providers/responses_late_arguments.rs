@@ -16,7 +16,7 @@ use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
 use serde_json::Value;
 
-use crate::proxy::sse::{next_sse_block_range, strip_sse_field, Utf8TailDecoder};
+use crate::proxy::sse::{next_sse_block_range, scan_sse_block, Utf8TailDecoder};
 
 /// 一个 SSE 块，解析出的事件（不是 JSON 的块为 None）。
 struct Block {
@@ -27,19 +27,10 @@ struct Block {
 
 impl Block {
     fn parse(raw: &str) -> Self {
-        let mut event_name = None;
-        let mut data_parts = Vec::new();
-        for line in raw.lines() {
-            if let Some(event) = strip_sse_field(line, "event") {
-                event_name = Some(event.trim().to_string());
-            }
-            if let Some(data) = strip_sse_field(line, "data") {
-                data_parts.push(data);
-            }
-        }
-        let event = (!data_parts.is_empty())
-            .then(|| serde_json::from_str::<Value>(&data_parts.join("\n")).ok())
-            .flatten();
+        let (event_name, payload) = scan_sse_block(raw);
+        let event = payload
+            .as_deref()
+            .and_then(|text| serde_json::from_str::<Value>(text).ok());
         Self {
             raw: raw.to_string(),
             event_name,

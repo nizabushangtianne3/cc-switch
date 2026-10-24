@@ -16,7 +16,9 @@ use super::transform_responses::{
     web_search_max_uses_exceeded_error, web_search_results_from_action,
     web_search_results_from_output_item, web_search_tool_result_error,
 };
-use crate::proxy::sse::{next_sse_block_range, strip_sse_field, Utf8TailDecoder};
+use crate::proxy::sse::{
+    next_sse_block_range, scan_sse_block, strip_sse_field, Utf8TailDecoder,
+};
 use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
 use serde_json::{json, Value};
@@ -2497,29 +2499,21 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                     // SSE 事件由 \n\n 分隔
                     while let Some((end, delim)) = next_sse_block_range(&buffer) {
                         let block = &buffer[..end];
-                        // 解析 SSE 块：提取 event: 和 data: 行
-                        let mut event_type: Option<String> = None;
-                        let mut data_parts: Vec<String> = Vec::new();
+                        // 拆出 event: 与 data:：单行 data 是借支，不为它拷贝一份
+                        let (event_type, payload) = scan_sse_block(block);
 
-                        for line in block.lines() {
-                            if let Some(evt) = strip_sse_field(line, "event") {
-                                event_type = Some(evt.trim().to_string());
-                            } else if let Some(d) = strip_sse_field(line, "data") {
-                                data_parts.push(d.to_string());
-                            }
-                        }
+                        // 先解析再 drain。Value 是 owned，借用的 block 到这里已经用完；
+                        // drain 必须发生，否则没有 data 的块会永远留在 buffer 里。
+                        let parsed = payload
+                            .as_deref()
+                            .map(|text| serde_json::from_str::<Value>(text))
+                            .transpose();
                         buffer.drain(..end + delim);
 
-                        if data_parts.is_empty() {
-                            continue;
-                        }
-
-                        let data_str = data_parts.join("\n");
-
-                        // 解析 JSON 数据
-                        let data: Value = match serde_json::from_str(&data_str) {
-                            Ok(v) => v,
-                            Err(_) => continue,
+                        // 没有 data 行或 data 不是合法 JSON：这个块没有可转换的内容
+                        let data: Value = match parsed {
+                            Ok(Some(value)) => value,
+                            _ => continue,
                         };
 
                         // Official streams use both a named SSE event and `type` in

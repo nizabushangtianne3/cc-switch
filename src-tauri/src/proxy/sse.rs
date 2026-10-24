@@ -1,5 +1,7 @@
 use bytes::Bytes;
 use serde_json::Value;
+use smallvec::SmallVec;
+use std::borrow::Cow;
 
 #[inline]
 pub(crate) fn strip_sse_field<'a>(line: &'a str, field: &str) -> Option<&'a str> {
@@ -186,6 +188,45 @@ pub(crate) fn frame_sse_event(event_name: &str, payload: &Value) -> Bytes {
     Bytes::from(frame)
 }
 
+/// Split one SSE block into its `event:` value and its `data:` payload.
+///
+/// The data lines are borrowed rather than copied. Responses, Chat Completions
+/// and Anthropic events all carry their payload on a single `data:` line, so
+/// the common path allocates nothing for the payload; the multi-line case that
+/// the SSE spec also allows still joins with newlines exactly as before.
+///
+/// `event` stays owned because every caller drains the buffer before using it,
+/// which would invalidate a borrow of the block. Taking the last `event:` line
+/// when a block repeats the field matches what the previous inline loops did.
+pub(crate) fn scan_sse_block(block: &str) -> (Option<String>, Option<Cow<'_, str>>) {
+    let mut event: Option<String> = None;
+    let mut data: SmallVec<[&str; 2]> = SmallVec::new();
+
+    for line in block.lines() {
+        if let Some(name) = strip_sse_field(line, "event") {
+            event = Some(name.trim().to_string());
+        } else if let Some(payload) = strip_sse_field(line, "data") {
+            data.push(payload);
+        }
+    }
+
+    let payload = match data.as_slice() {
+        [] => None,
+        [single] => Some(Cow::Borrowed(*single)),
+        many => {
+            let mut joined = String::new();
+            for (index, part) in many.iter().enumerate() {
+                if index > 0 {
+                    joined.push('\n');
+                }
+                joined.push_str(part);
+            }
+            Some(Cow::Owned(joined))
+        }
+    };
+    (event, payload)
+}
+
 /// Byte count of the UTF-8 character introduced by `lead`.
 #[inline]
 fn utf8_char_len(lead: u8) -> usize {
@@ -214,6 +255,8 @@ mod tests {
     use super::{
         frame_sse_event, next_sse_block_range, strip_sse_field, Utf8TailDecoder,
     };
+    use super::scan_sse_block;
+    use std::borrow::Cow;
     use bytes::Bytes;
 
     #[test]
@@ -545,5 +588,48 @@ mod tests {
 
         assert!(text.contains("\u{4F60}\u{597D}"), "{text}");
         assert!(text.ends_with("\n\n"), "{text}");
+    }
+
+    #[test]
+    fn scan_sse_block_borrows_a_single_data_line() {
+        let (event, payload) =
+            scan_sse_block("event: response.output_text.delta\ndata: {\"delta\":\"hi\"}");
+
+        assert_eq!(event.as_deref(), Some("response.output_text.delta"));
+        let payload = payload.expect("data line");
+        assert!(
+            matches!(payload, Cow::Borrowed(_)),
+            "单行 data 不该分配"
+        );
+        assert_eq!(&*payload, "{\"delta\":\"hi\"}");
+    }
+
+    #[test]
+    fn scan_sse_block_joins_multiple_data_lines_with_newlines() {
+        let (event, payload) = scan_sse_block("event: chunk\ndata: {\"a\":1,\ndata: \"b\":2}");
+
+        assert_eq!(event.as_deref(), Some("chunk"));
+        let payload = payload.expect("data lines");
+        assert!(matches!(payload, Cow::Owned(_)), "多行必须拼一份");
+        assert_eq!(&*payload, "{\"a\":1,\n\"b\":2}");
+    }
+
+    #[test]
+    fn scan_sse_block_takes_the_last_event_line() {
+        // 与旧内联循环一致：同一块里重复的 event: 后者胜出
+        let (event, payload) = scan_sse_block("event: first\nevent: second\ndata: {}");
+        assert_eq!(event.as_deref(), Some("second"));
+        assert_eq!(&*payload.expect("data"), "{}");
+    }
+
+    #[test]
+    fn scan_sse_block_reports_no_payload_without_a_data_line() {
+        let (event, payload) = scan_sse_block("event: ping\n");
+        assert_eq!(event.as_deref(), Some("ping"));
+        assert!(payload.is_none());
+
+        let (event, payload) = scan_sse_block(": comment only");
+        assert!(event.is_none());
+        assert!(payload.is_none());
     }
 }
