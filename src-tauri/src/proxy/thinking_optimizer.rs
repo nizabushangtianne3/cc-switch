@@ -74,7 +74,6 @@ pub fn optimize(body: &mut Value, config: &OptimizerConfig) {
 }
 
 pub(crate) fn uses_adaptive_thinking(model: &str) -> bool {
-    let normalized = normalize_model_name(model);
     [
         "fable-5",
         "mythos-5",
@@ -87,14 +86,13 @@ pub(crate) fn uses_adaptive_thinking(model: &str) -> bool {
         "sonnet-4-6",
     ]
     .iter()
-    .any(|needle| normalized.contains(needle))
+    .any(|needle| normalized_contains(model, needle))
 }
 
 /// Models where omitting `thinking` still leaves adaptive thinking enabled
 /// (Claude thinking docs, per-model table: the 5.x Fable / Mythos / Opus /
 /// Sonnet generations and Mythos Preview; Opus 4.x and Sonnet 4.x are off).
 pub(crate) fn adaptive_thinking_is_default(model: &str) -> bool {
-    let normalized = normalize_model_name(model);
     [
         "fable-5",
         "mythos-5",
@@ -103,19 +101,50 @@ pub(crate) fn adaptive_thinking_is_default(model: &str) -> bool {
         "sonnet-5",
     ]
     .iter()
-    .any(|needle| normalized.contains(needle))
+    .any(|needle| normalized_contains(model, needle))
 }
 
 /// Models that reject `thinking: {"type":"disabled"}`.
 pub(crate) fn thinking_cannot_be_disabled(model: &str) -> bool {
-    let normalized = normalize_model_name(model);
     ["fable-5", "mythos-5"]
         .iter()
-        .any(|needle| normalized.contains(needle))
+        .any(|needle| normalized_contains(model, needle))
 }
 
-fn normalize_model_name(model: &str) -> String {
-    model.trim().to_ascii_lowercase().replace(['.', '_'], "-")
+/// 在按同一套规则归一化后的模型名里找 `needle`，不产出中间字符串。
+///
+/// 规则与旧的 `normalize_model_name` 一致：ASCII 小写化，`.` 和 `_` 视同 `-`，
+/// 其余字节原样。`trim` 对 `contains` 没有影响，因此不再做。
+///
+/// 旧实现每次调用都要 `to_ascii_lowercase` 加 `replace` 两次分配，而
+/// `transform_codex_anthropic` 会在一次请求里连着调三个判定函数、归一化同一个
+/// 模型名三遍；这里逐字节比对，一分钱不花。
+fn normalized_contains(model: &str, needle: &str) -> bool {
+    let haystack = model.as_bytes();
+    let needle = needle.as_bytes();
+    if needle.is_empty() {
+        return true;
+    }
+    if haystack.len() < needle.len() {
+        return false;
+    }
+
+    'start: for offset in 0..=haystack.len() - needle.len() {
+        for (index, expected) in needle.iter().enumerate() {
+            if normalized_byte(haystack[offset + index]) != *expected {
+                continue 'start;
+            }
+        }
+        return true;
+    }
+    false
+}
+
+/// 归一化后的字节：`.` / `_` 折成 `-`，ASCII 字母小写化，其余不变。
+#[inline]
+fn normalized_byte(byte: u8) -> u8 {
+    let byte = if byte == b'.' || byte == b'_' { b'-' } else { byte };
+    byte.to_ascii_lowercase()
 }
 
 /// 追加 beta 标识到 anthropic_beta 数组（去重）
@@ -201,6 +230,24 @@ mod tests {
         }
         assert!(thinking_cannot_be_disabled("claude-fable-5"));
         assert!(!thinking_cannot_be_disabled("claude-sonnet-5"));
+    }
+
+    #[test]
+    fn normalized_contains_folds_case_dots_and_underscores() {
+        // 大小写不敏感
+        assert!(normalized_contains("Claude-OPUS-5", "opus-5"));
+        // `.` 与 `_` 视同 `-`
+        assert!(normalized_contains("claude-opus-4.8", "opus-4-8"));
+        assert!(normalized_contains("claude_opus_4_8", "opus-4-8"));
+        assert!(normalized_contains("anthropic.claude-opus-4-6-20250514-v1:0", "opus-4-6"));
+        // 斜杠不在折叠范围内，但它不影响子串命中
+        assert!(normalized_contains("anthropic/claude-fable-5", "fable-5"));
+        assert!(!normalized_contains("anthropic/claude-fable-5", "fable/5"));
+        // 空 needle 恒真，与 str::contains 一致
+        assert!(normalized_contains("anything", ""));
+        assert!(!normalized_contains("claude-opus-5", "sonnet-5"));
+        // 前后空白不影响 contains
+        assert!(normalized_contains("  claude-opus-5  ", "opus-5"));
     }
 
     #[test]
