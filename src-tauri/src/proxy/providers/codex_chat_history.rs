@@ -691,7 +691,8 @@ mod tests {
     async fn round_trips_gemini_thought_signature_extra_content() {
         // Gemini OpenAI 兼容接口要求下一轮原样带回 tool call 的 thought signature（#8336）。
         let signature = json!({"google": {"thought_signature": "sig-abc"}});
-        let response = super::super::transform_codex_chat::chat_completion_to_response(json!({
+        let response = super::super::transform_codex_chat::chat_completion_to_response_with_context(
+            json!({
             "id": "chatcmpl_gemini",
             "model": "gemini-4-argon",
             "choices": [{
@@ -706,7 +707,7 @@ mod tests {
                 },
                 "finish_reason": "tool_calls"
             }]
-        }))
+        }), &super::super::transform_codex_chat::CodexToolContext::default())
         .unwrap();
         let output = response["output"].as_array().unwrap();
         let call = output
@@ -735,7 +736,11 @@ mod tests {
         assert_eq!(history.enrich_request(&mut request).await, 1);
 
         let chat =
-            super::super::transform_codex_chat::responses_to_chat_completions(request).unwrap();
+            super::super::transform_codex_chat::responses_to_chat_completions_with_reasoning(
+                request,
+                None,
+            )
+            .unwrap();
         let assistant = chat["messages"]
             .as_array()
             .unwrap()
