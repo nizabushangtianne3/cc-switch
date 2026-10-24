@@ -121,6 +121,7 @@ impl Default for GeminiShadowStore {
 }
 
 impl GeminiShadowStore {
+    // 观测接口只被单测使用，生产路径一律走 with_limits / Default。
     #[allow(dead_code)]
     pub fn new() -> Self {
         Self::default()
@@ -164,6 +165,7 @@ impl GeminiShadowStore {
     }
 
     /// Get the latest assistant content for a provider/session pair.
+    // 观测接口只被单测使用；生产路径读整份快照而非单条内容。
     #[allow(dead_code)]
     pub fn latest_assistant_content(&self, provider_id: &str, session_id: &str) -> Option<Value> {
         self.get_session(provider_id, session_id)
@@ -176,6 +178,7 @@ impl GeminiShadowStore {
     }
 
     /// Get the latest tool calls for a provider/session pair.
+    // 观测接口只被单测使用；生产路径读整份快照而非单条 tool_calls。
     #[allow(dead_code)]
     pub fn latest_tool_calls(
         &self,
@@ -205,6 +208,7 @@ impl GeminiShadowStore {
     }
 
     /// Remove a single session from the store.
+    // 清理接口只被单测使用；生产路径靠 LRU 上限自然淘汰。
     #[allow(dead_code)]
     pub fn clear_session(&self, provider_id: &str, session_id: &str) -> bool {
         let key = GeminiShadowKey::new(provider_id, session_id);
@@ -217,6 +221,7 @@ impl GeminiShadowStore {
     }
 
     /// Remove all sessions for a provider.
+    // 清理接口只被单测使用；生产路径靠 LRU 上限自然淘汰。
     #[allow(dead_code)]
     pub fn clear_provider(&self, provider_id: &str) -> usize {
         let mut inner = self.write_inner();
@@ -234,6 +239,7 @@ impl GeminiShadowStore {
     }
 
     /// Number of tracked sessions.
+    // 观测接口只被单测使用；生产路径不统计会话数。
     #[allow(dead_code)]
     pub fn session_count(&self) -> usize {
         self.read_inner().sessions.len()
@@ -271,6 +277,7 @@ impl GeminiShadowStore {
         order.push_back(key.clone());
     }
 
+    // 只被 clear_session / clear_provider 这两个测试清理接口调用。
     #[allow(dead_code)]
     fn remove_key_from_order(order: &mut VecDeque<GeminiShadowKey>, key: &GeminiShadowKey) {
         if let Some(pos) = order.iter().position(|existing| existing == key) {
