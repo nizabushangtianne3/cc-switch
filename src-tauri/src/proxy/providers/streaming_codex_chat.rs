@@ -13,7 +13,7 @@ use super::{
     },
 };
 use crate::proxy::json_canonical::canonicalize_tool_arguments_str;
-use crate::proxy::sse::{next_sse_block_range, strip_sse_field};
+use crate::proxy::sse::{next_sse_block_range, strip_sse_field, Utf8TailDecoder};
 use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
 use serde_json::{json, Value};
@@ -755,7 +755,7 @@ pub fn create_responses_sse_stream_from_chat_with_context<E: std::error::Error +
 ) -> impl Stream<Item = Result<Bytes, std::io::Error>> + Send {
     async_stream::stream! {
         let mut buffer = String::new();
-        let mut utf8_remainder: Vec<u8> = Vec::new();
+        let mut utf8_tail = Utf8TailDecoder::default();
         let mut state = ChatToResponsesState::with_tool_context(tool_context);
         let mut stream_failed = false;
 
@@ -764,7 +764,7 @@ pub fn create_responses_sse_stream_from_chat_with_context<E: std::error::Error +
         while let Some(chunk) = stream.next().await {
             match chunk {
                 Ok(bytes) => {
-                    crate::proxy::sse::append_utf8_safe(&mut buffer, &mut utf8_remainder, &bytes);
+                    utf8_tail.append(&mut buffer, &bytes);
 
                     while let Some((end, delim)) = next_sse_block_range(&buffer) {
                         let block = &buffer[..end];

@@ -16,7 +16,7 @@ use super::transform_responses::{
     web_search_max_uses_exceeded_error, web_search_results_from_action,
     web_search_results_from_output_item, web_search_tool_result_error,
 };
-use crate::proxy::sse::{next_sse_block_range, strip_sse_field};
+use crate::proxy::sse::{next_sse_block_range, strip_sse_field, Utf8TailDecoder};
 use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
 use serde_json::{json, Value};
@@ -2404,7 +2404,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
 ) -> impl Stream<Item = Result<Bytes, std::io::Error>> + Send {
     async_stream::stream! {
         let mut buffer = String::new();
-        let mut utf8_remainder: Vec<u8> = Vec::new();
+        let mut utf8_tail = Utf8TailDecoder::default();
         let mut message_id: Option<String> = None;
         let mut current_model: Option<String> = None;
         let mut has_sent_message_start = false;
@@ -2454,7 +2454,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
         'stream_loop: while let Some((chunk, is_eof)) = stream.next().await {
             match chunk {
                 Ok(bytes) => {
-                    crate::proxy::sse::append_utf8_safe(&mut buffer, &mut utf8_remainder, &bytes);
+                    utf8_tail.append(&mut buffer, &bytes);
 
                     // A few compatible gateways ignore stream:true and return one
                     // JSON document. Hold it intact until EOF, including any pretty-

@@ -1,5 +1,5 @@
 use super::codex_chat_common::{is_empty_value, response_item_call_id};
-use crate::proxy::sse::{append_utf8_safe, next_sse_block_range, strip_sse_field};
+use crate::proxy::sse::{next_sse_block_range, strip_sse_field, Utf8TailDecoder};
 use bytes::Bytes;
 use futures::{Stream, StreamExt};
 use serde_json::Value;
@@ -370,7 +370,7 @@ pub fn record_responses_sse_stream(
 ) -> impl Stream<Item = Result<Bytes, std::io::Error>> + Send {
     async_stream::stream! {
         let mut buffer = String::new();
-        let mut utf8_remainder = Vec::new();
+        let mut utf8_tail = Utf8TailDecoder::default();
         let mut current_response_id: Option<String> = None;
 
         tokio::pin!(stream);
@@ -378,7 +378,7 @@ pub fn record_responses_sse_stream(
         while let Some(chunk) = stream.next().await {
             match chunk {
                 Ok(bytes) => {
-                    append_utf8_safe(&mut buffer, &mut utf8_remainder, &bytes);
+                    utf8_tail.append(&mut buffer, &bytes);
                     while let Some((end, delim)) = next_sse_block_range(&buffer) {
                         let block = &buffer[..end];
                         inspect_sse_block(block, &mut current_response_id, history.as_ref()).await;

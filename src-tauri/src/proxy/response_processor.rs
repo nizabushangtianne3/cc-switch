@@ -9,7 +9,7 @@ use super::{
     handler_context::{RequestContext, StreamingTimeoutConfig},
     hyper_client::{ProxyResponse, MAX_RESPONSE_BODY_BYTES},
     server::ProxyState,
-    sse::{next_sse_block_range, strip_sse_field},
+    sse::{next_sse_block_range, strip_sse_field, Utf8TailDecoder},
     usage::logger::{spawn_usage_record, usage_logging_enabled, write_usage_record, UsageRecord},
     usage::parser::TokenUsage,
     ProxyError,
@@ -104,10 +104,10 @@ pub(crate) async fn read_decoded_body(
     };
 
     log::debug!(
-        "[{tag}] 已接收上游响应体: status={}, bytes={}, headers={}",
+        "[{tag}] 已接收上游响应体: status={}, bytes={}, headers={:?}",
         status.as_u16(),
         raw_bytes.len(),
-        format_headers(&headers)
+        diagnostic_headers(&headers)
     );
 
     let mut body_bytes = raw_bytes;
@@ -173,10 +173,10 @@ pub async fn handle_streaming(
     let parts = response.into_parts();
     let status = parts.status;
     log::debug!(
-        "[{}] 已接收上游流式响应: status={}, headers={}",
+        "[{}] 已接收上游流式响应: status={}, headers={:?}",
         ctx.tag,
         status.as_u16(),
-        format_headers(&parts.headers)
+        diagnostic_headers(&parts.headers)
     );
     // 检查流式响应是否被压缩（SSE 通常不压缩，如果压缩则 SSE 解析会失败）
     if let Some(encoding) = get_content_encoding(&parts.headers) {
@@ -624,7 +624,7 @@ pub fn create_logged_passthrough_stream(
     async_stream::stream! {
         let _conn_guard = connection_guard;
         let mut buffer = String::new();
-        let mut utf8_remainder: Vec<u8> = Vec::new();
+        let mut utf8_tail = Utf8TailDecoder::default();
         let mut collector = usage_collector;
         let mut finish_guard = collector.clone().map(SseUsageFinishGuard::new);
         let inspect_sse_events =
@@ -680,7 +680,7 @@ pub fn create_logged_passthrough_stream(
                     }
                     is_first_chunk = false;
                     if inspect_sse_events {
-                        crate::proxy::sse::append_utf8_safe(&mut buffer, &mut utf8_remainder, &bytes);
+                        utf8_tail.append(&mut buffer, &bytes);
 
                         // 尝试解析并记录完整的 SSE 事件
                         let mut consumed = 0;
@@ -774,6 +774,16 @@ fn bounded_header_value(value: &axum::http::HeaderValue) -> Option<String> {
         bounded.push('…');
     }
     Some(bounded)
+}
+
+/// 仅当 debug 日志真的会输出时才生成响应头摘要。
+///
+/// `log::debug!` 的格式参数是无条件求值的，所以直接把 [`format_headers`] 写进
+/// `log::debug!` 会让每个响应（流式和非流式）都白付一次 keys 迭代、逐键
+/// `to_string`、`collect`、`sort`、`join` 的四到五次堆分配；release 构建默认
+/// 关闭 debug 日志，那笔开销就是 100% 白付。包一层等级判断把它挪到真会打印时。
+fn diagnostic_headers(headers: &HeaderMap) -> Option<String> {
+    log::log_enabled!(log::Level::Debug).then(|| format_headers(headers))
 }
 
 fn format_headers(headers: &HeaderMap) -> String {
@@ -930,6 +940,19 @@ mod tests {
 
     #[test]
     fn format_headers_keeps_only_allowlisted_diagnostic_values() {
+        let mut headers = HeaderMap::new();
+        headers.insert("authorization", "Bearer super-secret".parse().unwrap());
+
+        // 门控必须严格等价于 log 等级判断本身：不开 debug 时一次格式化都不做，
+        // 开了才产出与 format_headers 相同的摘要。
+        assert_eq!(
+            diagnostic_headers(&headers),
+            log::log_enabled!(log::Level::Debug).then(|| format_headers(&headers))
+        );
+    }
+
+    #[test]
+    fn diagnostic_headers_formats_only_when_debug_is_enabled() {
         let mut headers = HeaderMap::new();
         headers.insert("authorization", "Bearer super-secret".parse().unwrap());
         headers.insert("set-cookie", "session=cookie-secret".parse().unwrap());

@@ -36,7 +36,7 @@ use futures::stream::{Stream, StreamExt};
 use serde_json::{json, Map, Number, Value};
 
 use super::transform_codex_responses_namespace::{restore_sse_event_namespaces, NamespacedName};
-use crate::proxy::sse::{append_utf8_safe, next_sse_block_range, strip_sse_field};
+use crate::proxy::sse::{next_sse_block_range, strip_sse_field, Utf8TailDecoder};
 
 /// Codex plugin-private fields removed recursively at any nesting depth.
 const RECURSIVE_UNSUPPORTED_FIELDS: &[&str] = &["external_web_access"];
@@ -1069,14 +1069,14 @@ where
 {
     async_stream::stream! {
         let mut buffer = String::new();
-        let mut utf8_remainder: Vec<u8> = Vec::new();
+        let mut utf8_tail = Utf8TailDecoder::default();
 
         tokio::pin!(stream);
 
         while let Some(chunk) = stream.next().await {
             match chunk {
                 Ok(bytes) => {
-                    append_utf8_safe(&mut buffer, &mut utf8_remainder, &bytes);
+                    utf8_tail.append(&mut buffer, &bytes);
                     while let Some((end, delim)) = next_sse_block_range(&buffer) {
                         let block = &buffer[..end];
                         let rewritten = if block.trim().is_empty() {
@@ -1097,9 +1097,7 @@ where
             }
         }
 
-        if !utf8_remainder.is_empty() {
-            buffer.push_str(&String::from_utf8_lossy(&utf8_remainder));
-        }
+        utf8_tail.flush(&mut buffer);
         let tail = std::mem::take(&mut buffer);
         if !tail.trim().is_empty() {
             yield Ok(rewrite_xai_native_sse_block(&tail, &restore_map));

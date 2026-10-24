@@ -30,6 +30,7 @@ use crate::proxy::providers::copilot_model_map::{
     CopilotProtocol, CopilotTransport, ResolvedCopilotModel,
 };
 use crate::proxy::providers::xai_oauth_auth::XaiOAuthManager;
+use crate::proxy::sse::Utf8TailDecoder;
 use crate::{
     app_config::AppType,
     provider::{CodexCopilotApiFormat, LocalProxyRequestOverrides, Provider},
@@ -3289,7 +3290,7 @@ impl RequestForwarder {
         let mut stream = parts.body;
         let mut replay_chunks: Vec<Bytes> = Vec::new();
         let mut parse_buffer = String::new();
-        let mut utf8_remainder = Vec::new();
+        let mut utf8_tail = Utf8TailDecoder::default();
 
         loop {
             let next = if self.streaming_first_byte_timeout.is_zero() {
@@ -3328,7 +3329,7 @@ impl RequestForwarder {
                     "Failed while validating Responses stream start: {error}"
                 ))
             })?;
-            crate::proxy::sse::append_utf8_safe(&mut parse_buffer, &mut utf8_remainder, &chunk);
+            utf8_tail.append(&mut parse_buffer, &chunk);
             replay_chunks.push(chunk);
 
             // Some compatible gateways ignore `stream:true` and return a complete
@@ -3392,7 +3393,7 @@ impl RequestForwarder {
         let mut replay_chunks: Vec<Bytes> = Vec::new();
         let mut held_bytes = 0usize;
         let mut parse_buffer = String::new();
-        let mut utf8_remainder = Vec::new();
+        let mut utf8_tail = Utf8TailDecoder::default();
 
         'hold: loop {
             let Ok(next) = tokio::time::timeout_at(deadline, stream.next()).await else {
@@ -3404,7 +3405,7 @@ impl RequestForwarder {
             // 还没有交出流，读出错和首包前出错一样回到重试循环。
             let chunk = chunk
                 .map_err(|error| ProxyError::ForwardFailed(format!("读取流式响应失败: {error}")))?;
-            crate::proxy::sse::append_utf8_safe(&mut parse_buffer, &mut utf8_remainder, &chunk);
+            utf8_tail.append(&mut parse_buffer, &chunk);
             held_bytes += chunk.len();
             replay_chunks.push(chunk);
 

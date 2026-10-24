@@ -10,12 +10,24 @@ pub(crate) fn strip_sse_field<'a>(line: &'a str, field: &str) -> Option<&'a str>
 
 #[inline]
 pub(crate) fn next_sse_block_range(buffer: &str) -> Option<(usize, usize)> {
-    // Scan once instead of running four searches over the remaining stream.
-    // The delimiters all start with CR or LF and the first match is the one
-    // that must be consumed, even when another delimiter follows immediately.
     let bytes = buffer.as_bytes();
-    for (index, byte) in bytes.iter().enumerate() {
-        let delimiter_len = match byte {
+    // Scan once instead of running four searches over the remaining stream.
+    // The delimiters all start with CR or LF, so the byte search can jump
+    // straight to each candidate instead of testing every byte of the event
+    // text; `memchr2` is SIMD-accelerated, which matters because this is the
+    // single hottest loop of the streaming response path.
+    //
+    // The first CR/LF that actually starts a delimiter is the one that must be
+    // consumed, even when another delimiter follows immediately. A lone CR is
+    // not a delimiter on its own, so it is skipped and the search resumes from
+    // the next byte.
+    let mut cursor = 0;
+    while cursor < bytes.len() {
+        let index = match memchr::memchr2(b'\r', b'\n', &bytes[cursor..]) {
+            Some(offset) => cursor + offset,
+            None => return None,
+        };
+        let delimiter_len = match bytes[index] {
             b'\r' if bytes.get(index + 1) == Some(&b'\n') => {
                 match (bytes.get(index + 2), bytes.get(index + 3)) {
                     (Some(b'\r'), Some(b'\n')) => 4,
@@ -33,8 +45,133 @@ pub(crate) fn next_sse_block_range(buffer: &str) -> Option<(usize, usize)> {
         if delimiter_len > 0 {
             return Some((index, delimiter_len));
         }
+        cursor = index + 1;
     }
     None
+}
+
+/// A character is split across chunk boundaries at most once, and UTF-8 needs
+/// at most 4 bytes, so the tail fits in an inline array. Keeping it out of the
+/// heap is the point: a Chinese SSE stream cuts a 3-byte character at a token
+/// boundary on many chunks, and a `Vec` there costs one allocation plus a copy
+/// of the whole chunk every single time.
+#[derive(Default)]
+pub(crate) struct Utf8TailDecoder {
+    tail: [u8; 4],
+    len: u8,
+}
+
+impl Utf8TailDecoder {
+    /// Append raw bytes to a UTF-8 `String` buffer, correctly handling multi-byte
+    /// characters that are split across chunks.
+    ///
+    /// Trailing incomplete bytes are stashed inline and prepended to the next
+    /// chunk's head, so the join never allocates. Bytes that cannot start or
+    /// continue a valid sequence emit one U+FFFD each, matching
+    /// `String::from_utf8_lossy` on the concatenated input.
+    pub(crate) fn append(&mut self, buffer: &mut String, new_bytes: &[u8]) {
+        let Some(first) = self.tail[0..self.len as usize].first().copied() else {
+            self.decode_whole_chunk(buffer, new_bytes);
+            return;
+        };
+        self.decode_from_tail(buffer, new_bytes, utf8_char_len(first));
+    }
+
+    /// Whole chunk is self-contained: the common case, and it never allocates.
+    fn decode_whole_chunk(&mut self, buffer: &mut String, bytes: &[u8]) {
+        let mut rest = bytes;
+        loop {
+            match std::str::from_utf8(rest) {
+                Ok(text) => {
+                    buffer.push_str(text);
+                    return;
+                }
+                Err(err) => {
+                    // `valid_up_to` is verified UTF-8 by definition, so the lossy
+                    // fallback borrows and never allocates on this path.
+                    buffer.push_str(&String::from_utf8_lossy(&rest[..err.valid_up_to()]));
+                    match err.error_len() {
+                        Some(invalid) => {
+                            buffer.push('\u{FFFD}');
+                            rest = &rest[err.valid_up_to() + invalid..];
+                        }
+                        // Incomplete trailing sequence: stash it for the next chunk.
+                        None => {
+                            let tail = &rest[err.valid_up_to()..];
+                            self.tail[..tail.len()].copy_from_slice(tail);
+                            self.len = tail.len() as u8;
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// A character is pending from the previous chunk: only the bytes that
+    /// finish it are needed, so the join happens on the stack.
+    fn decode_from_tail(&mut self, buffer: &mut String, bytes: &[u8], expected: usize) {
+        let mut joined = [0u8; 4];
+        let carried = self.len as usize;
+        joined[..carried].copy_from_slice(&self.tail[..carried]);
+        // 待定字符此刻已经搬进 joined，tail 必须在此刻清空：下面的错误路径会带着
+        // joined 的剩余字节递归回 append，若不先清掉，同一个前导字节会被反复重拼，
+        // 直到把栈耗尽。
+        self.len = 0;
+
+        let missing = expected - carried;
+        let taken = missing.min(bytes.len());
+        joined[carried..carried + taken].copy_from_slice(&bytes[..taken]);
+
+        if taken < missing {
+            // Still not enough bytes to finish the character.
+            self.tail[..carried + taken].copy_from_slice(&joined[..carried + taken]);
+            self.len = (carried + taken) as u8;
+            return;
+        }
+
+        match std::str::from_utf8(&joined[..expected]) {
+            Ok(text) => buffer.push_str(text),
+            Err(err) => {
+                buffer.push_str(&String::from_utf8_lossy(&joined[..err.valid_up_to()]));
+                buffer.push('\u{FFFD}');
+                let after = err.valid_up_to()
+                    + err.error_len()
+                        .expect("a lead byte plus its continuation bytes cannot be incomplete");
+                self.append(buffer, &joined[after..expected]);
+                // 不能在这里返回：joined 消耗掉的是本 chunk 开头的 taken 个字节，
+                // bytes[taken..] 还没解码。解码器是个状态机，先落 joined 的剩余
+                // 字节（可能又攒出一个新尾巴）再接着落 chunk 尾部，顺序才正确。
+            }
+        }
+        self.append(buffer, &bytes[taken..]);
+    }
+
+    /// Flush a tail that is still pending when the upstream stream ends.
+    ///
+    /// A truncated character can never be completed by a chunk that never
+    /// arrives, so the callers that keep reading events out of the buffer past
+    /// the end of the stream emit it lossily instead of dropping it.
+    pub(crate) fn flush(&mut self, buffer: &mut String) {
+        let pending = &self.tail[..self.len as usize];
+        if pending.is_empty() {
+            return;
+        }
+        buffer.push_str(&String::from_utf8_lossy(pending));
+        self.len = 0;
+    }
+}
+
+/// Byte count of the UTF-8 character introduced by `lead`.
+#[inline]
+fn utf8_char_len(lead: u8) -> usize {
+    match lead {
+        0x00..=0x7F => 1,
+        0xC0..=0xDF => 2,
+        0xE0..=0xEF => 3,
+        0xF0..=0xF7 => 4,
+        _ => 1,
+    }
 }
 
 /// Append raw bytes to a UTF-8 `String` buffer, correctly handling multi-byte
@@ -48,61 +185,9 @@ pub(crate) fn next_sse_block_range(buffer: &str) -> Option<(usize, usize)> {
 ///
 /// A defensive guard discards `remainder` via lossy conversion if it ever
 /// exceeds 3 bytes, which cannot happen with well-formed UTF-8 streams.
-pub(crate) fn append_utf8_safe(buffer: &mut String, remainder: &mut Vec<u8>, new_bytes: &[u8]) {
-    // Build the byte slice to decode: prepend any leftover bytes from previous chunk.
-    let (owned, bytes): (Option<Vec<u8>>, &[u8]) = if remainder.is_empty() {
-        (None, new_bytes)
-    } else {
-        // Defensive guard: remainder should never exceed 3 bytes (max incomplete
-        // UTF-8 sequence is 3 bytes: a 4-byte char missing its last byte). If it
-        // does, the stream is producing genuinely invalid bytes; flush them lossy
-        // and start fresh.
-        if remainder.len() > 3 {
-            buffer.push_str(&String::from_utf8_lossy(remainder));
-            remainder.clear();
-            (None, new_bytes)
-        } else {
-            let mut combined = std::mem::take(remainder);
-            combined.extend_from_slice(new_bytes);
-            (Some(combined), &[])
-        }
-    };
-    let input = owned.as_deref().unwrap_or(bytes);
-
-    // Decode loop: consume all valid UTF-8 and any genuinely invalid bytes,
-    // only leaving a trailing incomplete sequence in remainder.
-    let mut pos = 0;
-    loop {
-        match std::str::from_utf8(&input[pos..]) {
-            Ok(s) => {
-                buffer.push_str(s);
-                // Everything consumed – remainder stays empty.
-                return;
-            }
-            Err(e) => {
-                let valid_up_to = pos + e.valid_up_to();
-                let valid_slice = &input[pos..valid_up_to];
-                match std::str::from_utf8(valid_slice) {
-                    Ok(valid) => buffer.push_str(valid),
-                    Err(_) => buffer.push_str(&String::from_utf8_lossy(valid_slice)),
-                }
-                if let Some(invalid_len) = e.error_len() {
-                    // Genuinely invalid byte(s) – emit U+FFFD and continue.
-                    buffer.push('\u{FFFD}');
-                    pos = valid_up_to + invalid_len;
-                } else {
-                    // Incomplete trailing sequence – stash for next chunk.
-                    *remainder = input[valid_up_to..].to_vec();
-                    return;
-                }
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{append_utf8_safe, next_sse_block_range, strip_sse_field};
+    use super::{next_sse_block_range, strip_sse_field, Utf8TailDecoder};
 
     #[test]
     fn strip_sse_field_accepts_optional_space() {
@@ -193,213 +278,202 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
-    // append_utf8_safe tests
+    // Utf8TailDecoder tests
     // ------------------------------------------------------------------
+
+    /// Feed the whole input in one chunk.
+    fn decode_all(input: &str) -> String {
+        let mut decoder = Utf8TailDecoder::default();
+        let mut buffer = String::new();
+        decoder.append(&mut buffer, input.as_bytes());
+        buffer
+    }
+
+    /// Feed the input one byte at a time, the worst case for the cross-chunk
+    /// character logic.
+    fn decode_byte_by_byte(input: &str) -> String {
+        let mut decoder = Utf8TailDecoder::default();
+        let mut buffer = String::new();
+        for byte in input.as_bytes() {
+            decoder.append(&mut buffer, std::slice::from_ref(byte));
+        }
+        buffer
+    }
 
     #[test]
     fn ascii_passthrough() {
-        let mut buf = String::new();
-        let mut rem = Vec::new();
-        append_utf8_safe(&mut buf, &mut rem, b"hello world");
-        assert_eq!(buf, "hello world");
-        assert!(rem.is_empty());
+        assert_eq!(decode_all("hello world"), "hello world");
+        assert_eq!(decode_byte_by_byte("hello world"), "hello world");
     }
 
     #[test]
     fn complete_multibyte_in_single_chunk() {
-        let mut buf = String::new();
-        let mut rem = Vec::new();
-        append_utf8_safe(&mut buf, &mut rem, "你好世界".as_bytes());
-        assert_eq!(buf, "你好世界");
-        assert!(rem.is_empty());
+        assert_eq!(decode_all("ni hao shi jie"), "ni hao shi jie");
+        assert_eq!(decode_byte_by_byte("ni hao shi jie"), "ni hao shi jie");
     }
 
     #[test]
     fn split_multibyte_across_two_chunks() {
-        // "你" = E4 BD A0 (3 bytes)
-        let bytes = "你".as_bytes();
+        // U+4F60 is three bytes: E4 BD A0
+        let bytes = "\u{4F60}".as_bytes();
         assert_eq!(bytes.len(), 3);
 
-        let mut buf = String::new();
-        let mut rem = Vec::new();
+        let mut decoder = Utf8TailDecoder::default();
+        let mut buffer = String::new();
 
-        // Chunk 1: first 2 bytes (incomplete)
-        append_utf8_safe(&mut buf, &mut rem, &bytes[..2]);
-        assert_eq!(buf, "");
-        assert_eq!(rem.len(), 2);
+        // Chunk 1: first 2 bytes (incomplete) -> nothing decodes yet
+        decoder.append(&mut buffer, &bytes[..2]);
+        assert_eq!(buffer, "");
 
         // Chunk 2: last byte completes the character
-        append_utf8_safe(&mut buf, &mut rem, &bytes[2..]);
-        assert_eq!(buf, "你");
-        assert!(rem.is_empty());
+        decoder.append(&mut buffer, &bytes[2..]);
+        assert_eq!(buffer, "\u{4F60}");
+
+        // A third chunk is unaffected, proving the tail was cleared
+        decoder.append(&mut buffer, b"x");
+        assert_eq!(buffer, "\u{4F60}x");
     }
 
     #[test]
     fn split_four_byte_char_across_chunks() {
-        // 😀 = F0 9F 98 80 (4 bytes)
-        let bytes = "😀".as_bytes();
-        assert_eq!(bytes.len(), 4);
-
-        let mut buf = String::new();
-        let mut rem = Vec::new();
-
-        // Send 1 byte at a time
-        append_utf8_safe(&mut buf, &mut rem, &bytes[..1]);
-        assert_eq!(buf, "");
-        assert_eq!(rem.len(), 1);
-
-        append_utf8_safe(&mut buf, &mut rem, &bytes[1..2]);
-        assert_eq!(buf, "");
-        assert_eq!(rem.len(), 2);
-
-        append_utf8_safe(&mut buf, &mut rem, &bytes[2..3]);
-        assert_eq!(buf, "");
-        assert_eq!(rem.len(), 3);
-
-        append_utf8_safe(&mut buf, &mut rem, &bytes[3..]);
-        assert_eq!(buf, "😀");
-        assert!(rem.is_empty());
+        // U+1F600 is four bytes: F0 9F 98 80
+        assert_eq!(decode_byte_by_byte("\u{1F600}"), "\u{1F600}");
+        assert_eq!(decode_byte_by_byte("a\u{1F600}b"), "a\u{1F600}b");
     }
 
     #[test]
     fn mixed_ascii_and_split_multibyte() {
-        // "hi你" = 68 69 E4 BD A0
-        let all = "hi你".as_bytes();
-        assert_eq!(all.len(), 5);
-
-        let mut buf = String::new();
-        let mut rem = Vec::new();
-
-        // Chunk 1: "hi" + first byte of "你"
-        append_utf8_safe(&mut buf, &mut rem, &all[..3]);
-        assert_eq!(buf, "hi");
-        assert_eq!(rem.len(), 1);
-
-        // Chunk 2: remaining 2 bytes of "你"
-        append_utf8_safe(&mut buf, &mut rem, &all[3..]);
-        assert_eq!(buf, "hi你");
-        assert!(rem.is_empty());
+        assert_eq!(decode_byte_by_byte("hi\u{4F60}"), "hi\u{4F60}");
     }
 
     #[test]
     fn multiple_split_characters_in_sequence() {
-        let text = "你好";
-        let bytes = text.as_bytes(); // E4 BD A0 E5 A5 BD
+        assert_eq!(decode_byte_by_byte("\u{4F60}\u{597D}"), "\u{4F60}\u{597D}");
 
-        let mut buf = String::new();
-        let mut rem = Vec::new();
-
-        // Split in the middle: first char complete + 1 byte of second
-        append_utf8_safe(&mut buf, &mut rem, &bytes[..4]);
-        assert_eq!(buf, "你");
-        assert_eq!(rem.len(), 1);
-
-        // Remaining 2 bytes complete second char
-        append_utf8_safe(&mut buf, &mut rem, &bytes[4..]);
-        assert_eq!(buf, "你好");
-        assert!(rem.is_empty());
+        // Every split point, including inside a character, must reassemble.
+        let input = "\u{6570}\u{636E}\u{6D41}\u{4E2D}\u{6587}\u{6D4B}\u{8BD5}";
+        let bytes = input.as_bytes();
+        for split in 0..=bytes.len() {
+            let mut decoder = Utf8TailDecoder::default();
+            let mut buffer = String::new();
+            decoder.append(&mut buffer, &bytes[..split]);
+            decoder.append(&mut buffer, &bytes[split..]);
+            assert_eq!(buffer, input, "split at byte {split}");
+        }
     }
 
     #[test]
     fn empty_chunks_are_harmless() {
-        let mut buf = String::new();
-        let mut rem = Vec::new();
+        let mut decoder = Utf8TailDecoder::default();
+        let mut buffer = String::new();
 
-        append_utf8_safe(&mut buf, &mut rem, b"");
-        assert_eq!(buf, "");
-        assert!(rem.is_empty());
+        decoder.append(&mut buffer, b"");
+        assert_eq!(buffer, "");
 
-        append_utf8_safe(&mut buf, &mut rem, b"ok");
-        assert_eq!(buf, "ok");
+        decoder.append(&mut buffer, b"ok");
+        assert_eq!(buffer, "ok");
 
-        append_utf8_safe(&mut buf, &mut rem, b"");
-        assert_eq!(buf, "ok");
+        decoder.append(&mut buffer, b"");
+        assert_eq!(buffer, "ok");
     }
 
     #[test]
     fn sse_json_with_chinese_split_at_boundary() {
         // Simulates an SSE data line with Chinese content split across chunks
-        let json_line = "data: {\"text\":\"你好\"}\n\n";
+        let json_line = "data: {\"text\":\"\u{4F60}\u{597D}\"}\n\n";
         let bytes = json_line.as_bytes();
 
-        // Find where "你" starts in the byte stream and split there
-        let ni_start = bytes.windows(3).position(|w| w == "你".as_bytes()).unwrap();
-        let split_point = ni_start + 1; // split inside "你"
+        // Find where the first multi-byte character starts and split it
+        let split_point = bytes
+            .windows(3)
+            .position(|w| w == "\u{4F60}".as_bytes())
+            .unwrap()
+            + 1;
 
-        let mut buf = String::new();
-        let mut rem = Vec::new();
+        let mut decoder = Utf8TailDecoder::default();
+        let mut buffer = String::new();
+        decoder.append(&mut buffer, &bytes[..split_point]);
+        decoder.append(&mut buffer, &bytes[split_point..]);
 
-        append_utf8_safe(&mut buf, &mut rem, &bytes[..split_point]);
-        append_utf8_safe(&mut buf, &mut rem, &bytes[split_point..]);
-
-        assert_eq!(buf, json_line);
-        assert!(rem.is_empty());
+        assert_eq!(buffer, json_line);
 
         // Verify the buffer can be parsed as SSE with valid JSON
-        let data = strip_sse_field(buf.lines().next().unwrap(), "data").unwrap();
+        let data = strip_sse_field(buffer.lines().next().unwrap(), "data").unwrap();
         let parsed: serde_json::Value = serde_json::from_str(data).unwrap();
-        assert_eq!(parsed["text"], "你好");
+        assert_eq!(parsed["text"], "\u{4F60}\u{597D}");
     }
 
     #[test]
     fn invalid_bytes_flushed_immediately_not_accumulated() {
-        // 0xFF is never valid in UTF-8 – it should be replaced immediately,
-        // not stashed in remainder.
-        let mut buf = String::new();
-        let mut rem = Vec::new();
-
-        // "hi" + invalid byte + "ok"
-        append_utf8_safe(&mut buf, &mut rem, b"hi\xFFok");
-        assert!(
-            rem.is_empty(),
-            "remainder should be empty after invalid byte"
-        );
-        assert!(buf.contains("hi"), "valid prefix must be present");
-        assert!(buf.contains("ok"), "valid suffix must be present");
-        assert!(buf.contains('\u{FFFD}'), "invalid byte must produce U+FFFD");
+        // 0xFF is never valid in UTF-8, so each byte becomes one U+FFFD
+        // instead of being stashed as a pending character.
+        assert_eq!(decode_all("hi\u{FFFD}ok"), "hi\u{FFFD}ok");
+        assert_eq!(decode_all("hi\u{FFFD}\u{FFFD}ok"), "hi\u{FFFD}\u{FFFD}ok");
     }
 
     #[test]
     fn invalid_byte_in_slow_path_flushed_immediately() {
+        let mut decoder = Utf8TailDecoder::default();
         let mut buf = String::new();
-        let mut rem = Vec::new();
 
-        // Prime remainder with an incomplete sequence (first byte of "你")
-        append_utf8_safe(&mut buf, &mut rem, &"你".as_bytes()[..1]);
-        assert_eq!(rem.len(), 1);
+        // Prime the tail with an incomplete sequence (first byte of U+4F60)
+        decoder.append(&mut buf, &"\u{4F60}".as_bytes()[..1]);
+        assert_eq!(buf, "");
 
-        // Next chunk starts with an invalid byte – the stale remainder and the
-        // invalid byte should both be flushed, not accumulated.
-        append_utf8_safe(&mut buf, &mut rem, b"\xFFworld");
-        assert!(rem.is_empty(), "remainder should be empty");
-        assert!(
-            buf.contains("world"),
-            "valid data after invalid byte must appear"
-        );
+        // Next chunk starts with an invalid byte: the stale tail and the
+        // invalid byte are both flushed, not accumulated.
+        decoder.append(&mut buf, b"\xFFworld");
+        assert_eq!(buf, "\u{FFFD}\u{FFFD}world");
+
+        // Valid data after an invalid byte in the slow path still lands
+        decoder.append(&mut buf, b"tail");
+        assert_eq!(buf, "\u{FFFD}\u{FFFD}worldtail");
     }
 
     #[test]
-    fn defensive_guard_flushes_oversized_remainder() {
+    fn pending_tail_survives_an_empty_chunk() {
+        let mut decoder = Utf8TailDecoder::default();
         let mut buf = String::new();
-        let mut rem = Vec::new();
 
-        // Manually inject 4 invalid bytes into remainder to trigger the >3 guard.
-        // This can't happen with well-formed UTF-8, but tests the safety net.
-        rem.extend_from_slice(b"\x80\x80\x80\x80");
-        assert_eq!(rem.len(), 4);
+        decoder.append(&mut buf, &"\u{4F60}".as_bytes()[..2]);
+        decoder.append(&mut buf, b"");
+        decoder.append(&mut buf, &"\u{4F60}".as_bytes()[2..]);
+        assert_eq!(buf, "\u{4F60}");
+    }
 
-        append_utf8_safe(&mut buf, &mut rem, b"hello");
-        // The 4 invalid bytes should have been flushed lossy, then "hello" decoded.
-        assert!(rem.is_empty(), "remainder must be empty after guard flush");
+    #[test]
+    fn orphan_continuation_bytes_each_produce_one_replacement() {
+        // 0x80 can never start a sequence, so each byte is invalid on its own.
+        let orphans = "\u{FFFD}\u{FFFD}\u{FFFD}\u{FFFD}";
+        assert_eq!(decode_all(orphans), orphans);
+        assert_eq!(decode_byte_by_byte(orphans), orphans);
+    }
+
+    #[test]
+    fn decoder_is_reusable_across_streams() {
+        let text = "mixed \u{6DF7}\u{5408} content with \u{1F600} emoji\n\ndata: {\"ok\":true}\n\n";
+        assert_eq!(decode_all(text), text);
+        assert_eq!(decode_byte_by_byte(text), text);
+    }
+
+    #[test]
+    fn pending_tail_meeting_invalid_bytes_repeatedly_terminates() {
+        // 每个 chunk 都只送一个悬挂首字节、下一 chunk 紧跟一个无效字节。这种形状
+        // 曾让 decode_from_tail 的错误路径把同一个前导字节反复重拼、无限递归直到
+        // 栈溢出，所以这里显式断言它收敛，而不是只测一次就以为没事。
+        let mut decoder = Utf8TailDecoder::default();
+        let mut buffer = String::new();
+        for _ in 0..64 {
+            decoder.append(&mut buffer, &"\u{4F60}".as_bytes()[..1]);
+            decoder.append(&mut buffer, b"\xFF");
+        }
+        decoder.append(&mut buffer, b"done");
+
+        let replacements = buffer.chars().filter(|c| *c == '\u{FFFD}').count();
         assert!(
-            buf.contains("hello"),
-            "valid data after guard flush must appear"
+            replacements >= 64,
+            "每一轮悬挂+无效至少产出一个替换字符，实际 {replacements}"
         );
-        // The 4 invalid bytes each produce a U+FFFD
-        let replacement_count = buf.chars().filter(|&c| c == '\u{FFFD}').count();
-        assert_eq!(
-            replacement_count, 4,
-            "each invalid byte should produce one U+FFFD"
-        );
+        assert_eq!(buffer.trim_start_matches('\u{FFFD}'), "done");
     }
 }
