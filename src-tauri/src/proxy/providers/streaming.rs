@@ -3,7 +3,7 @@
 //! 实现 OpenAI SSE → Anthropic SSE 格式转换
 
 use super::inline_think::InlineThinkSplitter;
-use crate::proxy::sse::{next_sse_block_range, strip_sse_field, Utf8TailDecoder};
+use crate::proxy::sse::{frame_sse_event, next_sse_block_range, strip_sse_field, Utf8TailDecoder};
 use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -153,7 +153,7 @@ fn build_message_delta_event(stop_reason: Option<String>, usage_json: Option<Val
 fn sse_event_string(event: Value) -> String {
     let event_name = event.get("type").and_then(|v| v.as_str()).unwrap_or("");
     // 复用同一套字节成帧；Vec 的分配由 String::from_utf8 接手，不多一次拷贝
-    String::from_utf8(crate::proxy::sse::frame_sse_event(event_name, &event).into()).unwrap_or_default()
+    String::from_utf8(frame_sse_event(event_name, &event).into()).unwrap_or_default()
 }
 
 /// 生成一个 thinking/text 增量所需的 Anthropic SSE 事件序列
@@ -309,15 +309,13 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                     // 流正常结束，发出缓存的 message_delta（含完整 usage）。
                                     if let Some((stop_reason, usage_json)) = pending_message_delta.take() {
                                         let event = build_message_delta_event(stop_reason, usage_json);
-                                        let sse_data = format!("event: message_delta\ndata: {}\n\n",
-                                            serde_json::to_string(&event).unwrap_or_default());
+                                        let sse_data = frame_sse_event("message_delta", &event);
                                         log::debug!("[Claude/OpenRouter] >>> Anthropic SSE: message_delta (from pending)");
                                         yield Ok(Bytes::from(sse_data));
                                     }
 
                                     let event = json!({"type": "message_stop"});
-                                    let sse_data = format!("event: message_stop\ndata: {}\n\n",
-                                        serde_json::to_string(&event).unwrap_or_default());
+                                    let sse_data = frame_sse_event("message_stop", &event);
                                     log::debug!("[Claude/OpenRouter] >>> Anthropic SSE: message_stop");
                                     yield Ok(Bytes::from(sse_data));
                                     // [DONE] is terminal; do not read or emit anything after message_stop.
@@ -378,8 +376,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                                     "usage": start_usage
                                                 }
                                             });
-                                            let sse_data = format!("event: message_start\ndata: {}\n\n",
-                                                serde_json::to_string(&event).unwrap_or_default());
+                                            let sse_data = frame_sse_event("message_start", &event);
                                             yield Ok(Bytes::from(sse_data));
                                             has_sent_message_start = true;
                                         }
@@ -459,8 +456,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                                         "type": "content_block_stop",
                                                         "index": index
                                                     });
-                                                    let sse_data = format!("event: content_block_stop\ndata: {}\n\n",
-                                                        serde_json::to_string(&event).unwrap_or_default());
+                                                    let sse_data = frame_sse_event("content_block_stop", &event);
                                                     yield Ok(Bytes::from(sse_data));
                                                 }
                                                 current_non_tool_block_type = None;
@@ -567,8 +563,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                                                 "name": name
                                                             }
                                                         });
-                                                        let sse_data = format!("event: content_block_start\ndata: {}\n\n",
-                                                            serde_json::to_string(&event).unwrap_or_default());
+                                                        let sse_data = frame_sse_event("content_block_start", &event);
                                                         yield Ok(Bytes::from(sse_data));
                                                         open_tool_block_indices.insert(anthropic_index);
                                                     }
@@ -582,8 +577,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                                                 "partial_json": args
                                                             }
                                                         });
-                                                        let sse_data = format!("event: content_block_delta\ndata: {}\n\n",
-                                                            serde_json::to_string(&event).unwrap_or_default());
+                                                        let sse_data = frame_sse_event("content_block_delta", &event);
                                                         yield Ok(Bytes::from(sse_data));
                                                     }
 
@@ -596,8 +590,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                                                 "partial_json": args
                                                             }
                                                         });
-                                                        let sse_data = format!("event: content_block_delta\ndata: {}\n\n",
-                                                            serde_json::to_string(&event).unwrap_or_default());
+                                                        let sse_data = frame_sse_event("content_block_delta", &event);
                                                         yield Ok(Bytes::from(sse_data));
                                                     }
                                                 }
@@ -646,8 +639,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                                     "type": "content_block_stop",
                                                     "index": index
                                                 });
-                                                let sse_data = format!("event: content_block_stop\ndata: {}\n\n",
-                                                    serde_json::to_string(&event).unwrap_or_default());
+                                                let sse_data = frame_sse_event("content_block_stop", &event);
                                                 yield Ok(Bytes::from(sse_data));
                                             }
                                             current_non_tool_block_type = None;
@@ -695,8 +687,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                                         "name": name
                                                     }
                                                 });
-                                                let sse_data = format!("event: content_block_start\ndata: {}\n\n",
-                                                    serde_json::to_string(&event).unwrap_or_default());
+                                                let sse_data = frame_sse_event("content_block_start", &event);
                                                 yield Ok(Bytes::from(sse_data));
                                                 open_tool_block_indices.insert(index);
                                                 if !pending.is_empty() {
@@ -723,8 +714,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                                         "type": "content_block_stop",
                                                         "index": index
                                                     });
-                                                    let sse_data = format!("event: content_block_stop\ndata: {}\n\n",
-                                                        serde_json::to_string(&event).unwrap_or_default());
+                                                    let sse_data = frame_sse_event("content_block_stop", &event);
                                                     yield Ok(Bytes::from(sse_data));
                                                 }
                                                 open_tool_block_indices.clear();
@@ -807,8 +797,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                     yield Ok(Bytes::from(sse_data));
                 }
                 let event = build_message_delta_event(stop_reason, usage_json);
-                let sse_data = format!("event: message_delta\ndata: {}\n\n",
-                    serde_json::to_string(&event).unwrap_or_default());
+                let sse_data = frame_sse_event("message_delta", &event);
                 log::debug!("[Claude/OpenRouter] >>> Anthropic SSE: message_delta (at stream end)");
                 yield Ok(Bytes::from(sse_data));
                 true
@@ -818,8 +807,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
 
             if emitted_pending_message_delta {
                 let event = json!({"type": "message_stop"});
-                let sse_data = format!("event: message_stop\ndata: {}\n\n",
-                    serde_json::to_string(&event).unwrap_or_default());
+                let sse_data = frame_sse_event("message_stop", &event);
                 log::debug!("[Claude/OpenRouter] >>> Anthropic SSE: message_stop (at stream end)");
                 yield Ok(Bytes::from(sse_data));
             }
