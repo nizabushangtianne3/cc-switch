@@ -18,10 +18,8 @@ use serde_json::{json, Value};
 
 /// Serialize one Responses SSE event with the standard `event:`/`data:` framing.
 pub(crate) fn sse_event(event: &str, data: Value) -> Bytes {
-    Bytes::from(format!(
-        "event: {event}\ndata: {}\n\n",
-        serde_json::to_string(&data).unwrap_or_default()
-    ))
+    // 这条是 Codex 输出信封里每个事件的必经之路，成帧交给 sse 模块的统一实现
+    crate::proxy::sse::frame_sse_event(event, &data)
 }
 
 // ---------------------------------------------------------------------------
