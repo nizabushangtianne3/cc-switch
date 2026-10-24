@@ -40,7 +40,7 @@ fn write_canonical(value: &Value, out: &mut String) {
             // preserve_order 之下迭代序是插入序，必须显式按键排序，
             // 同一份内容才能得到同一串字节。
             let mut entries = map.iter().collect::<Vec<_>>();
-            entries.sort_by(|(left, _), (right, _)| left.cmp(right));
+            entries.sort_by_key(|(key, _)| *key);
 
             out.push('{');
             for (index, (key, value)) in entries.into_iter().enumerate() {

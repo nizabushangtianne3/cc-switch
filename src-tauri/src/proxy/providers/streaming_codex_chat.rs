@@ -765,7 +765,7 @@ pub fn create_responses_sse_stream_from_chat_with_context<E: std::error::Error +
                         let is_done = payload.as_deref().is_some_and(|text| text.trim() == "[DONE]");
                         let parsed = payload
                             .as_deref()
-                            .map(|text| serde_json::from_str::<Value>(text))
+                            .map(serde_json::from_str::<Value>)
                             .transpose();
                         buffer.drain(..end + delim);
 

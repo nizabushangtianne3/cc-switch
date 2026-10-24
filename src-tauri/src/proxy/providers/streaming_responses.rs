@@ -2507,7 +2507,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                         // drain 必须发生，否则没有 data 的块会永远留在 buffer 里。
                         let parsed = payload
                             .as_deref()
-                            .map(|text| serde_json::from_str::<Value>(text))
+                            .map(serde_json::from_str::<Value>)
                             .transpose();
                         buffer.drain(..end + delim);
 
@@ -2591,7 +2591,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                 let event = build_message_start_event(message_id.as_deref(), current_model.as_deref(), Some(start_usage));
                                 let sse = frame_sse_event("message_start", &event);
                                 log::debug!("[Claude/Responses] >>> Anthropic SSE: message_start");
-                                yield Ok(Bytes::from(sse));
+                                yield Ok(sse);
                             }
 
                             // ================================================
@@ -2602,7 +2602,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                 if !has_sent_message_start {
                                     let start_event = build_message_start_event(message_id.as_deref(), current_model.as_deref(), None);
                                     let sse = frame_sse_event("message_start", &start_event);
-                                    yield Ok(Bytes::from(sse));
+                                    yield Ok(sse);
                                     has_sent_message_start = true;
                                 }
 
@@ -2656,7 +2656,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                             }
                                         });
                                         let sse = frame_sse_event("content_block_start", &event);
-                                        yield Ok(Bytes::from(sse));
+                                        yield Ok(sse);
                                         open_indices.insert(index);
                                     }
                                 }
@@ -2704,7 +2704,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                             }
                                         });
                                         let start_sse = frame_sse_event("content_block_start", &start_event);
-                                        yield Ok(Bytes::from(start_sse));
+                                        yield Ok(start_sse);
                                         open_indices.insert(index);
                                     }
                                     let event = json!({
@@ -2716,7 +2716,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                         }
                                     });
                                     let sse = frame_sse_event("content_block_delta", &event);
-                                    yield Ok(Bytes::from(sse));
+                                    yield Ok(sse);
                                 }
                             }
 
@@ -2758,7 +2758,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                             }
                                         });
                                         let start_sse = frame_sse_event("content_block_start", &start_event);
-                                        yield Ok(Bytes::from(start_sse));
+                                        yield Ok(start_sse);
                                         open_indices.insert(index);
                                     }
 
@@ -2771,7 +2771,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                         }
                                     });
                                     let sse = frame_sse_event("content_block_delta", &event);
-                                    yield Ok(Bytes::from(sse));
+                                    yield Ok(sse);
                                 }
                             }
 
@@ -2851,7 +2851,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                                     "index": index
                                                 });
                                                 let stop_sse = frame_sse_event("content_block_stop", &stop_event);
-                                                yield Ok(Bytes::from(stop_sse));
+                                                yield Ok(stop_sse);
                                             }
                                             if fallback_open_index == Some(index) {
                                                 fallback_open_index = None;
@@ -2861,7 +2861,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                         if !has_sent_message_start {
                                             let start_event = build_message_start_event(message_id.as_deref(), current_model.as_deref(), None);
                                             let sse = frame_sse_event("message_start", &start_event);
-                                            yield Ok(Bytes::from(sse));
+                                            yield Ok(sse);
                                             has_sent_message_start = true;
                                         }
 
@@ -2907,7 +2907,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                             }
                                         });
                                         let sse = frame_sse_event("content_block_start", &event);
-                                        yield Ok(Bytes::from(sse));
+                                        yield Ok(sse);
                                         open_indices.insert(index);
                                     } else if item_type == "web_search_call" {
                                         has_substantive_output = true;
@@ -3065,7 +3065,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                         if !has_sent_message_start {
                                             let start_event = build_message_start_event(message_id.as_deref(), current_model.as_deref(), None);
                                             let sse = frame_sse_event("message_start", &start_event);
-                                            yield Ok(Bytes::from(sse));
+                                            yield Ok(sse);
                                             has_sent_message_start = true;
                                         }
 
@@ -3148,7 +3148,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                             }
                                         });
                                         let start_sse = frame_sse_event("content_block_start", &start_event);
-                                        yield Ok(Bytes::from(start_sse));
+                                        yield Ok(start_sse);
                                         open_indices.insert(index);
                                     }
 
@@ -3171,7 +3171,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                         }
                                     });
                                     let sse = frame_sse_event("content_block_delta", &event);
-                                    yield Ok(Bytes::from(sse));
+                                    yield Ok(sse);
                                 }
                             }
 
@@ -3218,7 +3218,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                                 }
                                             });
                                             let sse = frame_sse_event("content_block_delta", &event);
-                                            yield Ok(Bytes::from(sse));
+                                            yield Ok(sse);
                                         }
                                     } else if !tool_had_delta.contains(&index) {
                                         // Some compatible gateways skip delta events and only
@@ -3238,7 +3238,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                                 }
                                             });
                                             let sse = frame_sse_event("content_block_delta", &event);
-                                            yield Ok(Bytes::from(sse));
+                                            yield Ok(sse);
                                         }
                                     }
                                     let event = json!({
@@ -3246,7 +3246,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                         "index": index
                                     });
                                     let sse = frame_sse_event("content_block_stop", &event);
-                                    yield Ok(Bytes::from(sse));
+                                    yield Ok(sse);
                                     if let Some(item_id) = item_id {
                                         tool_index_by_item_id.remove(item_id);
                                     }
@@ -3278,7 +3278,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                         "index": index
                                     });
                                     let sse = frame_sse_event("content_block_stop", &event);
-                                    yield Ok(Bytes::from(sse));
+                                    yield Ok(sse);
                                     if fallback_open_index == Some(index) {
                                         fallback_open_index = None;
                                     }
@@ -3304,7 +3304,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                                 "index": index
                                             });
                                             let stop_sse = frame_sse_event("content_block_stop", &stop_event);
-                                            yield Ok(Bytes::from(stop_sse));
+                                            yield Ok(stop_sse);
                                         }
                                         if fallback_open_index == Some(index) {
                                             fallback_open_index = None;
@@ -3350,7 +3350,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                             }
                                         });
                                         let start_sse = frame_sse_event("content_block_start", &start_event);
-                                        yield Ok(Bytes::from(start_sse));
+                                        yield Ok(start_sse);
                                         open_indices.insert(index);
                                     }
 
@@ -3368,7 +3368,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                         }
                                     });
                                     let sse = frame_sse_event("content_block_delta", &event);
-                                    yield Ok(Bytes::from(sse));
+                                    yield Ok(sse);
                                 }
                             }
 
@@ -3410,7 +3410,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                                     "content_block": {"type": "thinking", "thinking": ""}
                                                 });
                                                 let start_sse = frame_sse_event("content_block_start", &start_event);
-                                                yield Ok(Bytes::from(start_sse));
+                                                yield Ok(start_sse);
                                                 open_indices.insert(index);
                                             }
                                             reasoning_text_by_index
@@ -3423,7 +3423,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                                 "delta": {"type": "thinking_delta", "thinking": text}
                                             });
                                             let sse = frame_sse_event("content_block_delta", &event);
-                                            yield Ok(Bytes::from(sse));
+                                            yield Ok(sse);
                                         }
                                     }
                                 }
@@ -3450,7 +3450,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                     if open_indices.remove(&index) {
                                         let event = json!({"type": "content_block_stop", "index": index});
                                         let sse = frame_sse_event("content_block_stop", &event);
-                                        yield Ok(Bytes::from(sse));
+                                        yield Ok(sse);
                                     }
                                     if legacy_reasoning_index == Some(index) {
                                         legacy_reasoning_index = None;
@@ -3949,7 +3949,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                             "index": index
                                         });
                                         let stop_sse = frame_sse_event("content_block_stop", &stop_event);
-                                        yield Ok(Bytes::from(stop_sse));
+                                        yield Ok(stop_sse);
                                         open_indices.remove(&index);
                                     }
                                 }
@@ -3978,13 +3978,13 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                 });
                                 let sse = frame_sse_event("message_delta", &delta_event);
                                 log::debug!("[Claude/Responses] >>> Anthropic SSE: message_delta");
-                                yield Ok(Bytes::from(sse));
+                                yield Ok(sse);
 
                                 // Emit message_stop
                                 let stop_event = json!({"type": "message_stop"});
                                 let stop_sse = frame_sse_event("message_stop", &stop_event);
                                 log::debug!("[Claude/Responses] >>> Anthropic SSE: message_stop");
-                                yield Ok(Bytes::from(stop_sse));
+                                yield Ok(stop_sse);
                                 terminated = true;
                             }
 
@@ -4020,7 +4020,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                             "index": index
                                         });
                                         let stop_sse = frame_sse_event("content_block_stop", &stop_event);
-                                        yield Ok(Bytes::from(stop_sse));
+                                        yield Ok(stop_sse);
                                     }
                                     if fallback_open_index == Some(index) {
                                         fallback_open_index = None;
@@ -4083,13 +4083,13 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                                         }
                                                     });
                                                     let sse = frame_sse_event("content_block_delta", &event);
-                                                    yield Ok(Bytes::from(sse));
+                                                    yield Ok(sse);
                                                 }
                                             }
                                             open_indices.remove(&index);
                                             let event = json!({"type": "content_block_stop", "index": index});
                                             let sse = frame_sse_event("content_block_stop", &event);
-                                            yield Ok(Bytes::from(sse));
+                                            yield Ok(sse);
                                             if let Some(id) = item_id {
                                                 tool_index_by_item_id.remove(id);
                                             }
@@ -4342,7 +4342,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                                 "content_block": {"type": "thinking", "thinking": ""}
                                             });
                                             let start_sse = frame_sse_event("content_block_start", &start_event);
-                                            yield Ok(Bytes::from(start_sse));
+                                            yield Ok(start_sse);
                                             open_indices.insert(index);
                                             let delta_event = json!({
                                                 "type": "content_block_delta",
@@ -4350,7 +4350,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                                 "delta": {"type": "thinking_delta", "thinking": full_text}
                                             });
                                             let delta_sse = frame_sse_event("content_block_delta", &delta_event);
-                                            yield Ok(Bytes::from(delta_sse));
+                                            yield Ok(delta_sse);
                                         }
 
                                         let encrypted = final_item
@@ -4369,7 +4369,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                                         }
                                                     });
                                                     let signature_sse = frame_sse_event("content_block_delta", &signature_event);
-                                                    yield Ok(Bytes::from(signature_sse));
+                                                    yield Ok(signature_sse);
                                                 } else {
                                                     let start_event = json!({
                                                         "type": "content_block_start",
@@ -4380,7 +4380,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                                         }
                                                     });
                                                     let start_sse = frame_sse_event("content_block_start", &start_event);
-                                                    yield Ok(Bytes::from(start_sse));
+                                                    yield Ok(start_sse);
                                                     open_indices.insert(index);
                                                 }
                                             }
@@ -4388,7 +4388,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                         if open_indices.remove(&index) {
                                             let stop_event = json!({"type": "content_block_stop", "index": index});
                                             let stop_sse = frame_sse_event("content_block_stop", &stop_event);
-                                            yield Ok(Bytes::from(stop_sse));
+                                            yield Ok(stop_sse);
                                         }
                                         if let Some(id) = item_id {
                                             reasoning_index_by_item_id.remove(id);
@@ -4498,7 +4498,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                         }
                     });
                     let sse = frame_sse_event("error", &error_event);
-                    yield Ok(Bytes::from(sse));
+                    yield Ok(sse);
                     terminated = true;
                     break;
                 }

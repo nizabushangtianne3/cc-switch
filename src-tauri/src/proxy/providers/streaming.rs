@@ -334,13 +334,13 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                         let event = build_message_delta_event(stop_reason, usage_json);
                                         let sse_data = frame_sse_event("message_delta", &event);
                                         log::debug!("[Claude/OpenRouter] >>> Anthropic SSE: message_delta (from pending)");
-                                        yield Ok(Bytes::from(sse_data));
+                                        yield Ok(sse_data);
                                     }
 
                                     let event = json!({"type": "message_stop"});
                                     let sse_data = frame_sse_event("message_stop", &event);
                                     log::debug!("[Claude/OpenRouter] >>> Anthropic SSE: message_stop");
-                                    yield Ok(Bytes::from(sse_data));
+                                    yield Ok(sse_data);
                                     // [DONE] is terminal; do not read or emit anything after message_stop.
                                     return;
                                 }
@@ -391,7 +391,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
 
                                             let event = build_message_start_event(message_id.as_deref(), current_model.as_deref(), Some(start_usage));
                                             let sse_data = frame_sse_event("message_start", &event);
-                                            yield Ok(Bytes::from(sse_data));
+                                            yield Ok(sse_data);
                                             has_sent_message_start = true;
                                         }
 
@@ -471,7 +471,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                                         "index": index
                                                     });
                                                     let sse_data = frame_sse_event("content_block_stop", &event);
-                                                    yield Ok(Bytes::from(sse_data));
+                                                    yield Ok(sse_data);
                                                 }
                                                 current_non_tool_block_type = None;
 
@@ -578,7 +578,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                                             }
                                                         });
                                                         let sse_data = frame_sse_event("content_block_start", &event);
-                                                        yield Ok(Bytes::from(sse_data));
+                                                        yield Ok(sse_data);
                                                         open_tool_block_indices.insert(anthropic_index);
                                                     }
 
@@ -592,7 +592,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                                             }
                                                         });
                                                         let sse_data = frame_sse_event("content_block_delta", &event);
-                                                        yield Ok(Bytes::from(sse_data));
+                                                        yield Ok(sse_data);
                                                     }
 
                                                     if let Some(args) = immediate_delta {
@@ -605,7 +605,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                                             }
                                                         });
                                                         let sse_data = frame_sse_event("content_block_delta", &event);
-                                                        yield Ok(Bytes::from(sse_data));
+                                                        yield Ok(sse_data);
                                                     }
                                                 }
                                             }
@@ -654,7 +654,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                                     "index": index
                                                 });
                                                 let sse_data = frame_sse_event("content_block_stop", &event);
-                                                yield Ok(Bytes::from(sse_data));
+                                                yield Ok(sse_data);
                                             }
                                             current_non_tool_block_type = None;
 
@@ -702,7 +702,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                                     }
                                                 });
                                                 let sse_data = frame_sse_event("content_block_start", &event);
-                                                yield Ok(Bytes::from(sse_data));
+                                                yield Ok(sse_data);
                                                 open_tool_block_indices.insert(index);
                                                 if !pending.is_empty() {
                                                     let delta_event = json!({
@@ -714,7 +714,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                                         }
                                                     });
                                                     let delta_sse = frame_sse_event("content_block_delta", &delta_event);
-                                                    yield Ok(Bytes::from(delta_sse));
+                                                    yield Ok(delta_sse);
                                                 }
                                             }
 
@@ -728,7 +728,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                                         "index": index
                                                     });
                                                     let sse_data = frame_sse_event("content_block_stop", &event);
-                                                    yield Ok(Bytes::from(sse_data));
+                                                    yield Ok(sse_data);
                                                 }
                                                 open_tool_block_indices.clear();
                                             }
@@ -770,7 +770,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                         }
                     });
                     let sse_data = frame_sse_event("error", &error_event);
-                    yield Ok(Bytes::from(sse_data));
+                    yield Ok(sse_data);
                     break;
                 }
             }
@@ -811,7 +811,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                 let event = build_message_delta_event(stop_reason, usage_json);
                 let sse_data = frame_sse_event("message_delta", &event);
                 log::debug!("[Claude/OpenRouter] >>> Anthropic SSE: message_delta (at stream end)");
-                yield Ok(Bytes::from(sse_data));
+                yield Ok(sse_data);
                 true
             } else {
                 false
@@ -821,7 +821,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                 let event = json!({"type": "message_stop"});
                 let sse_data = frame_sse_event("message_stop", &event);
                 log::debug!("[Claude/OpenRouter] >>> Anthropic SSE: message_stop (at stream end)");
-                yield Ok(Bytes::from(sse_data));
+                yield Ok(sse_data);
             }
         }
     }
