@@ -4,6 +4,7 @@
 //! SSE events for Claude-compatible clients.
 
 use super::gemini_shadow::{GeminiShadowStore, GeminiToolCallMeta};
+use super::streaming::build_message_start_event;
 use super::transform_gemini::{
     build_anthropic_usage, is_synthesized_tool_call_id, rectify_tool_call_parts,
     synthesize_tool_call_id, AnthropicToolSchemaHints,
@@ -301,16 +302,7 @@ pub fn create_anthropic_sse_stream_from_gemini<E: std::error::Error + Send + 'st
                         }
 
                         if !has_sent_message_start {
-                            let event = json!({
-                                "type": "message_start",
-                                "message": {
-                                    "id": message_id.clone().unwrap_or_default(),
-                                    "type": "message",
-                                    "role": "assistant",
-                                    "model": current_model.clone().unwrap_or_default(),
-                                    "usage": build_anthropic_usage(chunk_json.get("usageMetadata"))
-                                }
-                            });
+                            let event = build_message_start_event(message_id.as_deref(), current_model.as_deref(), Some(build_anthropic_usage(chunk_json.get("usageMetadata"))));
                             yield Ok(encode_sse("message_start", &event));
                             has_sent_message_start = true;
                         }
@@ -405,16 +397,7 @@ pub fn create_anthropic_sse_stream_from_gemini<E: std::error::Error + Send + 'st
         }
 
         if !has_sent_message_start {
-            let event = json!({
-                "type": "message_start",
-                "message": {
-                    "id": message_id.clone().unwrap_or_default(),
-                    "type": "message",
-                    "role": "assistant",
-                    "model": current_model.clone().unwrap_or_default(),
-                    "usage": build_anthropic_usage(latest_usage.as_ref())
-                }
-            });
+            let event = build_message_start_event(message_id.as_deref(), current_model.as_deref(), Some(build_anthropic_usage(latest_usage.as_ref())));
             yield Ok(encode_sse("message_start", &event));
         }
 

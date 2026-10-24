@@ -150,6 +150,29 @@ fn build_message_delta_event(stop_reason: Option<String>, usage_json: Option<Val
     })
 }
 
+/// 构造 Anthropic 的 `message_start` 事件体。
+///
+/// Responses / OpenRouter / Gemini 三个转换器各自把这份 shape 抄了两三遍，
+/// 只有 id、model 和 usage 的来源不同。id / model 缺失时发空串，与原来
+/// `unwrap_or_default()` 一致；usage 给 `None` 表示还没统计到，发零值，
+/// `Some(v)` 则原样带上（不判断它是不是对象，避免把上游的怪用法改掉）。
+pub(crate) fn build_message_start_event(
+    message_id: Option<&str>,
+    model: Option<&str>,
+    usage: Option<Value>,
+) -> Value {
+    json!({
+        "type": "message_start",
+        "message": {
+            "id": message_id.unwrap_or_default(),
+            "type": "message",
+            "role": "assistant",
+            "model": model.unwrap_or_default(),
+            "usage": usage.unwrap_or_else(default_anthropic_usage_json)
+        }
+    })
+}
+
 fn sse_event_string(event: Value) -> String {
     let event_name = event.get("type").and_then(|v| v.as_str()).unwrap_or("");
     // 复用同一套字节成帧；Vec 的分配由 String::from_utf8 接手，不多一次拷贝
@@ -366,16 +389,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                                 }
                                             }
 
-                                            let event = json!({
-                                                "type": "message_start",
-                                                "message": {
-                                                    "id": message_id.clone().unwrap_or_default(),
-                                                    "type": "message",
-                                                    "role": "assistant",
-                                                    "model": current_model.clone().unwrap_or_default(),
-                                                    "usage": start_usage
-                                                }
-                                            });
+                                            let event = build_message_start_event(message_id.as_deref(), current_model.as_deref(), Some(start_usage));
                                             let sse_data = frame_sse_event("message_start", &event);
                                             yield Ok(Bytes::from(sse_data));
                                             has_sent_message_start = true;
@@ -699,8 +713,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                                             "partial_json": pending
                                                         }
                                                     });
-                                                    let delta_sse = format!("event: content_block_delta\ndata: {}\n\n",
-                                                        serde_json::to_string(&delta_event).unwrap_or_default());
+                                                    let delta_sse = frame_sse_event("content_block_delta", &delta_event);
                                                     yield Ok(Bytes::from(delta_sse));
                                                 }
                                             }
@@ -756,8 +769,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                             "message": format!("Stream error: {e}")
                         }
                     });
-                    let sse_data = format!("event: error\ndata: {}\n\n",
-                        serde_json::to_string(&error_event).unwrap_or_default());
+                    let sse_data = frame_sse_event("error", &error_event);
                     yield Ok(Bytes::from(sse_data));
                     break;
                 }
@@ -2150,5 +2162,52 @@ mod tests {
         )
         .await
         .expect("a terminal response must not await another upstream chunk");
+    }
+
+    #[test]
+    fn build_message_start_event_fills_the_anthropic_envelope() {
+        let event = build_message_start_event(
+            Some("msg-1"),
+            Some("claude-sonnet-4-5"),
+            Some(json!({"input_tokens": 12, "output_tokens": 0})),
+        );
+
+        assert_eq!(
+            event,
+            json!({
+                "type": "message_start",
+                "message": {
+                    "id": "msg-1",
+                    "type": "message",
+                    "role": "assistant",
+                    "model": "claude-sonnet-4-5",
+                    "usage": {"input_tokens": 12, "output_tokens": 0}
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn build_message_start_event_defaults_missing_id_model_and_usage() {
+        let event = build_message_start_event(None, None, None);
+        let message = &event["message"];
+
+        assert_eq!(event["type"], "message_start");
+        assert_eq!(message["id"], "");
+        assert_eq!(message["type"], "message");
+        assert_eq!(message["role"], "assistant");
+        assert_eq!(message["model"], "");
+        // 还没统计到 usage 时发零值，和原来内联写的 {"input_tokens":0,...} 一致
+        assert_eq!(
+            message["usage"],
+            json!({"input_tokens": 0, "output_tokens": 0})
+        );
+    }
+
+    #[test]
+    fn build_message_start_event_passes_a_non_object_usage_through() {
+        // 不判断 usage 是不是对象：上游给什么就带什么，避免把怪用法改掉
+        let event = build_message_start_event(Some("msg-1"), Some("m"), Some(json!("weird")));
+        assert_eq!(event["message"]["usage"], "weird");
     }
 }
