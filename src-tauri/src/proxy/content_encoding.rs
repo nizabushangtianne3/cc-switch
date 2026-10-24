@@ -5,6 +5,7 @@
 //! 共用同一套解压逻辑。
 
 use axum::http::header::HeaderMap;
+use smallvec::SmallVec;
 use std::borrow::Cow;
 use std::io::Read;
 
@@ -12,7 +13,7 @@ use std::io::Read;
 ///
 /// HTTP 允许堆叠编码（如 `gzip, zstd`），各 coding 以逗号分隔；亦允许重复
 /// content-encoding 头，语义等同逗号拼接（见 [`get_content_encoding`]）。
-fn split_codings(content_encoding: &str) -> Vec<&str> {
+fn split_codings(content_encoding: &str) -> SmallVec<[&str; 2]> {
     content_encoding
         .split(',')
         .map(str::trim)
@@ -195,7 +196,8 @@ pub(crate) fn get_content_encoding(headers: &HeaderMap) -> Option<Cow<'_, str>> 
     let Some(second) = values.next() else {
         if first.bytes().any(|byte| byte.is_ascii_uppercase()) {
             let lowered = first.to_lowercase();
-            return (!split_codings(&lowered).is_empty()).then_some(Cow::Owned(lowered));
+            let supported = !split_codings(&lowered).is_empty();
+            return supported.then_some(Cow::Owned(lowered));
         }
         return (!split_codings(first).is_empty()).then_some(Cow::Borrowed(first));
     };
@@ -208,7 +210,8 @@ pub(crate) fn get_content_encoding(headers: &HeaderMap) -> Option<Cow<'_, str>> 
         combined.push_str(value);
     }
     let combined = combined.to_lowercase();
-    (!split_codings(&combined).is_empty()).then_some(Cow::Owned(combined))
+    let supported = !split_codings(&combined).is_empty();
+    supported.then_some(Cow::Owned(combined))
 }
 
 #[cfg(test)]
