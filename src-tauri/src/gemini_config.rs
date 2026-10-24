@@ -69,6 +69,7 @@ pub fn parse_env_file(content: &str) -> HashMap<String, String> {
 /// - CLI 工具的严格模式
 /// - 配置文件错误诊断
 ///
+/// 严格解析只被单测使用，用于断言诊断口径；生产路径写 .env 走宽松解析。
 /// 已有完整的测试覆盖，可直接使用。
 #[allow(dead_code)]
 pub fn parse_env_file_strict(content: &str) -> Result<HashMap<String, String>, AppError> {
