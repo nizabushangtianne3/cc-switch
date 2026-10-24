@@ -5,29 +5,57 @@ use sha2::{Digest, Sha256};
 use std::fmt::Write as _;
 
 pub(crate) fn canonical_json_string(value: &Value) -> String {
+    let mut out = String::new();
+    write_canonical(value, &mut out);
+    out
+}
+
+/// 把 value 的键序稳定形式直接写进 `out`，中间节点不建任何临时字符串。
+///
+/// 旧实现在每个对象/数组上都要 collect 出 Vec、逐项 `format!`、`join`、再
+/// `format!` 包一层，等于把整棵子树逐层拷三遍；深层嵌套的请求体上这段拷贝
+/// 才是主要开销，而不是分配次数本身。
+fn write_canonical(value: &Value, out: &mut String) {
     match value {
-        Value::Null => "null".to_string(),
-        Value::Bool(value) => value.to_string(),
-        Value::Number(value) => value.to_string(),
-        Value::String(value) => serde_json::to_string(value)
-            .expect("serializing a JSON string for canonical output should not fail"),
+        Value::Null => out.push_str("null"),
+        Value::Bool(value) => out.push_str(if *value { "true" } else { "false" }),
+        Value::Number(value) => {
+            let _ = write!(out, "{value}");
+        }
+        Value::String(value) => out.push_str(
+            &serde_json::to_string(value)
+                .expect("serializing a JSON string for canonical output should not fail"),
+        ),
         Value::Array(values) => {
-            let parts = values.iter().map(canonical_json_string).collect::<Vec<_>>();
-            format!("[{}]", parts.join(","))
+            out.push('[');
+            for (index, value) in values.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                write_canonical(value, out);
+            }
+            out.push(']');
         }
         Value::Object(map) => {
+            // preserve_order 之下迭代序是插入序，必须显式按键排序，
+            // 同一份内容才能得到同一串字节。
             let mut entries = map.iter().collect::<Vec<_>>();
-            entries.sort_by_key(|(left, _)| *left);
-            let parts = entries
-                .into_iter()
-                .map(|(key, value)| {
-                    let key = serde_json::to_string(key).expect(
+            entries.sort_by(|(left, _), (right, _)| left.cmp(right));
+
+            out.push('{');
+            for (index, (key, value)) in entries.into_iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                out.push_str(
+                    &serde_json::to_string(key).expect(
                         "serializing a JSON object key for canonical output should not fail",
-                    );
-                    format!("{key}:{}", canonical_json_string(value))
-                })
-                .collect::<Vec<_>>();
-            format!("{{{}}}", parts.join(","))
+                    ),
+                );
+                out.push(':');
+                write_canonical(value, out);
+            }
+            out.push('}');
         }
     }
 }
@@ -121,6 +149,29 @@ mod tests {
         assert_eq!(
             canonicalize_json_string_if_parseable(r#"{ "b": 2, "a": 1 }"#),
             r#"{"a":1,"b":2}"#
+        );
+    }
+
+    #[test]
+    fn canonical_json_string_pins_the_exact_wire_format() {
+        // 无空格、键序稳定、空容器不留缝隙；字符串按 JSON 规则转义。
+        assert_eq!(canonical_json_string(&json!({})), "{}");
+        assert_eq!(canonical_json_string(&json!([])), "[]");
+        assert_eq!(canonical_json_string(&Value::Null), "null");
+        assert_eq!(canonical_json_string(&json!(true)), "true");
+        assert_eq!(canonical_json_string(&json!(12)), "12");
+        assert_eq!(canonical_json_string(&json!(1.5)), "1.5");
+        assert_eq!(canonical_json_string(&json!("plain")), "\"plain\"");
+        assert_eq!(
+            canonical_json_string(&json!({"a\"b": "x\ny", "c": null})),
+            "{\"a\\\"b\":\"x\\ny\",\"c\":null}"
+        );
+        assert_eq!(
+            canonical_json_string(&json!({
+                "outer": {"z": 1, "a": [3, {"y": 2, "x": 1}], "m": []},
+                "inner": []
+            })),
+            "{\"inner\":[],\"outer\":{\"a\":[3,{\"x\":1,\"y\":2}],\"m\":[],\"z\":1}}"
         );
     }
 
