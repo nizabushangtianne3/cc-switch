@@ -105,6 +105,7 @@ impl ProviderType {
     /// 过去 OpenRouter 需要将 Anthropic 格式转换为 OpenAI 格式；
     /// 现在默认关闭转换（因为 OpenRouter 已支持 Claude Code 兼容接口）。
     /// GitHub Copilot 需要转换（Anthropic → OpenAI 格式）。
+    // 测试专用：按 ProviderType 断言转换开关表，生产路径走 adapter.needs_transform。
     #[allow(dead_code)]
     pub fn needs_transform(&self) -> bool {
         match self {
@@ -117,6 +118,7 @@ impl ProviderType {
     }
 
     /// 获取默认端点
+    // 测试专用：断言默认端点表，生产路径走 provider 自己的 base_url。
     #[allow(dead_code)]
     pub fn default_endpoint(&self) -> &'static str {
         match self {
@@ -276,6 +278,7 @@ pub fn get_adapter(app_type: &AppType) -> Option<Box<dyn ProviderAdapter>> {
 }
 
 /// 根据 ProviderType 获取对应的适配器
+// 测试专用：直接按 ProviderType 造适配器，生产路径从 provider 反推。
 #[allow(dead_code)]
 pub fn get_adapter_for_provider_type(provider_type: &ProviderType) -> Box<dyn ProviderAdapter> {
     match provider_type {
