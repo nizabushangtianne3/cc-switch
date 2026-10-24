@@ -5,7 +5,7 @@
 use super::hyper_client::{ProxyResponse, MAX_RESPONSE_BODY_BYTES};
 use super::{
     body_filter::{contains_private_params, strip_private_params},
-    content_encoding::{decompress_body_with_limit, get_content_encoding},
+    content_encoding::{decoded_body, get_content_encoding},
     error::*,
     failover_switch::FailoverSwitchManager,
     log_codes::{fwd as log_fwd, key as log_key},
@@ -3159,17 +3159,7 @@ impl RequestForwarder {
                 MAX_RESPONSE_BODY_BYTES,
             )
             .await?;
-            let decoded = match encoding {
-                Some(encoding) => {
-                    match decompress_body_with_limit(&encoding, &raw, MAX_RESPONSE_BODY_BYTES) {
-                        Ok(Some(decompressed)) => decompressed,
-                        // 不支持的编码 / 解压失败 / 解压后超限：退回（已有上限的）
-                        // 原始字节，尽量保留可读信息
-                        _ => raw.to_vec(),
-                    }
-                }
-                None => raw.to_vec(),
-            };
+            let decoded = decoded_body(encoding.as_deref(), &raw, MAX_RESPONSE_BODY_BYTES).into_owned();
             let body_text = String::from_utf8(decoded).ok();
 
             Err(ProxyError::UpstreamError {
@@ -3229,15 +3219,7 @@ impl RequestForwarder {
         let raw =
             super::hyper_client::proxy_body_bytes_with_limit(parts.body, MAX_RESPONSE_BODY_BYTES)
                 .await?;
-        let decoded: std::borrow::Cow<'_, [u8]> = match encoding {
-            Some(encoding) => {
-                match decompress_body_with_limit(&encoding, &raw, MAX_RESPONSE_BODY_BYTES) {
-                    Ok(Some(decompressed)) => std::borrow::Cow::Owned(decompressed),
-                    _ => std::borrow::Cow::Borrowed(&raw[..]),
-                }
-            }
-            None => std::borrow::Cow::Borrowed(&raw[..]),
-        };
+        let decoded = decoded_body(encoding.as_deref(), &raw, MAX_RESPONSE_BODY_BYTES);
 
         if let Some(message) = codex_anthropic_error_envelope_message(&decoded) {
             return Err(ProxyError::TransformError(format!(
@@ -3259,15 +3241,7 @@ impl RequestForwarder {
         let raw =
             super::hyper_client::proxy_body_bytes_with_limit(parts.body, MAX_RESPONSE_BODY_BYTES)
                 .await?;
-        let decoded: std::borrow::Cow<'_, [u8]> = match encoding {
-            Some(encoding) => {
-                match decompress_body_with_limit(&encoding, &raw, MAX_RESPONSE_BODY_BYTES) {
-                    Ok(Some(decompressed)) => std::borrow::Cow::Owned(decompressed),
-                    _ => std::borrow::Cow::Borrowed(&raw[..]),
-                }
-            }
-            None => std::borrow::Cow::Borrowed(&raw[..]),
-        };
+        let decoded = decoded_body(encoding.as_deref(), &raw, MAX_RESPONSE_BODY_BYTES);
 
         if let Some(message) = responses_error_envelope_message(&decoded) {
             return Err(ProxyError::TransformError(format!(

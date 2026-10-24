@@ -169,6 +169,25 @@ pub(crate) fn decompress_body(
     decompress_body_with_limit(content_encoding, body, usize::MAX).map_err(Into::into)
 }
 
+/// 读到的 body 字节按 content-encoding 解压，输出上限 `max_output_bytes`。
+///
+/// 编码字段 `None`、编码不受支持、数据损坏、解压后超限，一律退回原始字节。
+/// 调用方已经持有一份带上限的原始体，退回至少比把压缩字节当成 JSON 解析要好；
+/// 只有真正解出成果时才分配。
+pub(crate) fn decoded_body<'a>(
+    encoding: Option<&str>,
+    raw: &'a [u8],
+    max_output_bytes: usize,
+) -> Cow<'a, [u8]> {
+    match encoding {
+        Some(encoding) => match decompress_body_with_limit(encoding, raw, max_output_bytes) {
+            Ok(Some(decompressed)) => Cow::Owned(decompressed),
+            _ => Cow::Borrowed(raw),
+        },
+        None => Cow::Borrowed(raw),
+    }
+}
+
 /// 该 content-encoding（含堆叠，如 `gzip, zstd`）是否全部可被解压。
 ///
 /// 请求侧用它做闸门：无法解压的压缩体不能透传给 JSON 解析，需直接拒绝。
@@ -448,5 +467,52 @@ mod tests {
         let encoding = get_content_encoding(&headers).expect("GZIP normalises to gzip");
         assert!(matches!(encoding, Cow::Owned(_)), "含大写必须复制一份再小写化");
         assert_eq!(&*encoding, "gzip");
+    }
+
+    #[test]
+    fn decoded_body_borrows_the_raw_bytes_when_there_is_no_encoding() {
+        let raw = b"{\"ok\":true}";
+        let decoded = decoded_body(None, raw, 1024);
+        assert!(matches!(decoded, Cow::Borrowed(_)), "无编码不该分配");
+        assert_eq!(&decoded[..], raw);
+    }
+
+    #[test]
+    fn decoded_body_borrows_the_raw_bytes_for_an_unsupported_encoding() {
+        // 不支持的编码按原样透传，调用方自己会保留 content-encoding 头。
+        let raw = b"compressed-bytes-we-cannot-read";
+        let decoded = decoded_body(Some("bogus"), raw, 1024);
+        assert!(matches!(decoded, Cow::Borrowed(_)), "解不出就退回原字节");
+        assert_eq!(&decoded[..], raw);
+    }
+
+    #[test]
+    fn decoded_body_inflates_a_supported_encoding() {
+        use flate2::{write::GzEncoder, Compression};
+        use std::io::Write;
+
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(b"hello compressed world").unwrap();
+        let compressed = encoder.finish().unwrap();
+
+        // 23 字节的解压结果，给足预算
+        let decoded = decoded_body(Some("gzip"), &compressed, 1024);
+        assert!(matches!(decoded, Cow::Owned(_)), "解出成果必须拿到新缓冲");
+        assert_eq!(&decoded[..], b"hello compressed world");
+    }
+
+    #[test]
+    fn decoded_body_falls_back_when_inflation_exceeds_the_budget() {
+        use flate2::{write::GzEncoder, Compression};
+        use std::io::Write;
+
+        // 全零的 gzip 解出来远超预算：必须在预算处截停并退回原字节，而不是展开。
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(&vec![0u8; 64 * 1024]).unwrap();
+        let compressed = encoder.finish().unwrap();
+
+        let decoded = decoded_body(Some("gzip"), &compressed, 16);
+        assert!(matches!(decoded, Cow::Borrowed(_)), "超限应退回原字节");
+        assert_eq!(&decoded[..], &compressed[..]);
     }
 }
