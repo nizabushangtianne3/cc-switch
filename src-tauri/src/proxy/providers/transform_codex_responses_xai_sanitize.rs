@@ -36,7 +36,7 @@ use futures::stream::{Stream, StreamExt};
 use serde_json::{json, Map, Number, Value};
 
 use super::transform_codex_responses_namespace::{restore_sse_event_namespaces, NamespacedName};
-use crate::proxy::sse::{next_sse_block_range, strip_sse_field, Utf8TailDecoder};
+use crate::proxy::sse::{next_sse_block_range, scan_sse_block, Utf8TailDecoder};
 
 /// Codex plugin-private fields removed recursively at any nesting depth.
 const RECURSIVE_UNSUPPORTED_FIELDS: &[&str] = &["external_web_access"];
@@ -1109,22 +1109,10 @@ fn rewrite_xai_native_sse_block(
     block: &str,
     restore_map: &HashMap<String, NamespacedName>,
 ) -> Bytes {
-    let mut event_name: Option<&str> = None;
-    let mut data_parts: Vec<&str> = Vec::new();
-    for line in block.lines() {
-        if let Some(event) = strip_sse_field(line, "event") {
-            event_name = Some(event.trim());
-        }
-        if let Some(data) = strip_sse_field(line, "data") {
-            data_parts.push(data);
-        }
-    }
-
-    if data_parts.is_empty() {
+    let (event_name, payload) = scan_sse_block(block);
+    let Some(data) = payload else {
         return Bytes::from(format!("{block}\n\n"));
-    }
-
-    let data = data_parts.join("\n");
+    };
     if data.trim() == "[DONE]" {
         return Bytes::from(format!("{block}\n\n"));
     }
@@ -1140,9 +1128,9 @@ fn rewrite_xai_native_sse_block(
         return Bytes::from(format!("{block}\n\n"));
     }
 
-    let restored = serde_json::to_string(&event).unwrap_or(data);
+    let restored = serde_json::to_string(&event).unwrap_or_else(|_| data.into_owned());
     let mut out = String::new();
-    if let Some(name) = event_name {
+    if let Some(name) = &event_name {
         out.push_str("event: ");
         out.push_str(name);
         out.push('\n');
