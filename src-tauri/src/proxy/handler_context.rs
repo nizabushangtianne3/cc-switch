@@ -340,16 +340,21 @@ impl RequestContext {
 /// `/v1/models/gemini-1.5-flash`, `gemini/v1beta/models/<model>:streamGenerateContent`.
 /// Returns `None` when no `models/<name>` segment is present.
 pub(crate) fn extract_gemini_model_from_path(endpoint: &str) -> Option<String> {
-    let segments: Vec<&str> = endpoint.split('/').collect();
-    segments
-        .iter()
-        .position(|s| *s == "models")
-        .and_then(|i| segments.get(i + 1).copied())
+    let mut segments = endpoint.split('/');
+    while let Some(segment) = segments.next() {
+        if segment != "models" {
+            continue;
+        }
+        let model = segments.next()?;
         // 防御性裁剪：即便调用方传入带 ? 或 :action 的字符串，也只保留 model id 本身
-        .map(|s| s.split('?').next().unwrap_or(s))
-        .map(|s| s.split(':').next().unwrap_or(s))
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
+        let model = model.split('?').next().unwrap_or(model);
+        let model = model.split(':').next().unwrap_or(model);
+        if model.is_empty() {
+            return None;
+        }
+        return Some(model.to_string());
+    }
+    None
 }
 
 #[cfg(test)]
@@ -408,6 +413,23 @@ mod tests {
     fn extract_model_trailing_models_segment() {
         // `/v1beta/models` (list endpoint) has no following segment → None.
         assert_eq!(extract_gemini_model_from_path("/v1beta/models"), None);
+    }
+
+    #[test]
+    fn extract_model_empty_suffix_is_rejected_not_searched_further() {
+        // `models/:action` 裁完只剩空串；原实现用 filter 丢掉，不会继续找后面的 "models"。
+        assert_eq!(extract_gemini_model_from_path("/models/:go/models/gemini-pro"), None);
+        assert_eq!(extract_gemini_model_from_path("/models//gemini-pro"), None);
+        assert_eq!(extract_gemini_model_from_path("/v1beta/models/?x=1"), None);
+    }
+
+    #[test]
+    fn extract_model_takes_the_first_models_segment() {
+        // 第一个 "models" 段即命中，不回头找后面更完整的那个。
+        assert_eq!(
+            extract_gemini_model_from_path("/models/models/gemini-pro:go").as_deref(),
+            Some("models"),
+        );
     }
 
     #[test]
