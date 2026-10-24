@@ -27,7 +27,7 @@ use std::{
     },
     time::Duration,
 };
-use tokio::sync::Mutex;
+use std::sync::Mutex;
 
 // ============================================================================
 // 响应头处理
@@ -335,6 +335,11 @@ pub struct SseUsageCollector {
 }
 
 struct SseUsageCollectorInner {
+    /// 只包一个 Vec：临界区就是一次 push / 一次 take。
+    ///
+    /// 这里用标准锁而不是 tokio 的异步锁。用量收集默认开启，每个被收下的
+    /// SSE 事件都要过一次；异步锁每次都要走一次信号量获取和 future poll，
+    /// 而这里根本没有需要让出执行器的等待，标准锁直接省掉这部分。
     events: Mutex<Vec<Value>>,
     first_output_time: OnceLock<std::time::Instant>,
     start_time: std::time::Instant,
@@ -385,19 +390,27 @@ impl SseUsageCollector {
     }
 
     /// 推送 SSE 事件
-    pub async fn push(&self, event: Value) {
-        let mut events = self.inner.events.lock().await;
+    pub fn push(&self, event: Value) {
+        let mut events = self
+            .inner
+            .events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         events.push(event);
     }
 
     /// 完成收集并触发回调
-    pub async fn finish(&self) {
+    pub fn finish(&self) {
         if self.inner.finished.swap(true, Ordering::SeqCst) {
             return;
         }
 
         let events = {
-            let mut guard = self.inner.events.lock().await;
+            let mut guard = self
+                .inner
+                .events
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             std::mem::take(&mut *guard)
         };
 
@@ -469,7 +482,7 @@ impl Drop for SseUsageFinishGuard {
         if let Some(collector) = self.collector.take() {
             if let Ok(handle) = tokio::runtime::Handle::try_current() {
                 handle.spawn(async move {
-                    collector.finish().await;
+                    collector.finish();
                 });
             } else {
                 log::warn!("SSE 用量收尾保护触发时 Tokio runtime 不可用，跳过异步 finish");
@@ -696,7 +709,7 @@ pub fn create_logged_passthrough_stream(
                                                 Some(c) if c.should_collect(data) => {
                                                     match serde_json::from_str::<Value>(data) {
                                                         Ok(json_value) => {
-                                                            c.push(json_value).await;
+                                                            c.push(json_value);
                                                             true
                                                         }
                                                         Err(_) => false,
@@ -738,7 +751,7 @@ pub fn create_logged_passthrough_stream(
         }
 
         if let Some(c) = collector.take() {
-            c.finish().await;
+            c.finish();
         }
         if let Some(guard) = &mut finish_guard {
             guard.disarm();
