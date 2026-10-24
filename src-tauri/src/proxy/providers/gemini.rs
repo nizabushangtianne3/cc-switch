@@ -128,28 +128,12 @@ impl ProviderAdapter for GeminiAdapter {
     }
 
     fn extract_base_url(&self, provider: &Provider) -> Result<String, ProxyError> {
-        // 从 env 中获取
-        if let Some(env) = provider.settings_config.get("env") {
-            if let Some(url) = env.get("GOOGLE_GEMINI_BASE_URL").and_then(|v| v.as_str()) {
-                return Ok(url.trim_end_matches('/').to_string());
-            }
+        // 从 env 中获取；否则按顺序试顶层字段
+        if let Some(url) = provider.settings_config_env_base_url("GOOGLE_GEMINI_BASE_URL") {
+            return Ok(url);
         }
-
-        // 尝试直接获取
-        if let Some(url) = provider
-            .settings_config
-            .get("base_url")
-            .and_then(|v| v.as_str())
-        {
-            return Ok(url.trim_end_matches('/').to_string());
-        }
-
-        if let Some(url) = provider
-            .settings_config
-            .get("baseURL")
-            .and_then(|v| v.as_str())
-        {
-            return Ok(url.trim_end_matches('/').to_string());
+        if let Some(url) = provider.settings_config_base_url(&["base_url", "baseURL"]) {
+            return Ok(url);
         }
 
         Err(ProxyError::ConfigError(

@@ -108,6 +108,30 @@ impl Provider {
             .unwrap_or(false)
     }
 
+    /// 按顺序从 `settings_config` 顶层取第一个字符串字段，去掉末尾的 `/`。
+    ///
+    /// 三个 provider 适配器的 `extract_base_url` 各自把 `get → as_str →
+    /// trim_end_matches('/')` 抄了三到四遍，只是 key 名和先后不同。语义其实
+    /// 一致，收成一处，免得三边各自漂移。这里刻意**不** trim 空白，和原实现
+    /// 保持一致；`find_map` 与原来的顺序 `if let` 链等价。
+    pub fn settings_config_base_url(&self, keys: &[&str]) -> Option<String> {
+        keys.iter().find_map(|key| {
+            self.settings_config
+                .get(*key)
+                .and_then(|v| v.as_str())
+                .map(|url| url.trim_end_matches('/').to_string())
+        })
+    }
+
+    /// 从 `settings_config.env.<name>` 取 base_url，同样去掉末尾的 `/`。
+    pub fn settings_config_env_base_url(&self, name: &str) -> Option<String> {
+        self.settings_config
+            .get("env")
+            .and_then(|env| env.get(name))
+            .and_then(|v| v.as_str())
+            .map(|url| url.trim_end_matches('/').to_string())
+    }
+
     fn provider_type(&self) -> Option<&str> {
         self.meta.as_ref().and_then(|m| m.provider_type.as_deref())
     }
@@ -1817,5 +1841,72 @@ mod tests {
             p.resolve_usage_credentials(&AppType::Claude),
             (String::new(), String::new())
         );
+    }
+
+    #[test]
+    fn settings_config_base_url_takes_the_first_present_key() {
+        let p = provider_with(json!({ "baseURL": "https://b.example" }));
+        assert_eq!(
+            p.settings_config_base_url(&["base_url", "baseURL"]).as_deref(),
+            Some("https://b.example")
+        );
+
+        // 第一个 key 存在就优先，即使后面的也在
+        let p = provider_with(json!({
+            "base_url": "https://a.example",
+            "baseURL": "https://b.example"
+        }));
+        assert_eq!(
+            p.settings_config_base_url(&["base_url", "baseURL"]).as_deref(),
+            Some("https://a.example")
+        );
+    }
+
+    #[test]
+    fn settings_config_base_url_skips_non_string_values() {
+        // 非字符串的值视作不存在，继续往下一个 key 找
+        let p = provider_with(json!({ "base_url": 42, "baseURL": "https://b.example" }));
+        assert_eq!(
+            p.settings_config_base_url(&["base_url", "baseURL"]).as_deref(),
+            Some("https://b.example")
+        );
+    }
+
+    #[test]
+    fn settings_config_base_url_strips_trailing_slashes_only() {
+        let p = provider_with(json!({ "base_url": "https://a.example///" }));
+        assert_eq!(
+            p.settings_config_base_url(&["base_url"]).as_deref(),
+            Some("https://a.example")
+        );
+
+        // 与原来的顺序 if-let 链一致：刻意不 trim 空白
+        let p = provider_with(json!({ "base_url": "  https://a.example  " }));
+        assert_eq!(
+            p.settings_config_base_url(&["base_url"]).as_deref(),
+            Some("  https://a.example  ")
+        );
+    }
+
+    #[test]
+    fn settings_config_env_base_url_reads_env_and_strips_slash() {
+        let p = provider_with(json!({
+            "env": { "ANTHROPIC_BASE_URL": "https://env.example/" }
+        }));
+        assert_eq!(
+            p.settings_config_env_base_url("ANTHROPIC_BASE_URL").as_deref(),
+            Some("https://env.example")
+        );
+        assert_eq!(p.settings_config_env_base_url("OTHER"), None);
+        assert_eq!(
+            provider_with(json!({})).settings_config_env_base_url("ANTHROPIC_BASE_URL"),
+            None
+        );
+    }
+
+    #[test]
+    fn settings_config_base_url_is_none_when_no_key_matches() {
+        let p = provider_with(json!({ "base_url": 42 }));
+        assert_eq!(p.settings_config_base_url(&["base_url", "baseURL"]), None);
     }
 }
