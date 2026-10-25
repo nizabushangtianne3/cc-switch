@@ -50,11 +50,11 @@ pub enum ProxyError {
     #[error("配置错误: {0}")]
     ConfigError(String),
 
+    // 只由测试构造；保留变体是为了 error_mapper 的 422 映射与错误分类。
     #[allow(dead_code)]
     #[error("格式转换错误: {0}")]
     TransformError(String),
 
-    #[allow(dead_code)]
     #[error("无效的请求: {0}")]
     InvalidRequest(String),
 
@@ -65,7 +65,6 @@ pub enum ProxyError {
     #[error("认证失败: {0}")]
     AuthError(String),
 
-    #[allow(dead_code)]
     #[error("内部错误: {0}")]
     Internal(String),
 }

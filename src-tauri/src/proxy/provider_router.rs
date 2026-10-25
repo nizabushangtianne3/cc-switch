@@ -186,6 +186,10 @@ impl ProviderRouter {
     }
 
     /// 记录供应商请求结果；调用方已持有阈值时避免重复读取配置。
+    ///
+    /// 这个函数会等 provider_health 写库完成（spawn_blocking + SQLite 连接锁），
+    /// 只在真的需要「写完再继续」的路径上用（HalfOpen 探测释放名额、测试断点）。
+    /// 每请求热路径上的记账走 [`Self::record_result_detached`]。
     pub async fn record_result_with_threshold(
         &self,
         provider_id: &str,
@@ -228,6 +232,53 @@ impl ProviderRouter {
         write_result?;
 
         Ok(())
+    }
+
+    /// 记账：熔断内存态同步更新（后续请求的可用性判断立即可见），
+    /// provider_health 写库 detach，不挡调用方。
+    ///
+    /// 失败记账发生在每请求的关键路径上（试下一家、把错误交回客户端之前），
+    /// 一次写库的磁盘 IO 不该叠加在这段延迟里；usage 记录早就是同款做法。
+    pub async fn record_result_detached(
+        &self,
+        provider_id: &str,
+        app_type: &str,
+        used_half_open_permit: bool,
+        success: bool,
+        error_msg: Option<String>,
+        failure_threshold: u32,
+    ) {
+        let breaker = self
+            .get_or_create_circuit_breaker(app_type, provider_id)
+            .await;
+
+        if success {
+            breaker.record_success(used_half_open_permit).await;
+        } else {
+            breaker.record_failure(used_half_open_permit).await;
+        }
+
+        let db = Arc::clone(&self.db);
+        let provider_id = provider_id.to_string();
+        let app_type = app_type.to_string();
+        let log_provider_id = provider_id.clone();
+        let log_app_type = app_type.clone();
+        tokio::spawn(async move {
+            let write = tokio::task::spawn_blocking(move || {
+                db.update_provider_health_with_threshold(
+                    &provider_id,
+                    &app_type,
+                    success,
+                    error_msg,
+                    failure_threshold,
+                )
+            });
+            if let Err(e) = write.await {
+                log::warn!(
+                    "[{log_app_type}] 健康状态写入任务失败: provider_id={log_provider_id}, error={e}"
+                );
+            }
+        });
     }
 
     /// 重置熔断器（手动恢复）
@@ -319,18 +370,8 @@ impl ProviderRouter {
             }
         }
 
-        // 如果不存在，获取写锁创建
-        let mut breakers = self.circuit_breakers.write().await;
-
-        // 双重检查，防止竞争条件
-        if let Some(breaker) = breakers
-            .get(app_type)
-            .and_then(|providers| providers.get(provider_id))
-        {
-            return breaker.clone();
-        }
-
-        // 按应用独立读取熔断器配置
+        // 按应用独立读熔断器配置：放在 map 写锁之外，创建首家时 await 配置不会
+        // 把同应用的其余熔断查询全部堵在写锁上。
         let config = match self.db.get_proxy_config_for_app(app_type).await {
             Ok(app_config) => crate::proxy::circuit_breaker::CircuitBreakerConfig {
                 failure_threshold: app_config.circuit_failure_threshold,
@@ -341,6 +382,17 @@ impl ProviderRouter {
             },
             Err(_) => crate::proxy::circuit_breaker::CircuitBreakerConfig::default(),
         };
+
+        // 如果不存在，获取写锁创建
+        let mut breakers = self.circuit_breakers.write().await;
+
+        // 双重检查，防止竞争条件
+        if let Some(breaker) = breakers
+            .get(app_type)
+            .and_then(|providers| providers.get(provider_id))
+        {
+            return breaker.clone();
+        }
 
         let breaker = Arc::new(CircuitBreaker::new(config));
         breakers

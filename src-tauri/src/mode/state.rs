@@ -14,7 +14,8 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::io::ErrorKind;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -326,7 +327,79 @@ pub fn load(store: &DeviceStore) -> Result<LiveState, AppError> {
 fn save(store: &DeviceStore, state: &LiveState) -> Result<(), AppError> {
     let bytes =
         serde_json::to_vec_pretty(state).map_err(|source| AppError::JsonSerialize { source })?;
-    stage_write(&store.state_path(), &bytes, Some(0o600), true)?.commit()
+    stage_write(&store.state_path(), &bytes, Some(0o600), true)?.commit()?;
+    // 自己刚写出去的就是最新鲜的内容：缓存直接对准它，后续读到本次写入，
+    // 不用等下一次文件戳校验把陈旧条目刷新掉。
+    cache_replace(&store.state_path(), Arc::new(state.clone()));
+    Ok(())
+}
+
+/// 一个路径上的状态缓存：命中条件是路径 + 文件戳（mtime、长度）都没变。
+///
+/// 代理热路径每个请求都要读一次状态（`provider_in_use_and_stack_mode` ->
+/// [`routing_state`]），读盘加 JSON 解析每请求都白付一次；这里把它降到一次
+/// `stat` 加一个 `Arc` 克隆。
+#[derive(Clone)]
+struct CachedState {
+    path: PathBuf,
+    stamp: FileStamp,
+    state: Arc<LiveState>,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+struct FileStamp {
+    modified: Option<SystemTime>,
+    len: u64,
+}
+
+impl FileStamp {
+    fn of(path: &std::path::Path) -> Self {
+        match fs::metadata(path) {
+            Ok(meta) => Self {
+                modified: meta.modified().ok(),
+                len: meta.len(),
+            },
+            // 文件不存在：u64::MAX 的长度让这个戳匹配不上任何真实文件。
+            Err(_) => Self {
+                modified: None,
+                len: u64::MAX,
+            },
+        }
+    }
+}
+
+fn state_cache() -> &'static Mutex<Option<CachedState>> {
+    static CACHE: Mutex<Option<CachedState>> = Mutex::new(None);
+    &CACHE
+}
+
+fn cache_take_stale(path: &std::path::Path) -> Option<CachedState> {
+    let cache = state_cache().lock().unwrap_or_else(|e| e.into_inner());
+    cache
+        .as_ref()
+        .filter(|entry| entry.path == path && entry.stamp == FileStamp::of(path))
+        .cloned()
+}
+
+fn cache_replace(path: &std::path::Path, state: Arc<LiveState>) {
+    let mut cache = state_cache().lock().unwrap_or_else(|e| e.into_inner());
+    *cache = Some(CachedState {
+        path: path.to_path_buf(),
+        stamp: FileStamp::of(path),
+        state,
+    });
+}
+
+/// [`load`] 的缓存版：进程内同一路径只读盘一次，之后每次命中做一次 `stat`
+/// 校验；文件变了（外部写入或别处改名）或我们自己的写盘会自然失配重读。
+fn load_cached(store: &DeviceStore) -> Result<LiveState, AppError> {
+    let path = store.state_path();
+    if let Some(entry) = cache_take_stale(&path) {
+        return Ok((*entry.state).clone());
+    }
+    let state = load(store)?;
+    cache_replace(&path, Arc::new(state.clone()));
+    Ok(state)
 }
 
 /// 读改写状态文件。
@@ -413,7 +486,8 @@ pub fn stack_mode(store: &DeviceStore, app: &str) -> Result<bool, AppError> {
 /// 一次读出路由决策需要的模式状态和 Stack 开关；状态文件只读一次。
 pub fn routing_state(store: &DeviceStore, app: &str) -> Result<(ModeState, bool), AppError> {
     let _guard = state_lock().lock().unwrap_or_else(|e| e.into_inner());
-    let state = load(store)?;
+    // 代理每个请求都过这里，走缓存版读状态（外部写盘按文件戳自然失效）。
+    let state = load_cached(store)?;
     let app_state = state.apps.get(app);
     let mode = app_state.map(AppLiveState::mode_state).unwrap_or_default();
     let stack_mode =
@@ -520,6 +594,111 @@ mod tests {
                 },
                 true
             )
+        );
+    }
+
+    /// 缓存命中之后，外部直接改文件（别的进程、手工编辑）必须仍能被下一次读到：
+    /// 文件戳（mtime/len）变了就整条重读，缓存不是「读一次就钉死」。
+    #[test]
+    fn routing_state_cache_sees_external_rewrite() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = DeviceStore::at(dir.path());
+
+        assert_eq!(
+            routing_state(&store, "claude").unwrap(),
+            (ModeState::default(), false)
+        );
+
+        // 外部写入：不经 update/save，直接落盘
+        fs::write(
+            store.state_path(),
+            r#"{"version": 1, "apps": {"claude": {"mode": "proxy", "proxy_route": "external"}}}"#,
+        )
+        .unwrap();
+
+        let (mode, stack) = routing_state(&store, "claude").unwrap();
+        assert_eq!(mode.proxy_route.as_deref(), Some("external"));
+        assert!(!stack);
+        // 再读一次（此时命中缓存）不能把刚看到的外部内容又变回旧的
+        assert_eq!(
+            routing_state(&store, "claude")
+                .unwrap()
+                .0
+                .proxy_route
+                .as_deref(),
+            Some("external")
+        );
+    }
+
+    /// 自己写盘（save/update）之后立刻读，必须看到刚才写的内容。
+    #[test]
+    fn routing_state_cache_sees_own_write_immediately() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = DeviceStore::at(dir.path());
+
+        assert_eq!(
+            routing_state(&store, "claude").unwrap(),
+            (ModeState::default(), false)
+        );
+
+        let mut state = load(&store).unwrap();
+        let app_state = state.apps.entry("claude".to_string()).or_default();
+        app_state.mode = Some(Mode::Proxy);
+        app_state.proxy_route = Some("own-write".to_string());
+        save(&store, &state).unwrap();
+
+        assert_eq!(
+            routing_state(&store, "claude")
+                .unwrap()
+                .0
+                .proxy_route
+                .as_deref(),
+            Some("own-write")
+        );
+    }
+
+    /// 缓存按路径隔离：两个设备目录交替读，互不串味。
+    #[test]
+    fn state_cache_is_keyed_by_path() {
+        let dir_a = tempfile::tempdir().unwrap();
+        let dir_b = tempfile::tempdir().unwrap();
+        let store_a = DeviceStore::at(dir_a.path());
+        let store_b = DeviceStore::at(dir_b.path());
+
+        fs::write(
+            store_a.state_path(),
+            r#"{"version": 1, "apps": {"claude": {"mode": "proxy", "proxy_route": "a"}}}"#,
+        )
+        .unwrap();
+        fs::write(
+            store_b.state_path(),
+            r#"{"version": 1, "apps": {"claude": {"mode": "proxy", "proxy_route": "b"}}}"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            routing_state(&store_a, "claude")
+                .unwrap()
+                .0
+                .proxy_route
+                .as_deref(),
+            Some("a")
+        );
+        assert_eq!(
+            routing_state(&store_b, "claude")
+                .unwrap()
+                .0
+                .proxy_route
+                .as_deref(),
+            Some("b")
+        );
+        assert_eq!(
+            routing_state(&store_a, "claude")
+                .unwrap()
+                .0
+                .proxy_route
+                .as_deref(),
+            Some("a")
         );
     }
 

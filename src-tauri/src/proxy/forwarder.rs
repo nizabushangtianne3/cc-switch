@@ -814,9 +814,11 @@ impl RequestForwarder {
         if !self.routing_state_enabled() {
             return;
         }
-        let _ = self
-            .router
-            .record_result_with_threshold(
+        // 熔断内存态同步记（下一家和后续请求立刻看得到），provider_health 写库
+        // detach：每次失败记账在关键路径上（试下一家之前、最终错误交回客户端
+        // 之前），不该在这里等一次磁盘 IO。
+        self.router
+            .record_result_detached(
                 &provider.id,
                 app_type_str,
                 used_half_open_permit,

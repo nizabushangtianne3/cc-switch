@@ -221,6 +221,7 @@ mod switching {
 
     /// 真机钥匙串冒烟：读写一条测试专用的条目（不是 agy 那条），确认 `security -i` 写入、
     /// 原地更新、读回都正常。默认不跑：`cargo test agy_account -- --ignored`。
+    #[cfg(target_os = "macos")]
     #[test]
     #[ignore]
     fn real_keychain_round_trip_on_a_test_item() {
