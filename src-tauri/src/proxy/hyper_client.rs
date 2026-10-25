@@ -260,13 +260,14 @@ impl PoolRelease {
         self.sender.poll_ready(cx)
     }
 
-    /// 只在 hyper 确认可复用时入池；不可复用（close / body 未读完就中断）
-    /// 时丢弃，连接随各半边落地正常关闭。
+    /// 一律把连接交回池子：能不能再用由 `take` 当场问 hyper，不能就丢弃关闭。
+    /// 不在入池时预判——那一瞬间的同步 `is_ready` 在 Linux 上会比连接驱动慢半拍，
+    /// 好连接会因此被丢掉，下一个请求白白多付一次握手。
     fn release(self) {
-        let entry = upstream_pool::PooledUpstream::new(self.write_half, self.sender);
-        if entry.is_reusable() {
-            upstream_pool::put(self.key, entry);
-        }
+        upstream_pool::put(
+            self.key,
+            upstream_pool::PooledUpstream::new(self.write_half, self.sender),
+        );
     }
 }
 
@@ -641,11 +642,14 @@ async fn send_raw_request(
     let stream = if let Some(proxy) = proxy_url {
         connect_via_proxy(proxy, host, port).await?
     } else {
-        ProxyStream::Tcp(
-            tokio::net::TcpStream::connect((host, port))
-                .await
-                .map_err(|e| ProxyError::ForwardFailed(format!("TCP connect failed: {e}")))?,
-        )
+        // 手写报文分两段落（头 + 体）：Nagle 会把第二段等 ACK 才发出去，
+        // 上游拿不全请求就不响应，keep-alive 池等于每次多付一个 RTT。
+        let tcp = tokio::net::TcpStream::connect((host, port))
+            .await
+            .map_err(|e| ProxyError::ForwardFailed(format!("TCP connect failed: {e}")))?;
+        tcp.set_nodelay(true)
+            .map_err(|e| ProxyError::ForwardFailed(format!("TCP connect failed: {e}")))?;
+        ProxyStream::Tcp(tcp)
     };
 
     // TLS 握手在连接级完成后再分家：握手需要完整的读写能力。

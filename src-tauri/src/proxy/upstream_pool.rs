@@ -194,12 +194,8 @@ pub(crate) fn take(
     pool.take(key)
 }
 
-/// 归还一条确认可复用的连接。
+/// 归还一条连接。能否复用由 [`take`] 判定：hyper 说不能再用时当场丢弃。
 pub(crate) fn put(key: PoolKey, entry: PooledUpstream) {
-    if !entry.is_reusable() {
-        // hyper 判定不可复用（close / body 未读完），丢弃即正常关闭。
-        return;
-    }
     let mut pool = pool().lock().expect("upstream pool lock");
     pool.put(key, entry);
 }
