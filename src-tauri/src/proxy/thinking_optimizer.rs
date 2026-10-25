@@ -143,7 +143,11 @@ fn normalized_contains(model: &str, needle: &str) -> bool {
 /// 归一化后的字节：`.` / `_` 折成 `-`，ASCII 字母小写化，其余不变。
 #[inline]
 fn normalized_byte(byte: u8) -> u8 {
-    let byte = if byte == b'.' || byte == b'_' { b'-' } else { byte };
+    let byte = if byte == b'.' || byte == b'_' {
+        b'-'
+    } else {
+        byte
+    };
     byte.to_ascii_lowercase()
 }
 
@@ -239,7 +243,10 @@ mod tests {
         // `.` 与 `_` 视同 `-`
         assert!(normalized_contains("claude-opus-4.8", "opus-4-8"));
         assert!(normalized_contains("claude_opus_4_8", "opus-4-8"));
-        assert!(normalized_contains("anthropic.claude-opus-4-6-20250514-v1:0", "opus-4-6"));
+        assert!(normalized_contains(
+            "anthropic.claude-opus-4-6-20250514-v1:0",
+            "opus-4-6"
+        ));
         // 斜杠不在折叠范围内，但它不影响子串命中
         assert!(normalized_contains("anthropic/claude-fable-5", "fable-5"));
         assert!(!normalized_contains("anthropic/claude-fable-5", "fable/5"));

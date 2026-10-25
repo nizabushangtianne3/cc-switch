@@ -3,8 +3,8 @@
 //! 在请求转发前自动注入 cache_control 标记，启用 Bedrock Prompt Caching
 
 use super::types::OptimizerConfig;
-use smallvec::SmallVec;
 use serde_json::{json, Value};
+use smallvec::SmallVec;
 
 /// 在请求体关键位置注入 cache_control 断点
 pub fn inject(body: &mut Value, config: &OptimizerConfig) {

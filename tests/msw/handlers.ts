@@ -102,6 +102,14 @@ export const handlers = [
     success(getLiveProviderIds("opencode")),
   ),
 
+  http.post(`${TAURI_ENDPOINT}/get_opencode_default_model`, () =>
+    success(null),
+  ),
+
+  http.post(`${TAURI_ENDPOINT}/set_opencode_default_model`, () =>
+    success(null),
+  ),
+
   http.post(`${TAURI_ENDPOINT}/get_openclaw_live_provider_ids`, () =>
     success(getLiveProviderIds("openclaw")),
   ),
@@ -159,6 +167,10 @@ export const handlers = [
     deleteProvider(app, id);
     return success(true);
   }),
+
+  http.post(`${TAURI_ENDPOINT}/add_provider_to_live_config`, () =>
+    success(true),
+  ),
 
   http.post(`${TAURI_ENDPOINT}/remove_provider_from_live_config`, () =>
     success(true),
@@ -560,6 +572,7 @@ export const handlers = [
   http.post(`${TAURI_ENDPOINT}/get_claude_desktop_status`, () =>
     success({
       supported: true,
+      installed: false,
       configured: false,
       proxyRunning: false,
       staleRawModels: false,

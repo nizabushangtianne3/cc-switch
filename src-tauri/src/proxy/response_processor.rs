@@ -20,6 +20,7 @@ use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
 use serde::Deserialize;
 use serde_json::Value;
+use std::sync::Mutex;
 use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -27,7 +28,6 @@ use std::{
     },
     time::Duration,
 };
-use std::sync::Mutex;
 
 // ============================================================================
 // 响应头处理

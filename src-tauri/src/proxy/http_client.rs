@@ -229,7 +229,6 @@ pub fn get_current_proxy_url() -> Option<Arc<str>> {
         .and_then(|url| url.clone())
 }
 
-
 /// 两种客户端共用的参数
 fn base_builder() -> reqwest::ClientBuilder {
     Client::builder()

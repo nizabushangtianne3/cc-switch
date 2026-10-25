@@ -465,7 +465,10 @@ mod tests {
         headers.append("content-encoding", HeaderValue::from_static("GZIP"));
 
         let encoding = get_content_encoding(&headers).expect("GZIP normalises to gzip");
-        assert!(matches!(encoding, Cow::Owned(_)), "含大写必须复制一份再小写化");
+        assert!(
+            matches!(encoding, Cow::Owned(_)),
+            "含大写必须复制一份再小写化"
+        );
         assert_eq!(&*encoding, "gzip");
     }
 

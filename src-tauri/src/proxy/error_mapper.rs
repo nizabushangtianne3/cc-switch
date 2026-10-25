@@ -43,7 +43,6 @@ pub fn map_proxy_error_to_status(error: &ProxyError) -> u16 {
         // 重试耗尽：503 Service Unavailable
         ProxyError::MaxRetriesExceeded => 503,
 
-
         // 配置错误/无效请求：400 Bad Request
         ProxyError::ConfigError(_) | ProxyError::InvalidRequest(_) => 400,
 

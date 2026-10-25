@@ -42,7 +42,6 @@ pub(crate) fn is_synthesized_tool_call_id(id: &str) -> bool {
     id.starts_with(SYNTHESIZED_ID_PREFIX)
 }
 
-
 pub fn anthropic_to_gemini_with_shadow(
     body: Value,
     shadow_store: Option<&GeminiShadowStore>,

@@ -76,9 +76,7 @@ impl GeminiAdapter {
 
                 // 拿到非空 access_token 就返回凭证
                 if !access_token.is_empty() {
-                    return Some(OAuthCredentials {
-                        access_token,
-                    });
+                    return Some(OAuthCredentials { access_token });
                 }
             }
         }

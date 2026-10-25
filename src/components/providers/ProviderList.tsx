@@ -21,9 +21,13 @@ import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/lib/toast";
 import type { OpenClawProviderConfig, Provider } from "@/types";
+import { getOpencodeDeclaredModels } from "@/components/providers/forms/helpers/opencodeFormUtils";
 import type { AppId } from "@/lib/api";
 import { providersApi } from "@/lib/api/providers";
-import { extractErrorMessage } from "@/utils/errorUtils";
+import {
+  extractErrorMessage,
+  translatePiProviderMutationError,
+} from "@/utils/errorUtils";
 import { useDragSort } from "@/hooks/useDragSort";
 import {
   useOpenClawLiveProviderIds,
@@ -48,9 +52,11 @@ import { cn } from "@/lib/utils";
 import { isTextEditableTarget } from "@/utils/domUtils";
 import { extractProviderBaseUrl } from "@/utils/providerConfigUtils";
 import { usePiCurrentState } from "@/lib/query/pi";
+import { isPiFamilyApp } from "@/config/appConfig";
 import { isHermesReadOnlyProvider } from "@/config/hermesProviderPresets";
 import {
   buildAdditiveSections,
+  buildLaunchSections,
   buildSwitchSections,
   type CardPresentation,
   type ProviderSection,
@@ -130,6 +136,11 @@ function ProviderListComponent({
       queryFn: () => providersApi.getOpenCodeLiveProviderIds(),
       enabled: appId === "opencode",
     });
+  const { data: opencodeDefaultModel } = useQuery({
+    queryKey: ["opencodeDefaultModel"],
+    queryFn: () => providersApi.getOpenCodeDefaultModel(),
+    enabled: appId === "opencode",
+  });
   const { data: openclawLiveIds, isPending: isOpenclawLiveIdsPending } =
     useOpenClawLiveProviderIds(appId === "openclaw");
   const { data: hermesLiveIds, isPending: isHermesLiveIdsPending } =
@@ -147,8 +158,8 @@ function ProviderListComponent({
     isPending: isPiCurrentStatePending,
     isError: isPiCurrentStateError,
     error: piCurrentStateError,
-  } = usePiCurrentState(appId === "pi");
-  const isPiStateReady = appId !== "pi" || isPiCurrentStateSuccess;
+  } = usePiCurrentState(isPiFamilyApp(appId), appId === "omp" ? "omp" : "pi");
+  const isPiStateReady = !isPiFamilyApp(appId) || isPiCurrentStateSuccess;
   const opencodeLiveIdSet = useMemo(
     () => new Set(opencodeLiveIds ?? []),
     [opencodeLiveIds],
@@ -172,11 +183,12 @@ function ProviderListComponent({
     (appId === "opencode" && isOpencodeLiveIdsPending) ||
     (appId === "openclaw" && isOpenclawLiveIdsPending) ||
     (appId === "hermes" && isHermesLiveIdsPending) ||
-    (appId === "pi" && isPiCurrentStatePending);
+    (isPiFamilyApp(appId) && isPiCurrentStatePending);
 
   const isInConfig = useCallback(
     (provider: Provider): boolean => {
       switch (appId) {
+        case "kimi":
         case "mcode":
           return provider.meta?.liveConfigManaged === true;
         case "opencode":
@@ -186,6 +198,7 @@ function ProviderListComponent({
         case "hermes":
           return hermesLiveIdSet.has(provider.id);
         case "pi":
+        case "omp":
           return isPiStateReady
             ? piEnabledProviderIdSet.has(provider.id)
             : false;
@@ -336,7 +349,20 @@ function ProviderListComponent({
         queue: switchMode.queue.filter((id) => known.has(id)),
       });
     }
-    const defaultPrimary = openclawDefaultModel?.primary ?? "";
+    if (appId === "agy") {
+      return buildLaunchSections({
+        app: appId,
+        t,
+        providers: filteredProviders,
+        openTerminal: (provider) => onOpenTerminal?.(provider),
+      });
+    }
+    const defaultPrimary =
+      (appId === "openclaw"
+        ? openclawDefaultModel?.primary
+        : appId === "opencode"
+          ? opencodeDefaultModel
+          : null) ?? "";
     const slash = defaultPrimary.indexOf("/");
     return buildAdditiveSections({
       app: appId,
@@ -345,14 +371,20 @@ function ProviderListComponent({
       isInConfig,
       currentOmoId,
       currentOmoSlimId,
-      openclawDefault:
-        appId === "openclaw" && slash > 0
+      defaultModel:
+        slash > 0
           ? {
               providerId: defaultPrimary.slice(0, slash),
               model: defaultPrimary.slice(slash + 1),
             }
           : null,
-      openclawModels: (provider) => {
+      defaultModelOptions: (provider) => {
+        if (appId === "opencode") {
+          return getOpencodeDeclaredModels(
+            provider.id,
+            provider.settingsConfig,
+          );
+        }
         const config = provider.settingsConfig as OpenClawProviderConfig;
         if (!Array.isArray(config?.models)) return [];
         return config.models
@@ -362,7 +394,8 @@ function ProviderListComponent({
       hermesCurrentId: hermesModelConfig?.provider ?? null,
       isHermesManaged: (provider) =>
         isHermesReadOnlyProvider(provider.settingsConfig),
-      piStateUnavailable: appId === "pi" && !isPiStateReady,
+      piStateUnavailable: isPiFamilyApp(appId) && !isPiStateReady,
+      kimiCurrentId: currentProviderId,
       actions: {
         add: onSwitch,
         remove: (provider) =>
@@ -382,14 +415,16 @@ function ProviderListComponent({
     t,
     sortedProviders,
     filteredProviders,
-    currentProviderId,
     onSwitch,
+    onOpenTerminal,
     openclawDefaultModel?.primary,
+    opencodeDefaultModel,
     isInConfig,
     currentOmoId,
     currentOmoSlimId,
     hermesModelConfig?.provider,
     isPiStateReady,
+    currentProviderId,
     onRemoveFromConfig,
     onDelete,
     onDisableOmo,
@@ -403,19 +438,21 @@ function ProviderListComponent({
     [sections],
   );
 
-  const piStateError =
-    appId === "pi" && isPiCurrentStateError
+  const piStateRawError =
+    isPiFamilyApp(appId) && isPiCurrentStateError
       ? extractErrorMessage(piCurrentStateError)
       : "";
+  const piStateError =
+    translatePiProviderMutationError(piStateRawError, t) || piStateRawError;
   const piStateErrorNotice =
-    appId === "pi" && isPiCurrentStateError ? (
+    isPiFamilyApp(appId) && isPiCurrentStateError ? (
       <Notice
         tone="warning"
-        title={t("pi.current.readFailed", {
+        title={t(`${appId}.current.readFailed`, {
           defaultValue: "无法读取 Pi 当前配置",
         })}
       >
-        {t("pi.current.stateUnavailableHint")}
+        {t(`${appId}.current.stateUnavailableHint`)}
         {piStateError ? ` ${piStateError}` : ""}
       </Notice>
     ) : null;
@@ -439,9 +476,9 @@ function ProviderListComponent({
         {piStateErrorNotice}
         <ProviderEmptyState
           appId={appId}
-          onCreate={appId === "pi" ? undefined : onCreate}
+          onCreate={isPiFamilyApp(appId) ? undefined : onCreate}
           onImport={
-            appId === "pi" || appId === "mcode"
+            isPiFamilyApp(appId) || appId === "mcode" || appId === "kimi"
               ? undefined
               : () => importMutation.mutate()
           }
@@ -450,9 +487,11 @@ function ProviderListComponent({
     );
   }
 
-  // 「当前」只用来决定额度自动刷新：Pi 没有当前项，OMO / Hermes 各看自己的当前项
+  // 「当前」只用来决定额度显示和自动刷新：Pi 没有当前项，OMO / Hermes 各看自己的当前项；
+  // Antigravity 没有「启用」，每张卡都随时能打开，额度一律照常显示
   const isCurrentFor = (provider: Provider) => {
-    if (appId === "pi") return false;
+    if (isPiFamilyApp(appId)) return false;
+    if (appId === "agy") return true;
     if (provider.category === "omo") return provider.id === currentOmoId;
     if (provider.category === "omo-slim")
       return provider.id === currentOmoSlimId;
@@ -473,7 +512,8 @@ function ProviderListComponent({
       onDuplicate={onDuplicate}
       onConfigureUsage={onConfigureUsage}
       onOpenWebsite={onOpenWebsite}
-      onOpenTerminal={onOpenTerminal}
+      // Antigravity 的「打开终端」已经是主按钮，「更多」菜单里不再重复
+      onOpenTerminal={appId === "agy" ? undefined : onOpenTerminal}
       onTest={handleTest}
       isTesting={isChecking(provider.id)}
     />

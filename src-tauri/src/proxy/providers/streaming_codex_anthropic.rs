@@ -704,7 +704,6 @@ pub(crate) fn responses_sse_events_from_anthropic_message(
     events
 }
 
-
 pub(crate) fn create_responses_sse_stream_from_anthropic_with_context<
     E: std::error::Error + Send + 'static,
 >(
@@ -823,7 +822,10 @@ mod tests {
         let upstream = stream::iter(vec![Ok::<_, std::io::Error>(Bytes::from(
             input.as_bytes().to_vec(),
         ))]);
-        let converted = create_responses_sse_stream_from_anthropic_with_context(upstream, CodexToolContext::default());
+        let converted = create_responses_sse_stream_from_anthropic_with_context(
+            upstream,
+            CodexToolContext::default(),
+        );
         let chunks: Vec<_> = converted.collect().await;
         chunks
             .into_iter()

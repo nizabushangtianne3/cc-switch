@@ -38,7 +38,6 @@ pub enum ProxyError {
     #[error("未配置供应商")]
     NoProvidersConfigured,
 
-
     #[error("上游错误 (状态码 {status}): {body:?}")]
     UpstreamError { status: u16, body: Option<String> },
 
@@ -61,7 +60,6 @@ pub enum ProxyError {
 
     #[error("超时: {0}")]
     Timeout(String),
-
 
     /// 认证错误
     #[error("认证失败: {0}")]
@@ -199,7 +197,6 @@ pub fn describe_error_chain(error: &(dyn std::error::Error + 'static)) -> String
 pub fn describe_reqwest_error(error: reqwest::Error) -> String {
     describe_error_chain(&error.without_url())
 }
-
 
 #[cfg(test)]
 mod tests {

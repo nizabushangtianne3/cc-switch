@@ -861,6 +861,7 @@ describe("useProviderActions", () => {
     expect(piApiUpdateProviderUsageScriptMock).toHaveBeenCalledWith(
       provider.id,
       script,
+      "pi",
     );
     expect(providersApiUpdateMock).not.toHaveBeenCalled();
   });

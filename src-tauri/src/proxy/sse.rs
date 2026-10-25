@@ -141,7 +141,8 @@ impl Utf8TailDecoder {
                 buffer.push_str(&String::from_utf8_lossy(&joined[..err.valid_up_to()]));
                 buffer.push('\u{FFFD}');
                 let after = err.valid_up_to()
-                    + err.error_len()
+                    + err
+                        .error_len()
                         .expect("a lead byte plus its continuation bytes cannot be incomplete");
                 self.append(buffer, &joined[after..expected]);
                 // 不能在这里返回：joined 消耗掉的是本 chunk 开头的 taken 个字节，
@@ -252,12 +253,10 @@ fn utf8_char_len(lead: u8) -> usize {
 /// exceeds 3 bytes, which cannot happen with well-formed UTF-8 streams.
 #[cfg(test)]
 mod tests {
-    use super::{
-        frame_sse_event, next_sse_block_range, strip_sse_field, Utf8TailDecoder,
-    };
     use super::scan_sse_block;
-    use std::borrow::Cow;
+    use super::{frame_sse_event, next_sse_block_range, strip_sse_field, Utf8TailDecoder};
     use bytes::Bytes;
+    use std::borrow::Cow;
 
     #[test]
     fn strip_sse_field_accepts_optional_space() {
@@ -564,7 +563,8 @@ mod tests {
     #[test]
     fn frame_sse_event_round_trips_through_the_block_splitter() {
         // 成帧出来的字节必须能被本模块的扫描器切成完整的一块
-        let payload = serde_json::json!({"type": "message_delta", "delta": {"stop_reason": "end_turn"}});
+        let payload =
+            serde_json::json!({"type": "message_delta", "delta": {"stop_reason": "end_turn"}});
         let framed = frame_sse_event("message_delta", &payload);
         let text = std::str::from_utf8(&framed).expect("valid utf-8");
 
@@ -597,10 +597,7 @@ mod tests {
 
         assert_eq!(event.as_deref(), Some("response.output_text.delta"));
         let payload = payload.expect("data line");
-        assert!(
-            matches!(payload, Cow::Borrowed(_)),
-            "单行 data 不该分配"
-        );
+        assert!(matches!(payload, Cow::Borrowed(_)), "单行 data 不该分配");
         assert_eq!(&*payload, "{\"delta\":\"hi\"}");
     }
 

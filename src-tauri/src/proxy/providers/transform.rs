@@ -211,7 +211,6 @@ pub fn make_default_adaptive_thinking_explicit(body: &mut Value, client_model: O
     }
 }
 
-
 /// Anthropic 请求 → OpenAI Chat Completions 请求
 ///
 /// `preserve_reasoning_content` 仅用于明确需要 DeepSeek/MiMo

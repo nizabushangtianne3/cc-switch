@@ -1500,8 +1500,8 @@ impl RequestForwarder {
                         }
 
                         // 先分类错误，决定是否计入 provider 健康度
-// NonRetryable 是客户端层错误，无论换哪家 Provider 都会被拒绝，不应污染熔断器和
-// 数据库健康度（与 release_permit_neutral 同语义）。
+                        // NonRetryable 是客户端层错误，无论换哪家 Provider 都会被拒绝，不应污染熔断器和
+                        // 数据库健康度（与 release_permit_neutral 同语义）。
                         let category = self.categorize_proxy_error(&e, provider);
 
                         match category {
@@ -3159,7 +3159,8 @@ impl RequestForwarder {
                 MAX_RESPONSE_BODY_BYTES,
             )
             .await?;
-            let decoded = decoded_body(encoding.as_deref(), &raw, MAX_RESPONSE_BODY_BYTES).into_owned();
+            let decoded =
+                decoded_body(encoding.as_deref(), &raw, MAX_RESPONSE_BODY_BYTES).into_owned();
             let body_text = String::from_utf8(decoded).ok();
 
             Err(ProxyError::UpstreamError {
@@ -6457,7 +6458,13 @@ mod tests {
         let continuation = json!({
             "input": [{"type": "function_call_output", "call_id": "call-1", "output": "done"}]
         });
-        for source in ["session_id", "x-session-id", "metadata"] {
+        for source in [
+            "session_id",
+            "x-session-id",
+            "session-id",
+            "thread-id",
+            "metadata",
+        ] {
             let mut headers = HeaderMap::new();
             let mut body = first.clone();
             let session_id = "12345678-1234-1234-1234-123456789abc";

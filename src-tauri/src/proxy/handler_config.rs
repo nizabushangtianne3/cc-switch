@@ -169,4 +169,3 @@ pub const GEMINI_PARSER_CONFIG: UsageParserConfig = UsageParserConfig {
     stream_event_filter: Some(gemini_stream_usage_event_filter),
     app_type_str: "gemini",
 };
-

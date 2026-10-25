@@ -48,7 +48,6 @@ pub trait ProviderAdapter: Send + Sync {
     fn transform_request(&self, body: Value, _provider: &Provider) -> Result<Value, ProxyError> {
         Ok(body)
     }
-
 }
 
 /// Build an HTTP `HeaderValue` from a credential / token string.

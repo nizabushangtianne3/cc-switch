@@ -418,7 +418,10 @@ mod tests {
     #[test]
     fn extract_model_empty_suffix_is_rejected_not_searched_further() {
         // `models/:action` 裁完只剩空串；原实现用 filter 丢掉，不会继续找后面的 "models"。
-        assert_eq!(extract_gemini_model_from_path("/models/:go/models/gemini-pro"), None);
+        assert_eq!(
+            extract_gemini_model_from_path("/models/:go/models/gemini-pro"),
+            None
+        );
         assert_eq!(extract_gemini_model_from_path("/models//gemini-pro"), None);
         assert_eq!(extract_gemini_model_from_path("/v1beta/models/?x=1"), None);
     }

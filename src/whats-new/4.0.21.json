@@ -1,0 +1,33 @@
+{
+  "version": "4.0.21",
+  "items": [
+    {
+      "type": "improve",
+      "zh": "同步上游：Oh My Pi、应用页分组排序、Kimi 官方卡片可移除",
+      "zh-TW": "同步上游：Oh My Pi、應用頁分組排序、Kimi 官方卡片可移除",
+      "en": "Synced upstream: Oh My Pi, Apps page grouping, editable Kimi cards",
+      "ja": "上流を統合：Oh My Pi、アプリページのグループ化、Kimi 公式カード対応"
+    },
+    {
+      "type": "improve",
+      "zh": "代理重构：请求/响应/SSE 改走移动与池化，不再逐字节拷贝",
+      "zh-TW": "代理重構：請求/響應/SSE 改走移動與池化，不再逐位元組拷貝",
+      "en": "Proxy core overhaul: bodies and SSE events move and pool, no byte copies",
+      "ja": "プロキシコアを再構築：本体と SSE を移動・再利用しコピーを排除"
+    },
+    {
+      "type": "improve",
+      "zh": "连接复用、供应商状态一次读回、数据库开 WAL",
+      "zh-TW": "連線復用、供應商狀態一次讀回、資料庫開啟 WAL",
+      "en": "Keep-alive reuse, one-call provider state, database in WAL mode",
+      "ja": "keep-alive 再接続、プロバイダー状態を 1 回で取得、DB は WAL"
+    },
+    {
+      "type": "fix",
+      "zh": "Codex/Claude/Gemini 的流式与故障转移补齐端到端测试",
+      "zh-TW": "Codex/Claude/Gemini 的串流與故障轉移補齊端對端測試",
+      "en": "Codex, Claude and Gemini streaming and failover now have end-to-end tests",
+      "ja": "Codex、Claude、Gemini のストリーミングとフェイルオーバーをテスト"
+    }
+  ]
+}

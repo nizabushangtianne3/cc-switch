@@ -106,6 +106,16 @@ impl ModelMapping {
             {
                 return original_model.to_string();
             }
+            // 接管时子代理模型会换成 Claude Code 目录里的 id（`claude-opus-5.5` →
+            // `claude-opus-5-5`）。那一档没配时下面的默认模型会把它吞掉，所以目录形态
+            // 也要认成同一个子代理模型，送回行里配置的原值。
+            if strip_one_m_suffix_for_upstream(original_model)
+                == strip_one_m_suffix_for_upstream(
+                    &crate::live::project::claude::client_model_for_subagent(m),
+                )
+            {
+                return m.clone();
+            }
         }
 
         // 2. 默认模型
@@ -360,6 +370,43 @@ mod tests {
 
         assert!(apply_model_mapping(&body, &provider).is_none());
         assert_eq!(body["model"], "gpt-5.4-mini[1M]");
+    }
+
+    #[test]
+    fn test_catalog_subagent_id_maps_back_when_tier_is_empty() {
+        // 接管把子代理 id 换成 Claude Code 目录形态后，opus/sonnet 档没配也不能被
+        // 默认模型吞掉：要送回行里配置的子代理模型。
+        let mut provider = create_provider_with_mapping();
+        provider.settings_config = json!({
+            "env": {
+                "ANTHROPIC_MODEL": "glm-5",
+                "CLAUDE_CODE_SUBAGENT_MODEL": "anthropic/claude-opus-5.5"
+            }
+        });
+
+        for incoming in [
+            "claude-opus-5-5",
+            "claude-opus-5-5[1M]",
+            "anthropic/claude-opus-5.5",
+        ] {
+            let body = json!({"model": incoming});
+            let mapped = apply_model_mapping(&body, &provider);
+            if incoming == "anthropic/claude-opus-5.5" {
+                // 已经是目录形态：不需要改写，调用方照原样转发
+                assert!(mapped.is_none(), "{incoming}");
+            } else {
+                assert_eq!(
+                    mapped.expect("mapped")["model"],
+                    "anthropic/claude-opus-5.5",
+                    "{incoming}"
+                );
+            }
+        }
+
+        // 同一代际但不带小版本的 id 仍然走默认模型。
+        let body = json!({"model": "claude-opus-5"});
+        let result = apply_model_mapping(&body, &provider).expect("mapped");
+        assert_eq!(result["model"], "glm-5");
     }
 
     #[test]
