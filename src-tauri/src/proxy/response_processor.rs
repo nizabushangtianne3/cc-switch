@@ -1499,7 +1499,7 @@ mod tests {
         db.set_pricing_model_source("claude", "request").await?;
 
         let logger = UsageLogger::new(&db);
-        let source = logger.resolve_pricing_model_source("claude-desktop").await;
+        let source = logger.resolve_pricing_model_source("claude-desktop");
 
         assert_eq!(source, "request");
         Ok(())

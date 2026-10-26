@@ -128,6 +128,13 @@ impl Database {
 
     /// 获取计费模式来源
     pub async fn get_pricing_model_source(&self, app_type: &str) -> Result<String, AppError> {
+        self.get_pricing_model_source_sync(app_type)
+    }
+
+    /// [`Self::get_pricing_model_source`] 的同步版：给已经在阻塞线程上的调用方
+    /// （如用量写库的 `spawn_blocking`）用，不再经伪 async 包装。
+    /// 行不存在时不在这里补齐配置行（启动路径会建），直接回落默认值。
+    pub fn get_pricing_model_source_sync(&self, app_type: &str) -> Result<String, AppError> {
         let result = {
             let conn = lock_conn!(self.conn);
             let mut stmt = conn
@@ -138,10 +145,7 @@ impl Database {
 
         match result {
             Ok(value) => Ok(value),
-            Err(rusqlite::Error::QueryReturnedNoRows) => {
-                self.init_proxy_config_rows().await?;
-                Ok(PRICING_SOURCE_RESPONSE.to_string())
-            }
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(PRICING_SOURCE_RESPONSE.to_string()),
             Err(e) => Err(AppError::Database(e.to_string())),
         }
     }

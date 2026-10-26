@@ -149,10 +149,19 @@ fn is_google_gemini_host(host: &str) -> bool {
     if host.is_empty() {
         return false;
     }
-    let host_lower = host.to_ascii_lowercase();
-    host_lower == "generativelanguage.googleapis.com"
-        || host_lower == "aiplatform.googleapis.com"
-        || host_lower.ends_with("-aiplatform.googleapis.com")
+    // 逐字符比较代替整串小写化：这个判断每个 Gemini 请求都要过一次。
+    host.eq_ignore_ascii_case("generativelanguage.googleapis.com")
+        || host.eq_ignore_ascii_case("aiplatform.googleapis.com")
+        || ends_with_ignore_ascii_case(host, "-aiplatform.googleapis.com")
+}
+
+/// `host.ends_with(suffix)` 的 ASCII 大小写不敏感版，不分配。
+fn ends_with_ignore_ascii_case(host: &str, suffix: &str) -> bool {
+    let Some(cut) = host.len().checked_sub(suffix.len()) else {
+        return false;
+    };
+    // cut 必须落在字符边界上：host 来自 URL，非 ASCII 时按字节切会 panic。
+    cut > 0 && host.is_char_boundary(cut) && host[cut..].eq_ignore_ascii_case(suffix)
 }
 
 fn split_query(input: &str) -> (&str, Option<&str>) {
@@ -700,5 +709,51 @@ mod tests {
         // surfaces at the request layer rather than producing a misleading
         // empty segment here.
         assert_eq!(normalize_gemini_model_id(""), "");
+    }
+
+    /// Google 域名判定：整域相等（大小写不敏感）或真实 `-aiplatform` 子域后缀。
+    /// 相似域名必须拒绝——它决定 shadow 记录等官方专属行为是否启用。
+    #[test]
+    fn google_host_matching_is_case_insensitive_and_subdomain_scoped() {
+        assert!(super::is_google_gemini_host(
+            "generativelanguage.googleapis.com"
+        ));
+        assert!(super::is_google_gemini_host(
+            "GenerativeLanguage.GoogleAPIs.com"
+        ));
+        assert!(super::is_google_gemini_host("aiplatform.googleapis.com"));
+        assert!(super::is_google_gemini_host(
+            "us-central1-aiplatform.googleapis.com"
+        ));
+        assert!(super::is_google_gemini_host(
+            "US-CENTRAL1-AIPlatform.GoogleAPIs.com"
+        ));
+
+        // 相似但不是 Google 的域名
+        assert!(!super::is_google_gemini_host(""));
+        assert!(!super::is_google_gemini_host(
+            "generativelanguage.googleapis.com.evil.example"
+        ));
+        assert!(!super::is_google_gemini_host("aiplatform.example.com"));
+        // 裸 `-aiplatform.googleapis.com` 不是真实子域，不算
+        assert!(!super::is_google_gemini_host("-aiplatform.googleapis.com"));
+        assert!(!super::is_google_gemini_host(
+            "x-aiplatform.googleapis.como"
+        ));
+    }
+
+    /// 非 ASCII host 不能在字节边界上 panic（大小写比较按 ASCII 规则走）。
+    #[test]
+    fn google_host_matching_survives_non_ascii_hosts() {
+        // 30 字节、后缀长度 27，cut=3 落在第二个多字节字符内部：
+        // 必须安全返回 false，而不是按字节切片 panic。
+        let host = format!("\u{e9}\u{e9}{}", "y".repeat(26));
+        assert_eq!(host.len(), 30);
+        assert!(!super::is_google_gemini_host(&host));
+
+        // 后缀在场时 cut 落在 ASCII 边界，正常判定为 Google 子域。
+        assert!(super::is_google_gemini_host(
+            "\u{44f}-us-central1-aiplatform.googleapis.com"
+        ));
     }
 }

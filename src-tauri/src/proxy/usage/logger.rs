@@ -356,7 +356,10 @@ impl<'a> UsageLogger<'a> {
     }
 
     /// 获取计费模式来源（按请求模型 / 按返回模型），只读应用级全局配置
-    pub async fn resolve_pricing_model_source(&self, app_type: &str) -> String {
+    ///
+    /// 读的是数据库单把连接锁：调用方必须在阻塞线程上（用量写库走
+    /// `spawn_blocking`），放到 async worker 上会把执行器堵住。
+    pub fn resolve_pricing_model_source(&self, app_type: &str) -> String {
         // Claude Desktop 网关没有独立的全局计费配置（proxy_config 的 CHECK 不含
         // claude-desktop），继承 claude 的设置。
         let default_app_type = if app_type == "claude-desktop" {
@@ -364,7 +367,7 @@ impl<'a> UsageLogger<'a> {
         } else {
             app_type
         };
-        match self.db.get_pricing_model_source(default_app_type).await {
+        match self.db.get_pricing_model_source_sync(default_app_type) {
             Ok(value) if value == PRICING_SOURCE_RESPONSE || value == PRICING_SOURCE_REQUEST => {
                 value
             }
@@ -521,10 +524,9 @@ pub(crate) async fn write_usage_record(record: UsageRecord) {
     let db = state.db.clone();
     let write = tokio::task::spawn_blocking(move || {
         let logger = UsageLogger::new(&db);
-        // 计费模式读取的 DAO 是伪 async（无真实挂起点、直接取阻塞锁），
-        // 在阻塞线程上 block_on 不会停转运行时
-        let pricing_model_source = tokio::runtime::Handle::current()
-            .block_on(logger.resolve_pricing_model_source(app_type));
+        // 计费模式解析同样要读 DB 连接锁：伪 async DAO 在 async 线程上 await
+        // 会把 worker 整个堵住，所以用同步变体在阻塞线程里做。
+        let pricing_model_source = logger.resolve_pricing_model_source(app_type);
         let pricing_model = if pricing_model_source == PRICING_SOURCE_REQUEST {
             outbound_model
         } else {
