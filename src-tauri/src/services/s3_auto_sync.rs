@@ -1,254 +1,126 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
-use std::sync::OnceLock;
-use std::time::{Duration, Instant};
+//! S3 自动同步的后端钩子与外部入口。
+//!
+//! 共用的去抖合并、抑制、worker 循环都在 [`crate::services::auto_sync`]，这里只
+//! 提供 S3 特有的三个差异点：上传走哪个 service、配哪种 settings、发什么事件。
 
-use serde_json::json;
-use tauri::{AppHandle, Emitter};
-use tokio::sync::mpsc::error::TrySendError;
-use tokio::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::atomic::AtomicUsize;
+use std::sync::{Arc, OnceLock};
+
+use tauri::AppHandle;
+use tokio::sync::mpsc::Sender;
 
 use crate::error::AppError;
+use crate::services::auto_sync::{self, AutoSyncKind};
 use crate::services::s3_sync;
-use crate::services::sync_protocol::should_trigger_auto_sync_for_table;
-use crate::settings::{self, S3SyncSettings};
-
-const AUTO_SYNC_DEBOUNCE_MS: u64 = 1000;
-pub(crate) const MAX_AUTO_SYNC_WAIT_MS: u64 = 10_000;
+use crate::settings;
 
 static DB_CHANGE_TX: OnceLock<Sender<String>> = OnceLock::new();
 static AUTO_SYNC_SUPPRESS_DEPTH: AtomicUsize = AtomicUsize::new(0);
 
-pub(crate) struct AutoSyncSuppressionGuard;
+pub(crate) struct S3AutoSync;
 
-impl AutoSyncSuppressionGuard {
-    pub fn new() -> Self {
-        AUTO_SYNC_SUPPRESS_DEPTH.fetch_add(1, Ordering::SeqCst);
-        Self
+impl AutoSyncKind for S3AutoSync {
+    const TAG: &'static str = "S3";
+    const EVENT: &'static str = "s3-sync-status-updated";
+
+    fn change_tx() -> &'static OnceLock<Sender<String>> {
+        &DB_CHANGE_TX
+    }
+
+    fn suppress_depth() -> &'static AtomicUsize {
+        &AUTO_SYNC_SUPPRESS_DEPTH
+    }
+
+    fn persist_error(error: &AppError) {
+        let Some(mut sync) = settings::get_s3_sync_settings() else {
+            return;
+        };
+        sync.status.last_error = Some(error.to_string());
+        sync.status.last_error_source = Some("auto".to_string());
+        let _ = settings::update_s3_sync_status(sync.status.clone());
+    }
+
+    fn upload(
+        db: Arc<crate::database::Database>,
+        app: AppHandle,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), AppError>> + Send>> {
+        Box::pin(async move {
+            let Some(mut sync) = settings::get_s3_sync_settings() else {
+                return Ok(());
+            };
+            // worker 是无条件起的，所以「这一端没开」必须在这里挡掉。
+            if !(sync.enabled && sync.auto_sync) {
+                return Ok(());
+            }
+            let result = s3_sync::run_with_sync_lock(s3_sync::upload(&db, &mut sync)).await;
+            match result {
+                Ok(_) => {
+                    auto_sync::emit_status::<Self>(&app, "success", None);
+                    Ok(())
+                }
+                Err(err) => {
+                    Self::persist_error(&err);
+                    auto_sync::emit_status::<Self>(&app, "error", Some(&err.to_string()));
+                    Err(err)
+                }
+            }
+        })
     }
 }
 
-impl Drop for AutoSyncSuppressionGuard {
-    fn drop(&mut self) {
-        let _ =
-            AUTO_SYNC_SUPPRESS_DEPTH.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |value| {
-                Some(value.saturating_sub(1))
-            });
-    }
-}
+/// 抑制 S3 的自动同步。外部只有 `commands::s3_sync` 用它。
+pub(crate) type AutoSyncSuppressionGuard = auto_sync::SuppressionGuard<S3AutoSync>;
 
+/// 只有 tests 用它判空；生产路径的抑制判断在泛型 notify_db_changed 里。
+#[cfg(test)]
 pub(crate) fn is_auto_sync_suppressed() -> bool {
-    AUTO_SYNC_SUPPRESS_DEPTH.load(Ordering::SeqCst) > 0
-}
-
-pub fn should_trigger_for_table(table: &str) -> bool {
-    should_trigger_auto_sync_for_table(table)
-}
-
-pub(crate) fn enqueue_change_signal(tx: &Sender<String>, table: &str) -> bool {
-    match tx.try_send(table.to_string()) {
-        Ok(()) => true,
-        Err(TrySendError::Full(_)) | Err(TrySendError::Closed(_)) => false,
-    }
-}
-
-pub(crate) fn auto_sync_wait_duration(started_at: Instant, now: Instant) -> Option<Duration> {
-    let max_wait = Duration::from_millis(MAX_AUTO_SYNC_WAIT_MS);
-    let debounce = Duration::from_millis(AUTO_SYNC_DEBOUNCE_MS);
-    let elapsed = now.saturating_duration_since(started_at);
-    if elapsed >= max_wait {
-        return None;
-    }
-    Some(debounce.min(max_wait - elapsed))
-}
-
-fn should_run_auto_sync(settings: Option<&S3SyncSettings>) -> bool {
-    let Some(sync) = settings else {
-        return false;
-    };
-    sync.enabled && sync.auto_sync
-}
-
-fn persist_auto_sync_error(settings: &mut S3SyncSettings, error: &AppError) {
-    settings.status.last_error = Some(error.to_string());
-    settings.status.last_error_source = Some("auto".to_string());
-    let _ = settings::update_s3_sync_status(settings.status.clone());
-}
-
-fn emit_auto_sync_status_updated(app: &AppHandle, status: &str, error: Option<&str>) {
-    let payload = match error {
-        Some(message) => json!({
-            "source": "auto",
-            "status": status,
-            "error": message,
-        }),
-        None => json!({
-            "source": "auto",
-            "status": status,
-        }),
-    };
-
-    if let Err(err) = app.emit("s3-sync-status-updated", payload) {
-        log::debug!("[S3] failed to emit sync status update event: {err}");
-    }
-}
-
-async fn run_auto_sync_upload(
-    db: &crate::database::Database,
-    app: &AppHandle,
-) -> Result<(), AppError> {
-    let mut settings = settings::get_s3_sync_settings();
-    if !should_run_auto_sync(settings.as_ref()) {
-        return Ok(());
-    }
-
-    let mut sync_settings = match settings.take() {
-        Some(value) => value,
-        None => return Ok(()),
-    };
-
-    let result = s3_sync::run_with_sync_lock(s3_sync::upload(db, &mut sync_settings)).await;
-    match result {
-        Ok(_) => {
-            emit_auto_sync_status_updated(app, "success", None);
-            Ok(())
-        }
-        Err(err) => {
-            persist_auto_sync_error(&mut sync_settings, &err);
-            emit_auto_sync_status_updated(app, "error", Some(&err.to_string()));
-            Err(err)
-        }
-    }
+    auto_sync::is_auto_sync_suppressed::<S3AutoSync>()
 }
 
 pub fn notify_db_changed(table: &str) {
-    if is_auto_sync_suppressed() {
-        return;
-    }
-    if !should_trigger_for_table(table) {
-        return;
-    }
-    let Some(tx) = DB_CHANGE_TX.get() else {
-        return;
-    };
-    let _ = enqueue_change_signal(tx, table);
+    auto_sync::notify_db_changed::<S3AutoSync>(table)
 }
 
 pub fn start_worker(db: Arc<crate::database::Database>, app: tauri::AppHandle) {
-    if DB_CHANGE_TX.get().is_some() {
-        return;
-    }
-
-    // Buffer size 1 is enough: we only need "dirty" signals, not every event.
-    let (tx, rx) = channel::<String>(1);
-    if DB_CHANGE_TX.set(tx).is_err() {
-        return;
-    }
-
-    tauri::async_runtime::spawn(async move {
-        run_worker_loop(db, rx, app).await;
-    });
-}
-
-async fn run_worker_loop(
-    db: Arc<crate::database::Database>,
-    mut rx: Receiver<String>,
-    app: tauri::AppHandle,
-) {
-    while let Some(first_table) = rx.recv().await {
-        let started_at = Instant::now();
-        let mut merged_count = 1usize;
-
-        while let Some(wait_for) = auto_sync_wait_duration(started_at, Instant::now()) {
-            let timeout = tokio::time::timeout(wait_for, rx.recv()).await;
-
-            match timeout {
-                Ok(Some(_)) => merged_count += 1,
-                Ok(None) => return,
-                Err(_) => break,
-            }
-        }
-
-        log::debug!(
-            "[S3][AutoSync] Triggered by table={first_table}, merged_changes={merged_count}"
-        );
-
-        if let Err(err) = run_auto_sync_upload(&db, &app).await {
-            log::warn!("[S3][AutoSync] Upload failed: {err}");
-        }
-    }
+    auto_sync::start_worker::<S3AutoSync>(db, app)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        auto_sync_wait_duration, enqueue_change_signal, is_auto_sync_suppressed,
-        should_run_auto_sync, should_trigger_for_table, AutoSyncSuppressionGuard,
-        MAX_AUTO_SYNC_WAIT_MS,
-    };
+    use super::{AutoSyncSuppressionGuard, S3AutoSync};
     use crate::settings::S3SyncSettings;
     use serial_test::serial;
-    use std::time::{Duration, Instant};
-    use tokio::sync::mpsc::channel;
-
-    #[test]
-    fn should_trigger_sync_for_config_tables_only() {
-        assert!(should_trigger_for_table("providers"));
-        assert!(should_trigger_for_table("profiles"));
-        assert!(should_trigger_for_table("settings"));
-        assert!(!should_trigger_for_table("proxy_request_logs"));
-        assert!(!should_trigger_for_table("provider_health"));
-    }
 
     #[test]
     #[serial]
     fn suppression_guard_enables_and_restores_state() {
-        assert!(!is_auto_sync_suppressed());
+        assert!(!crate::services::auto_sync::is_auto_sync_suppressed::<
+            S3AutoSync,
+        >());
         {
             let _guard = AutoSyncSuppressionGuard::new();
-            assert!(is_auto_sync_suppressed());
+            assert!(crate::services::auto_sync::is_auto_sync_suppressed::<
+                S3AutoSync,
+            >());
         }
-        assert!(!is_auto_sync_suppressed());
+        assert!(!crate::services::auto_sync::is_auto_sync_suppressed::<
+            S3AutoSync,
+        >());
     }
 
     #[test]
-    fn max_wait_caps_flush_latency_for_continuous_events() {
-        let started = Instant::now();
-        let later = started + Duration::from_millis(MAX_AUTO_SYNC_WAIT_MS + 1);
-        assert!(auto_sync_wait_duration(started, later).is_none());
-    }
-
-    #[tokio::test]
-    async fn enqueue_change_signal_drops_when_channel_is_full() {
-        let (tx, _rx) = channel::<String>(1);
-        assert!(enqueue_change_signal(&tx, "providers"));
-        assert!(!enqueue_change_signal(&tx, "providers"));
-    }
-
-    #[test]
-    fn should_run_auto_sync_requires_enabled_and_auto_sync_flag() {
-        assert!(!should_run_auto_sync(None));
-
-        let disabled = S3SyncSettings {
-            enabled: false,
-            auto_sync: true,
-            ..S3SyncSettings::default()
+    fn s3_auto_sync_gate_needs_both_flags() {
+        let gate = |enabled: bool, auto_sync: bool| {
+            let settings = S3SyncSettings {
+                enabled,
+                auto_sync,
+                ..S3SyncSettings::default()
+            };
+            settings.enabled && settings.auto_sync
         };
-        assert!(!should_run_auto_sync(Some(&disabled)));
-
-        let auto_sync_off = S3SyncSettings {
-            enabled: true,
-            auto_sync: false,
-            ..S3SyncSettings::default()
-        };
-        assert!(!should_run_auto_sync(Some(&auto_sync_off)));
-
-        let enabled = S3SyncSettings {
-            enabled: true,
-            auto_sync: true,
-            ..S3SyncSettings::default()
-        };
-        assert!(should_run_auto_sync(Some(&enabled)));
+        assert!(gate(true, true));
+        assert!(!gate(false, true));
+        assert!(!gate(true, false));
     }
 
     #[test]
