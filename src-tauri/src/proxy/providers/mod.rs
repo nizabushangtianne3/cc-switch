@@ -137,7 +137,6 @@ impl ProviderType {
     /// 从 AppType 和 Provider 配置推断供应商类型
     ///
     /// 根据配置中的 base_url、auth_mode、api_key 格式等信息推断具体的供应商类型
-    #[allow(dead_code)]
     pub fn from_app_type_and_config(app_type: &AppType, provider: &Provider) -> Option<Self> {
         let provider_type = match app_type {
             AppType::Claude | AppType::ClaudeDesktop => {

@@ -111,28 +111,6 @@ pub fn anthropic_to_gemini_with_shadow(
     Ok(result)
 }
 
-/// Convenience wrapper over [`gemini_to_anthropic_with_shadow_and_hints`]
-/// with no shadow store or schema hints. Used by the shared
-/// `ProviderAdapter::transform_response` path and by tests.
-#[allow(dead_code)] // kept as public API for non-streaming transform paths
-pub fn gemini_to_anthropic(body: Value) -> Result<Value, ProxyError> {
-    gemini_to_anthropic_with_shadow(body, None, None, None)
-}
-
-/// Convenience wrapper for callers that have a shadow store but no tool
-/// schema hints. Production call sites funnel through
-/// [`gemini_to_anthropic_with_shadow_and_hints`] directly; this helper exists
-/// for test ergonomics and future external callers.
-#[allow(dead_code)] // kept as public API for shadow-only transform paths
-pub fn gemini_to_anthropic_with_shadow(
-    body: Value,
-    shadow_store: Option<&GeminiShadowStore>,
-    provider_id: Option<&str>,
-    session_id: Option<&str>,
-) -> Result<Value, ProxyError> {
-    gemini_to_anthropic_with_shadow_and_hints(body, shadow_store, provider_id, session_id, None)
-}
-
 pub fn gemini_to_anthropic_with_shadow_and_hints(
     body: Value,
     shadow_store: Option<&GeminiShadowStore>,
@@ -1260,6 +1238,12 @@ fn map_finish_reason(reason: Option<&str>, has_tool_use: bool) -> Value {
 mod tests {
     use super::*;
 
+    /// 不带 shadow / hints 的 Anthropic 转换入口（测试本地快捷方式；
+    /// 生产路径和这里的断言都走 `_with_hints` 那一个函数）。
+    fn to_anthropic_plain(body: Value) -> Result<Value, ProxyError> {
+        gemini_to_anthropic_with_shadow_and_hints(body, None, None, None, None)
+    }
+
     #[test]
     fn anthropic_to_gemini_maps_system_and_messages() {
         let input = json!({
@@ -1752,7 +1736,7 @@ mod tests {
             }
         });
 
-        let result = gemini_to_anthropic(input).unwrap();
+        let result = to_anthropic_plain(input).unwrap();
         assert_eq!(result["id"], "resp_1");
         assert_eq!(result["content"][0]["type"], "text");
         assert_eq!(result["content"][0]["text"], "Hello from Gemini");
@@ -1789,7 +1773,7 @@ mod tests {
             }
         });
 
-        let result = gemini_to_anthropic(input).unwrap();
+        let result = to_anthropic_plain(input).unwrap();
         assert_eq!(result["content"][0]["type"], "tool_use");
         assert_eq!(result["content"][0]["id"], "call_1");
         assert_eq!(result["stop_reason"], "tool_use");
@@ -1907,7 +1891,7 @@ mod tests {
             }
         });
 
-        let result = gemini_to_anthropic(input).unwrap();
+        let result = to_anthropic_plain(input).unwrap();
         assert_eq!(result["stop_reason"], "refusal");
         assert_eq!(result["content"][0]["type"], "text");
         assert!(result["content"][0]["text"]
@@ -2235,7 +2219,7 @@ mod tests {
             }]
         });
 
-        let result = gemini_to_anthropic(input).unwrap();
+        let result = to_anthropic_plain(input).unwrap();
         let id0 = result["content"][0]["id"].as_str().unwrap();
         let id1 = result["content"][1]["id"].as_str().unwrap();
         assert!(is_synthesized_tool_call_id(id0));
