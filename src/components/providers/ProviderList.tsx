@@ -53,7 +53,7 @@ import { isTextEditableTarget } from "@/utils/domUtils";
 import { extractProviderBaseUrl } from "@/utils/providerConfigUtils";
 import { usePiCurrentState } from "@/lib/query/pi";
 import { isPiFamilyApp } from "@/config/appConfig";
-import { isHermesReadOnlyProvider } from "@/config/hermesProviderPresets";
+import { isHermesReadOnlyProvider } from "@/config/hermesReadOnly";
 import {
   buildAdditiveSections,
   buildLaunchSections,
