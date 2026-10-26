@@ -2756,4 +2756,53 @@ mod tests {
         proxy.stop().await.expect("stop test proxy");
         mock_handle.abort();
     }
+
+    /// /status 是 UI 轮询的活数据入口：running/address/port 由 start() 落定，
+    /// uptime_seconds 与 active_targets 必须来自 ProxyState::status_snapshot
+    /// 的实时计算——这两项曾经恒为 0/空。
+    #[tokio::test]
+    async fn status_route_reports_live_uptime_and_active_targets() {
+        let db = Arc::new(Database::memory().expect("memory database"));
+        let proxy = ProxyServer::new(
+            ProxyConfig {
+                listen_port: 0,
+                ..ProxyConfig::default()
+            },
+            db,
+            None,
+        );
+        let proxy_info = proxy.start().await.expect("start test proxy");
+        proxy
+            .set_active_target("Codex", "provider-1", "Provider One")
+            .await;
+        // 把 start_time 拨回 42 秒前：uptime_seconds 是截断到秒的瞬时差值，
+        // 睡一秒以上才 > 0 对测试套件太慢，拨表可以直接断言"实时计算"。
+        *proxy.state.start_time.write().await =
+            Some(std::time::Instant::now() - std::time::Duration::from_secs(42));
+
+        let client = reqwest::Client::new();
+        let response = client
+            .get(format!("http://127.0.0.1:{}/status", proxy_info.port))
+            .send()
+            .await
+            .expect("status request");
+        assert_eq!(response.status(), StatusCode::OK);
+        let status: ProxyStatus = response.json().await.expect("status json");
+
+        assert!(status.running);
+        assert_eq!(status.address, "127.0.0.1");
+        assert_eq!(status.port, proxy_info.port);
+        assert!(
+            (42..60).contains(&status.uptime_seconds),
+            "uptime_seconds should track the backdated start_time, got {}",
+            status.uptime_seconds
+        );
+        assert_eq!(status.active_targets.len(), 1);
+        let target = &status.active_targets[0];
+        assert_eq!(target.app_type, "Codex");
+        assert_eq!(target.provider_id, "provider-1");
+        assert_eq!(target.provider_name, "Provider One");
+
+        proxy.stop().await.expect("stop test proxy");
+    }
 }

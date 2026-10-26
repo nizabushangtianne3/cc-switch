@@ -188,18 +188,7 @@ pub(crate) async fn query_kimi_at(
 
     let status = resp.status();
     if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
-        return Ok(SubscriptionQuota {
-            tool: "coding_plan".to_string(),
-            credential_status: CredentialStatus::Expired,
-            credential_message: Some("Invalid API key".to_string()),
-            success: false,
-            tiers: vec![],
-            extra_usage: None,
-            reset_credits: None,
-            credits_balance: None,
-            error: Some(format!("Authentication failed (HTTP {status})")),
-            queried_at: Some(now_millis()),
-        });
+        return Ok(auth_error(format!("Authentication failed (HTTP {status})")));
     }
 
     if !status.is_success() {
@@ -559,18 +548,7 @@ async fn query_minimax(api_key: &str, is_cn: bool) -> Result<SubscriptionQuota, 
 
     let status = resp.status();
     if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
-        return Ok(SubscriptionQuota {
-            tool: "coding_plan".to_string(),
-            credential_status: CredentialStatus::Expired,
-            credential_message: Some("Invalid API key".to_string()),
-            success: false,
-            tiers: vec![],
-            extra_usage: None,
-            reset_credits: None,
-            credits_balance: None,
-            error: Some(format!("Authentication failed (HTTP {status})")),
-            queried_at: Some(now_millis()),
-        });
+        return Ok(auth_error(format!("Authentication failed (HTTP {status})")));
     }
 
     if !status.is_success() {
@@ -641,18 +619,7 @@ async fn query_zenmux(base_url: &str, api_key: &str) -> Result<SubscriptionQuota
 
     let status = resp.status();
     if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
-        return Ok(SubscriptionQuota {
-            tool: "coding_plan".to_string(),
-            credential_status: CredentialStatus::Expired,
-            credential_message: Some("Invalid API key".to_string()),
-            success: false,
-            tiers: vec![],
-            extra_usage: None,
-            reset_credits: None,
-            credits_balance: None,
-            error: Some(format!("Authentication failed (HTTP {status})")),
-            queried_at: Some(now_millis()),
-        });
+        return Ok(auth_error(format!("Authentication failed (HTTP {status})")));
     }
 
     if !status.is_success() {
@@ -905,18 +872,7 @@ async fn query_opencode_go(api_key: &str) -> Result<SubscriptionQuota, String> {
         ));
     }
     if status == reqwest::StatusCode::UNAUTHORIZED {
-        return Ok(SubscriptionQuota {
-            tool: "coding_plan".to_string(),
-            credential_status: CredentialStatus::Expired,
-            credential_message: Some("Invalid API key".to_string()),
-            success: false,
-            tiers: vec![],
-            extra_usage: None,
-            reset_credits: None,
-            credits_balance: None,
-            error: Some(format!("Authentication failed (HTTP {status})")),
-            queried_at: Some(now_millis()),
-        });
+        return Ok(auth_error(format!("Authentication failed (HTTP {status})")));
     }
     if !status.is_success() {
         let body = resp.text().await.unwrap_or_default();

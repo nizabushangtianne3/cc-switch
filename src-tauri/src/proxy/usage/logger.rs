@@ -778,6 +778,61 @@ mod tests {
         Ok(())
     }
 
+    /// 相邻字段前缀拆分测试的公共底盘：与用例无关的字段取固定值。
+    fn base_semantic() -> UsageSemantic {
+        UsageSemantic {
+            app_type: String::new(),
+            provider_id: String::new(),
+            api_key_id: String::new(),
+            model: String::new(),
+            input_token_semantics: 0,
+            input_tokens: 10,
+            output_tokens: 5,
+            cache_read_tokens: 0,
+            cache_creation_tokens: 0,
+            status_code: 200,
+        }
+    }
+
+    #[test]
+    fn semantic_fingerprint_separates_adjacent_field_prefix_splits() {
+        // 长度前缀守卫：没有前缀编码时，app_type="a" + provider_id="bc" 与
+        // app_type="ab" + provider_id="c" 会拼出同一段字节流。指纹必须把这类
+        // 相邻字段的歧义区分开——碰撞兜底的前提就是"不同语义必异"。
+        let split = UsageSemantic {
+            app_type: "a".to_string(),
+            provider_id: "bc".to_string(),
+            ..base_semantic()
+        };
+        let merged = UsageSemantic {
+            app_type: "ab".to_string(),
+            provider_id: "c".to_string(),
+            ..base_semantic()
+        };
+        assert_ne!(
+            split.sha256(),
+            merged.sha256(),
+            "app_type/provider_id 的前缀拆分不得折叠成同一指纹"
+        );
+
+        // 同一歧义形状换一对相邻字段（api_key_id/model）同样必须区分。
+        let split = UsageSemantic {
+            api_key_id: "a".to_string(),
+            model: "bc".to_string(),
+            ..base_semantic()
+        };
+        let merged = UsageSemantic {
+            api_key_id: "ab".to_string(),
+            model: "c".to_string(),
+            ..base_semantic()
+        };
+        assert_ne!(
+            split.sha256(),
+            merged.sha256(),
+            "api_key_id/model 的前缀拆分不得折叠成同一指纹"
+        );
+    }
+
     #[test]
     fn only_session_log_primary_rows_may_be_replaced() -> Result<(), AppError> {
         let db = Database::memory()?;
