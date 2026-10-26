@@ -371,16 +371,25 @@ impl ProviderRouter {
         }
 
         // 按应用独立读熔断器配置：放在 map 写锁之外，创建首家时 await 配置不会
-        // 把同应用的其余熔断查询全部堵在写锁上。
-        let config = match self.db.get_proxy_config_for_app(app_type).await {
-            Ok(app_config) => crate::proxy::circuit_breaker::CircuitBreakerConfig {
-                failure_threshold: app_config.circuit_failure_threshold,
-                success_threshold: app_config.circuit_success_threshold,
-                timeout_seconds: app_config.circuit_timeout_seconds as u64,
-                error_rate_threshold: app_config.circuit_error_rate_threshold,
-                min_requests: app_config.circuit_min_requests,
-            },
-            Err(_) => crate::proxy::circuit_breaker::CircuitBreakerConfig::default(),
+        // 把同应用的其余熔断查询全部堵在写锁上；读库本身走阻塞池，伪 async DAO
+        // 在 async worker 上会堵住执行器。
+        let config = {
+            let db = Arc::clone(&self.db);
+            let app_type_owned = app_type.to_string();
+            let app_config = tokio::task::spawn_blocking(move || {
+                db.get_proxy_config_for_app_sync(&app_type_owned)
+            })
+            .await;
+            match app_config {
+                Ok(Ok(app_config)) => crate::proxy::circuit_breaker::CircuitBreakerConfig {
+                    failure_threshold: app_config.circuit_failure_threshold,
+                    success_threshold: app_config.circuit_success_threshold,
+                    timeout_seconds: app_config.circuit_timeout_seconds as u64,
+                    error_rate_threshold: app_config.circuit_error_rate_threshold,
+                    min_requests: app_config.circuit_min_requests,
+                },
+                _ => crate::proxy::circuit_breaker::CircuitBreakerConfig::default(),
+            }
         };
 
         // 如果不存在，获取写锁创建

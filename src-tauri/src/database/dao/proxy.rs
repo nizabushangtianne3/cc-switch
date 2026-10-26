@@ -179,18 +179,34 @@ impl Database {
         &self,
         app_type: &str,
     ) -> Result<AppProxyConfig, AppError> {
-        // 使用 block 限制 conn 的作用域，避免跨 await 持有锁
-        let app_type_owned = app_type.to_string();
+        match self.read_proxy_config_row(app_type)? {
+            Some(config) => Ok(config),
+            None => {
+                // 行不存在时补默认行再返回默认值（读路径的历史自愈行为）
+                self.init_proxy_config_rows().await?;
+                Ok(AppProxyConfig::default_for(app_type))
+            }
+        }
+    }
+
+    /// [`Self::get_proxy_config_for_app`] 的同步版：给已经在阻塞线程上的调用方用。
+    /// 它持有数据库连接锁，绝不能放到 async worker 上执行。
+    pub fn get_proxy_config_for_app_sync(
+        &self,
+        app_type: &str,
+    ) -> Result<AppProxyConfig, AppError> {
+        Ok(self
+            .read_proxy_config_row(app_type)?
+            .unwrap_or_else(|| AppProxyConfig::default_for(app_type)))
+    }
+
+    /// 读 proxy_config 的一行；`None` 表示这一行还没有。
+    /// 同步、持连接锁：调用方必须在阻塞线程上。
+    fn read_proxy_config_row(&self, app_type: &str) -> Result<Option<AppProxyConfig>, AppError> {
         let result = {
             let conn = lock_conn!(self.conn);
-            let mut stmt = conn.prepare_cached(
-                "SELECT app_type, enabled, auto_failover_enabled,
-                        max_retries, streaming_first_byte_timeout, streaming_idle_timeout, non_streaming_timeout,
-                        circuit_failure_threshold, circuit_success_threshold, circuit_timeout_seconds,
-                        circuit_error_rate_threshold, circuit_min_requests
-                 FROM proxy_config WHERE app_type = ?1",
-            )
-            .map_err(|e| AppError::Database(e.to_string()))?;
+            let mut stmt = conn.prepare_cached("SELECT app_type, enabled, auto_failover_enabled, max_retries, streaming_first_byte_timeout, streaming_idle_timeout, non_streaming_timeout, circuit_failure_threshold, circuit_success_threshold, circuit_timeout_seconds, circuit_error_rate_threshold, circuit_min_requests FROM proxy_config WHERE app_type = ?1")
+                .map_err(|e| AppError::Database(e.to_string()))?;
             stmt.query_row([app_type], |row| {
                 Ok(AppProxyConfig {
                     app_type: row.get(0)?,
@@ -208,28 +224,9 @@ impl Database {
                 })
             })
         };
-        // conn 已在 block 结束时释放
-
         match result {
-            Ok(config) => Ok(config),
-            Err(rusqlite::Error::QueryReturnedNoRows) => {
-                // 如果不存在，创建默认配置
-                self.init_proxy_config_rows().await?;
-                Ok(AppProxyConfig {
-                    app_type: app_type_owned,
-                    enabled: false,
-                    auto_failover_enabled: false,
-                    max_retries: 3,
-                    streaming_first_byte_timeout: 60,
-                    streaming_idle_timeout: 120,
-                    non_streaming_timeout: 600,
-                    circuit_failure_threshold: 4,
-                    circuit_success_threshold: 2,
-                    circuit_timeout_seconds: 60,
-                    circuit_error_rate_threshold: 0.6,
-                    circuit_min_requests: 10,
-                })
-            }
+            Ok(config) => Ok(Some(config)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(AppError::Database(e.to_string())),
         }
     }
@@ -268,20 +265,7 @@ impl Database {
         else {
             self.init_proxy_config_rows().await?;
             return Ok((
-                AppProxyConfig {
-                    app_type: app_type.to_string(),
-                    enabled: false,
-                    auto_failover_enabled: false,
-                    max_retries: 3,
-                    streaming_first_byte_timeout: 60,
-                    streaming_idle_timeout: 120,
-                    non_streaming_timeout: 600,
-                    circuit_failure_threshold: 4,
-                    circuit_success_threshold: 2,
-                    circuit_timeout_seconds: 60,
-                    circuit_error_rate_threshold: 0.6,
-                    circuit_min_requests: 10,
-                },
+                AppProxyConfig::default_for(app_type),
                 RectifierConfig::default(),
                 OptimizerConfig::default(),
                 CopilotOptimizerConfig::default(),

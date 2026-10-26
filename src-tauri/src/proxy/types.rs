@@ -190,6 +190,24 @@ pub struct AppProxyConfig {
 }
 
 impl AppProxyConfig {
+    /// 配置行不存在时的默认档（代理关闭、失败转移关闭、内置超时/熔断档位）。
+    pub fn default_for(app_type: impl Into<String>) -> Self {
+        Self {
+            app_type: app_type.into(),
+            enabled: false,
+            auto_failover_enabled: false,
+            max_retries: 3,
+            streaming_first_byte_timeout: 60,
+            streaming_idle_timeout: 120,
+            non_streaming_timeout: 600,
+            circuit_failure_threshold: 4,
+            circuit_success_threshold: 2,
+            circuit_timeout_seconds: 60,
+            circuit_error_rate_threshold: 0.6,
+            circuit_min_requests: 10,
+        }
+    }
+
     /// 整包读取超时仅在故障转移开启且配置值非零时生效。
     pub(crate) fn non_streaming_body_timeout(&self) -> Duration {
         if self.auto_failover_enabled && self.non_streaming_timeout > 0 {
@@ -533,5 +551,23 @@ mod tests {
         let parsed: LogConfig = serde_json::from_str(&json).unwrap();
         assert!(parsed.enabled);
         assert_eq!(parsed.level, "debug");
+    }
+
+    /// 配置行不存在时的默认档：DAO 读路径与阻塞线程共用，数值合同钉死在这里。
+    #[test]
+    fn app_proxy_config_default_for_pins_the_default_contract() {
+        let config = AppProxyConfig::default_for("claude");
+        assert_eq!(config.app_type, "claude");
+        assert!(!config.enabled);
+        assert!(!config.auto_failover_enabled);
+        assert_eq!(config.max_retries, 3);
+        assert_eq!(config.streaming_first_byte_timeout, 60);
+        assert_eq!(config.streaming_idle_timeout, 120);
+        assert_eq!(config.non_streaming_timeout, 600);
+        assert_eq!(config.circuit_failure_threshold, 4);
+        assert_eq!(config.circuit_success_threshold, 2);
+        assert_eq!(config.circuit_timeout_seconds, 60);
+        assert_eq!(config.circuit_error_rate_threshold, 0.6);
+        assert_eq!(config.circuit_min_requests, 10);
     }
 }
