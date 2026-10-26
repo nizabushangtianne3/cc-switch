@@ -5,6 +5,26 @@ All notable changes to CC Switch will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.22] - 2026-10-26
+
+Proxy-core performance pass on top of v4.0.21: per-request fixed costs on the hot path are cut (routing state, failure accounting, breaker creation, usage logging), wasted per-turn work in the Gemini shadow store is gone, and dead code left over from earlier refactors is deleted. The core modules that had no test coverage (switch lock, usage event filters) gained regression tests.
+
+### Changed
+
+- **Routing state reads:** The per-request `live-state.json` read and JSON parse is now served from a process-local cache validated by file stamp (mtime and length); a `stat` per request replaces the read plus parse, our own writes update the cache immediately, and external edits are still picked up on the next request.
+- **Failure accounting:** Recording a failed provider no longer waits for the provider-health database write before trying the next provider or returning the error to the client. Circuit-breaker state is still updated synchronously; the health write is detached like usage logging.
+- **Circuit breaker creation:** The breaker-map write lock is no longer held while the config is awaited, and the config read itself runs on the blocking pool instead of an async worker.
+- **Usage logging:** The pricing-mode read that sat inside a `spawn_blocking` closure via a nested runtime handle now goes through a sync DAO call on the same blocking thread, keeping the database connection lock off the async runtime.
+- **Provider config defaults:** The default `AppProxyConfig` literal that the read paths built in three places is now one `AppProxyConfig::default_for` constructor, pinned by a regression test.
+
+### Fixed
+
+- **Wasted per-turn work:** Recording a Gemini assistant turn for shadow replay no longer clones the whole session snapshot (up to 64 turns) when the streaming recorder discards it, and the Google Gemini host check matches case-insensitively without allocating a lowercased string.
+
+### Removed
+
+- **Dead code:** `SystemKeychain::named` on non-macOS targets, the never-called `parse_env_file_strict` and its tests, the two Gemini transform wrappers that only tests used, and stale `#[allow(dead_code)]` annotations on items that are constructed in production.
+
 ## [4.0.21] - 2026-10-25
 
 This release merges upstream v4.0.16 through v4.0.20 and lands the fork's proxy core overhaul. Upstream brings Oh My Pi (`omp`) as the thirteenth managed app, the Apps page split into installed and not-installed sections with drag reordering, editable and removable official Kimi cards, browser login for managed ChatGPT accounts, clearer balance and failed-quota wording, Turkish translations and refreshed model presets. The fork side keeps multi-key pools, key-level usage statistics and single-key persistence unchanged, and rewrites the proxy hot path so requests, responses and SSE events are moved, pooled and framed instead of copied.
