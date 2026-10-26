@@ -17,6 +17,7 @@
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::services::now_millis;
 use crate::services::subscription::{
     CredentialStatus, QuotaTier, SubscriptionQuota, TIER_CREDITS, TIER_MONTHLY, TIER_WEEKLY_LIMIT,
 };
@@ -739,13 +740,6 @@ fn now_secs() -> i64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64
-}
-
-fn now_millis() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64
 }
 
 #[cfg(test)]

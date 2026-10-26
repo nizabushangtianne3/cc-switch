@@ -61,3 +61,30 @@ pub mod session_usage_kimi;
 pub mod session_usage_mcode;
 
 pub mod session_usage_agy;
+
+/// 当前 Unix 毫秒时间戳。
+pub(crate) fn now_millis() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn now_millis_returns_current_unix_milliseconds() {
+        let now = now_millis();
+        assert!(now > 1_600_000_000_000, "expected a timestamp after 2020");
+        let system_now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock is before the unix epoch")
+            .as_millis() as i64;
+        assert!(
+            now <= system_now + 60_000,
+            "now_millis must not run more than 60s ahead of the system clock"
+        );
+    }
+}

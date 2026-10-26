@@ -5,10 +5,11 @@
 //! （`commands::agy_account::agy_quota`，约 1 秒），认不出 agy 的登录时才走这里；
 //! 启动 agy 要七八秒。
 
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use serde::Deserialize;
 
+use super::now_millis;
 use super::subscription::{CredentialStatus, QuotaTier, SubscriptionQuota};
 
 const TOOL: &str = "agy";
@@ -156,13 +157,6 @@ pub(crate) async fn get_agy_subscription_quota() -> Result<SubscriptionQuota, St
         error: None,
         queried_at: Some(now_millis()),
     })
-}
-
-fn now_millis() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64
 }
 
 #[cfg(test)]

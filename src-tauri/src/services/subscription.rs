@@ -8,6 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use std::collections::{HashMap, HashSet};
 
+use super::now_millis;
 use crate::config;
 
 // ── 数据类型 ──────────────────────────────────────────────
@@ -1667,15 +1668,6 @@ pub async fn get_subscription_quota(tool: &str) -> Result<SubscriptionQuota, Str
         "agy" => crate::services::subscription_agy::get_agy_subscription_quota().await,
         _ => Ok(SubscriptionQuota::not_found(tool)),
     }
-}
-
-// ── 辅助函数 ──────────────────────────────────────────────
-
-fn now_millis() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64
 }
 
 #[cfg(test)]

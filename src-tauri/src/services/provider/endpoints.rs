@@ -2,10 +2,9 @@
 //!
 //! Handles CRUD operations for provider custom endpoints.
 
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use crate::app_config::AppType;
 use crate::error::AppError;
+use crate::services::now_millis;
 use crate::settings::CustomEndpoint;
 use crate::store::AppState;
 
@@ -76,12 +75,4 @@ pub fn update_endpoint_last_used(
         }
     }
     Ok(())
-}
-
-/// Get current timestamp in milliseconds
-fn now_millis() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64
 }

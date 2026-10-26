@@ -3,11 +3,11 @@
 //! 支持 Kimi For Coding、智谱 GLM、MiniMax、ZenMux、火山方舟、OpenCode Go、Command Code
 //! 的套餐额度查询。复用 subscription 模块的 SubscriptionQuota / QuotaTier 类型。
 
+use super::now_millis;
 use super::subscription::{
     CredentialStatus, QuotaTier, SubscriptionQuota, TIER_FIVE_HOUR, TIER_MONTHLY, TIER_WEEKLY_LIMIT,
 };
 use crate::hash::{hmac_sha256, hmac_sha256_hex, sha256_hex};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 // ── 供应商检测 ──────────────────────────────────────────────
 
@@ -77,13 +77,6 @@ pub(crate) fn detect_provider_id(base_url: &str) -> Option<&'static str> {
         CodingPlanProvider::OpencodeGo => "opencode_go",
         CodingPlanProvider::CommandCode => "command_code",
     })
-}
-
-fn now_millis() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64
 }
 
 /// 凭证失效的回应：三种供应商的形状逐字段相同，只有 error 文案不同。
