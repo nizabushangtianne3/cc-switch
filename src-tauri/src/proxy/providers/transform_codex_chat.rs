@@ -11,12 +11,12 @@ use super::codex_chat_common::{
 };
 use super::codex_compaction;
 use super::inline_think::split_leading_think_block;
+use crate::hash::short_sha256_hex;
 use crate::provider::CodexChatReasoningConfig;
 use crate::proxy::{
     error::ProxyError,
     json_canonical::{
         canonical_json_string, canonicalize_json_string_if_parseable, canonicalize_tool_arguments,
-        short_sha256_hex,
     },
     tool_media::{
         chat_file_from_input_file, flush_pending_chat_tool_media, plan_chat_tool_output_media,

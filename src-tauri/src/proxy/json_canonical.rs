@@ -1,8 +1,9 @@
 //! Stable JSON helpers for cache-sensitive request bodies.
 
-use serde_json::Value;
-use sha2::{Digest, Sha256};
+use crate::hash::short_sha256_hex;
 use std::fmt::Write as _;
+
+use serde_json::Value;
 
 pub(crate) fn canonical_json_string(value: &Value) -> String {
     let mut out = String::new();
@@ -104,15 +105,6 @@ pub(crate) fn short_value_hash(value: Option<&Value>) -> String {
         return "absent".to_string();
     };
     short_sha256_hex(canonical_json_string(value).as_bytes())
-}
-
-pub(crate) fn short_sha256_hex(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    let mut hex = String::with_capacity(16);
-    for byte in &digest[..8] {
-        write!(hex, "{byte:02x}").expect("writing to a String should not fail");
-    }
-    hex
 }
 
 #[cfg(test)]

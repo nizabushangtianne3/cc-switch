@@ -9,12 +9,13 @@ use chrono::Utc;
 use serde_json::Value;
 
 use crate::error::AppError;
+use crate::hash::sha256_hex;
 use crate::services::s3::{self, S3Credentials};
 use crate::settings::{update_s3_sync_status, S3SyncSettings, WebDavSyncStatus};
 
 pub(crate) use super::sync_protocol::run_with_sync_lock;
 use super::sync_protocol::{
-    apply_snapshot, build_local_snapshot, localized, persist_sync_success_best_effort, sha256_hex,
+    apply_snapshot, build_local_snapshot, localized, persist_sync_success_best_effort,
     validate_artifact_size_limit, validate_manifest_compat, verify_artifact, ArtifactMeta,
     RemoteLayout, SyncManifest, DB_COMPAT_VERSION, MAX_MANIFEST_BYTES, MAX_SYNC_ARTIFACT_BYTES,
     PROTOCOL_VERSION, REMOTE_DB_SQL, REMOTE_MANIFEST, REMOTE_SKILLS_ZIP,

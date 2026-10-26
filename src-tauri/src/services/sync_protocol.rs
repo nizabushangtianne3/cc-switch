@@ -11,10 +11,10 @@ use std::time::Duration;
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use tempfile::tempdir;
 
 use crate::error::AppError;
+use crate::hash::sha256_hex;
 use crate::services::skill::{skill_state_read_guard, skill_state_write_guard};
 
 // Re-export archive functions for use by transport layers.
@@ -404,12 +404,6 @@ pub(crate) fn apply_snapshot(
 
 // ─── Utilities ───────────────────────────────────────────────
 
-pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    format!("{:x}", hasher.finalize())
-}
-
 pub(crate) fn detect_system_device_name() -> Option<String> {
     let env_name = ["CC_SWITCH_DEVICE_NAME", "COMPUTERNAME", "HOSTNAME"]
         .iter()
@@ -567,15 +561,6 @@ mod tests {
         a2.insert("db.sql".to_string(), artifact("hash-b", 1));
 
         assert_ne!(compute_snapshot_id(&a1), compute_snapshot_id(&a2));
-    }
-
-    #[test]
-    fn sha256_hex_is_correct() {
-        let hash = sha256_hex(b"hello");
-        assert_eq!(
-            hash,
-            "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
-        );
     }
 
     #[test]

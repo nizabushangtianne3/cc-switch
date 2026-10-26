@@ -20,6 +20,7 @@ mod error;
 mod gemini_config;
 mod gemini_mcp;
 mod grok_config;
+mod hash;
 pub mod hermes_config;
 mod init_status;
 mod jsonc_document;

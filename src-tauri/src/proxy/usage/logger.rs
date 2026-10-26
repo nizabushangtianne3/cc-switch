@@ -8,7 +8,6 @@ use crate::services::sql_helpers::{INPUT_TOKEN_SEMANTICS_FRESH, INPUT_TOKEN_SEMA
 use crate::services::usage_stats::{find_model_pricing_row, is_placeholder_pricing_model};
 use rusqlite::OptionalExtension;
 use rust_decimal::Decimal;
-use sha2::{Digest, Sha256};
 
 #[derive(Debug, PartialEq, Eq)]
 struct UsageSemantic {
@@ -40,25 +39,28 @@ impl UsageSemantic {
         }
     }
 
+    /// 稳定指纹：碰撞兜底 request_id 的确定性来源，同一条语义恒等、不同语义必异。
+    ///
+    /// 变长字段带长度前缀，相邻字段不会因拼接产生歧义。
     fn sha256(&self) -> String {
-        let encoded = serde_json::to_vec(&(
-            &self.app_type,
-            &self.provider_id,
-            &self.api_key_id,
-            &self.model,
-            self.input_token_semantics,
-            self.input_tokens,
-            self.output_tokens,
-            self.cache_read_tokens,
-            self.cache_creation_tokens,
-            self.status_code,
-        ))
-        .expect("usage semantic tuple is serializable");
-        Sha256::digest(encoded)
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect()
+        let mut buf = Vec::with_capacity(60);
+        push_len_prefixed(&mut buf, self.app_type.as_bytes());
+        push_len_prefixed(&mut buf, self.provider_id.as_bytes());
+        push_len_prefixed(&mut buf, self.api_key_id.as_bytes());
+        push_len_prefixed(&mut buf, self.model.as_bytes());
+        buf.extend_from_slice(&self.input_token_semantics.to_le_bytes());
+        buf.extend_from_slice(&self.input_tokens.to_le_bytes());
+        buf.extend_from_slice(&self.output_tokens.to_le_bytes());
+        buf.extend_from_slice(&self.cache_read_tokens.to_le_bytes());
+        buf.extend_from_slice(&self.cache_creation_tokens.to_le_bytes());
+        buf.extend_from_slice(&self.status_code.to_le_bytes());
+        crate::hash::sha256_hex(&buf)
     }
+}
+
+fn push_len_prefixed(buf: &mut Vec<u8>, bytes: &[u8]) {
+    buf.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+    buf.extend_from_slice(bytes);
 }
 
 /// 请求日志

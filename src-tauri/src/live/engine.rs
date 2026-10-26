@@ -15,8 +15,6 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::{Condvar, Mutex, OnceLock};
 
-use sha2::{Digest, Sha256};
-
 use crate::config::{atomic_write_private, stage_write, StagedWrite};
 use crate::error::AppError;
 
@@ -79,15 +77,7 @@ impl LiveFile {
 
 /// 文件内容的 hash；文件不存在是 `None`。
 pub fn digest(bytes: Option<&[u8]>) -> Option<String> {
-    bytes.map(sha256_hex)
-}
-
-/// 十六进制的 SHA-256。
-pub fn sha256_hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
+    bytes.map(crate::hash::sha256_hex)
 }
 
 /// 读当前字节；文件不存在返回 `None`，其他读取错误照报。

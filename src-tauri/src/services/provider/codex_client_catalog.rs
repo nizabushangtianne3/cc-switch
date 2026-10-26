@@ -28,7 +28,8 @@ use crate::codex_config::{
     codex_config_auth_store_mode, extract_codex_auth_user_identity, get_codex_auth_path,
     get_codex_config_dir, get_codex_model_catalog_path, CodexAuthStoreMode,
 };
-use crate::live::engine::{sha256_hex, DeviceStore};
+use crate::hash::sha256_hex;
+use crate::live::engine::DeviceStore;
 use crate::live::project::codex::live_catalog_is_ours;
 
 use super::codex_direct::read_config_text;

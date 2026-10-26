@@ -9,6 +9,7 @@ use std::time::Duration;
 use url::Url;
 
 use crate::error::AppError;
+use crate::hash::{hmac_sha256, hmac_sha256_hex, sha256_hex};
 use crate::proxy::http_client;
 use crate::services::sync_protocol::{transfer_timeout, TRANSFER_IDLE_TIMEOUT};
 use futures::StreamExt;
@@ -84,21 +85,6 @@ fn build_bucket_url(creds: &S3Credentials) -> String {
         let (scheme, host) = split_scheme_host(&creds.endpoint);
         format!("{}://{}/{}/", scheme, host, creds.bucket)
     }
-}
-
-// ─── Cryptographic helpers ───────────────────────────────────
-
-fn hmac_sha256(key: &[u8], data: &[u8]) -> Vec<u8> {
-    use hmac::{Hmac, Mac};
-    type HmacSha256 = Hmac<sha2::Sha256>;
-    let mut mac = HmacSha256::new_from_slice(key).expect("HMAC accepts any key length");
-    mac.update(data);
-    mac.finalize().into_bytes().to_vec()
-}
-
-fn sha256_hex(data: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-    format!("{:x}", Sha256::digest(data))
 }
 
 /// Percent-encode following AWS Sig V4 rules (RFC 3986 unreserved characters only).
@@ -214,8 +200,7 @@ fn sign_request(
     let k_signing = hmac_sha256(&k_service, b"aws4_request");
 
     // ── Step 5: Compute signature ──
-    let sig_bytes = hmac_sha256(&k_signing, string_to_sign.as_bytes());
-    let signature: String = sig_bytes.iter().map(|b| format!("{:02x}", b)).collect();
+    let signature = hmac_sha256_hex(&k_signing, string_to_sign.as_bytes());
 
     // ── Step 6: Add Authorization header ──
     let authorization = format!(
@@ -537,36 +522,6 @@ pub(crate) async fn head_object(
 mod tests {
     use super::*;
     use chrono::TimeZone;
-
-    // ── Crypto helpers ──
-
-    #[test]
-    fn sha256_hex_empty_body() {
-        assert_eq!(
-            sha256_hex(b""),
-            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-        );
-    }
-
-    #[test]
-    fn sha256_hex_known_value() {
-        // From the AWS S3 documentation PUT Object example body.
-        assert_eq!(
-            sha256_hex(b"Welcome to Amazon S3."),
-            "44ce7dd67c959e0d3524ffac1771dfbba87d2b6b4b4e99e42034a8b803f8b072"
-        );
-    }
-
-    #[test]
-    fn hmac_sha256_rfc2104_test_vector() {
-        // HMAC-SHA256("key", "The quick brown fox jumps over the lazy dog")
-        let result = hmac_sha256(b"key", b"The quick brown fox jumps over the lazy dog");
-        let hex: String = result.iter().map(|b| format!("{:02x}", b)).collect();
-        assert_eq!(
-            hex,
-            "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8"
-        );
-    }
 
     // ── URL construction: virtual-hosted vs path-style ──
 

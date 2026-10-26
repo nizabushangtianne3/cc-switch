@@ -19,7 +19,6 @@ use crate::settings::{
 use chrono::{Local, Utc};
 use rusqlite::{backup::Backup, params_from_iter, Connection};
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 use std::collections::{BTreeSet, HashSet};
 use std::fs;
 use std::hash::{Hash, Hasher};
@@ -1403,12 +1402,8 @@ fn provider_settings_backup_filename(provider_id: &str) -> String {
     } else {
         safe_id
     };
-    // Keep the hash stable across processes while avoiding collisions after sanitization.
-    let digest = Sha256::digest(provider_id.as_bytes());
-    let hash = digest[..8]
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
+    // 哈希保持跨进程稳定，同时避免清洗后重名；短指纹够用，走统一实现。
+    let hash = crate::hash::short_sha256_hex(provider_id.as_bytes());
     format!("{hash}-{safe_id}.settings_config.json")
 }
 

@@ -6,6 +6,7 @@
 use super::subscription::{
     CredentialStatus, QuotaTier, SubscriptionQuota, TIER_FIVE_HOUR, TIER_MONTHLY, TIER_WEEKLY_LIMIT,
 };
+use crate::hash::{hmac_sha256, hmac_sha256_hex, sha256_hex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 // ── 供应商检测 ──────────────────────────────────────────────
@@ -1347,19 +1348,6 @@ const VOLCENGINE_SERVICE: &str = "ark";
 const VOLCENGINE_CONTENT_TYPE: &str = "application/json; charset=utf-8";
 const VOLCENGINE_SIGNED_HEADERS: &str = "host;x-date;x-content-sha256;content-type";
 
-fn volc_hmac_sha256(key: &[u8], data: &[u8]) -> Vec<u8> {
-    use hmac::{Hmac, Mac};
-    type HmacSha256 = Hmac<sha2::Sha256>;
-    let mut mac = HmacSha256::new_from_slice(key).expect("HMAC accepts any key length");
-    mac.update(data);
-    mac.finalize().into_bytes().to_vec()
-}
-
-fn volc_sha256_hex(data: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-    format!("{:x}", Sha256::digest(data))
-}
-
 /// RFC3986 unreserved 之外全部按 `%XX` 编码（用于 canonical query string）。
 fn volc_uri_encode(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
@@ -1406,7 +1394,7 @@ fn volcengine_sign(
 ) -> (String, String, String) {
     let x_date = now.format("%Y%m%dT%H%M%SZ").to_string();
     let short_date = now.format("%Y%m%d").to_string();
-    let x_content_sha256 = volc_sha256_hex(body);
+    let x_content_sha256 = sha256_hex(body);
 
     // 固定顺序 canonical headers（火山特有，**不排序**）。
     let canonical_headers = format!(
@@ -1419,18 +1407,15 @@ fn volcengine_sign(
     let credential_scope = format!("{short_date}/{region}/{VOLCENGINE_SERVICE}/request");
     let string_to_sign = format!(
         "HMAC-SHA256\n{x_date}\n{credential_scope}\n{}",
-        volc_sha256_hex(canonical_request.as_bytes())
+        sha256_hex(canonical_request.as_bytes())
     );
 
     // 签名密钥派生：kDate=HMAC(SK, date)（SK **不加** AWS4 前缀），终止串 `request`。
-    let k_date = volc_hmac_sha256(secret_access_key.as_bytes(), short_date.as_bytes());
-    let k_region = volc_hmac_sha256(&k_date, region.as_bytes());
-    let k_service = volc_hmac_sha256(&k_region, VOLCENGINE_SERVICE.as_bytes());
-    let k_signing = volc_hmac_sha256(&k_service, b"request");
-    let signature: String = volc_hmac_sha256(&k_signing, string_to_sign.as_bytes())
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
+    let k_date = hmac_sha256(secret_access_key.as_bytes(), short_date.as_bytes());
+    let k_region = hmac_sha256(&k_date, region.as_bytes());
+    let k_service = hmac_sha256(&k_region, VOLCENGINE_SERVICE.as_bytes());
+    let k_signing = hmac_sha256(&k_service, b"request");
+    let signature = hmac_sha256_hex(&k_signing, string_to_sign.as_bytes());
 
     let authorization = format!(
         "HMAC-SHA256 Credential={access_key_id}/{credential_scope}, SignedHeaders={VOLCENGINE_SIGNED_HEADERS}, Signature={signature}"

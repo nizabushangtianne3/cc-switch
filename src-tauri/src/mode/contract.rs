@@ -4,7 +4,7 @@
 //! 客户端文件就不读也不写，只换代理的上游；不同（独有字段、模型别名的 1M 标记、显示名
 //! 不同，或代理地址变了）时，在同一个操作里先改写客户端，再发布路由。
 
-use crate::live::engine::sha256_hex;
+use crate::hash::sha256_hex;
 use serde_json::{json, Map, Value};
 
 use crate::live::project::claude::ClaudeProjection;
