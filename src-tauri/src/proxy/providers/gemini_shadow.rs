@@ -136,32 +136,33 @@ impl GeminiShadowStore {
     }
 
     /// Record a Gemini assistant turn for later replay.
+    ///
+    /// 只追加，不返回快照：读整份快照走 [`Self::get_session`]。
+    /// 曾经的返回版每次追加都要把整个会话（可能几十轮）克隆一份，
+    /// 而流式记录的调用方根本不要这个返回值。
     pub fn record_assistant_turn(
         &self,
         provider_id: impl Into<String>,
         session_id: impl Into<String>,
         assistant_content: Value,
         tool_calls: Vec<GeminiToolCallMeta>,
-    ) -> GeminiShadowSessionSnapshot {
+    ) {
         let key = GeminiShadowKey::new(provider_id, session_id);
         let turn = GeminiAssistantTurn::new(assistant_content, tool_calls);
 
         let mut inner = self.write_inner();
         Self::touch_session_order(&mut inner.session_order, &key);
 
-        let snapshot = {
-            let session = inner
-                .sessions
-                .entry(key.clone())
-                .or_insert_with(GeminiShadowSession::new);
-            session.turns.push_back(turn);
-            while session.turns.len() > self.max_turns_per_session {
-                session.turns.pop_front();
-            }
-            Self::snapshot_session(&key, session)
-        };
+        let session = inner
+            .sessions
+            .entry(key.clone())
+            .or_insert_with(GeminiShadowSession::new);
+        session.turns.push_back(turn);
+        while session.turns.len() > self.max_turns_per_session {
+            session.turns.pop_front();
+        }
+
         Self::prune_sessions(&mut inner, self.max_sessions);
-        snapshot
     }
 
     /// Get the latest assistant content for a provider/session pair.
@@ -303,7 +304,7 @@ mod tests {
     #[test]
     fn record_and_read_latest_turn() {
         let store = GeminiShadowStore::with_limits(8, 4);
-        let snapshot = store.record_assistant_turn(
+        store.record_assistant_turn(
             "provider-a",
             "session-1",
             json!({"parts": [{"text": "hello", "thoughtSignature": "sig-1"}]}),
@@ -314,6 +315,10 @@ mod tests {
                 Some("sig-1"),
             )],
         );
+
+        let snapshot = store
+            .get_session("provider-a", "session-1")
+            .expect("snapshot");
 
         assert_eq!(snapshot.provider_id, "provider-a");
         assert_eq!(snapshot.session_id, "session-1");

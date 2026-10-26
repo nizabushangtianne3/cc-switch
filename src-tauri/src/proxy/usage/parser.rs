@@ -143,7 +143,6 @@ impl TokenUsage {
     }
 
     /// 从 Claude API 流式响应解析
-    #[allow(dead_code)]
     pub fn from_claude_stream_events(events: &[Value]) -> Option<Self> {
         let mut usage = Self::default();
         let mut model: Option<String> = None;
@@ -447,7 +446,6 @@ impl TokenUsage {
     }
 
     /// 从 Gemini API 流式响应解析
-    #[allow(dead_code)]
     pub fn from_gemini_stream_chunks(chunks: &[Value]) -> Option<Self> {
         let mut total_input = 0u32;
         let mut total_tokens = 0u32;

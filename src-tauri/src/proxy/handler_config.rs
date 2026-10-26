@@ -169,3 +169,109 @@ pub const GEMINI_PARSER_CONFIG: UsageParserConfig = UsageParserConfig {
     stream_event_filter: Some(gemini_stream_usage_event_filter),
     app_type_str: "gemini",
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 预过滤器在每事件热路径上闸掉 JSON parse：token 增量事件必须被拒绝，
+    /// 只有带 usage 的边界事件才放行。误放行多付一次 parse，误拒绝会丢 usage。
+    #[test]
+    fn stream_event_filters_gate_only_usage_events() {
+        // Claude：message_start / message_delta 之外的 content_block_delta 拒绝
+        assert!(claude_stream_usage_event_filter(
+            r#"{"type":"message_start","message":{"usage":{"input_tokens":5}}}"#
+        ));
+        assert!(claude_stream_usage_event_filter(
+            r#"{"type":"message_delta","usage":{"output_tokens":7}}}"#
+        ));
+        assert!(!claude_stream_usage_event_filter(
+            r#"{"type":"content_block_delta","delta":{"text":"hi"}}"#
+        ));
+
+        // OpenAI：只有带 usage 字段的事件放行
+        assert!(openai_stream_usage_event_filter(
+            r#"{"choices":[],"usage":{"total_tokens":11}}"#
+        ));
+        assert!(!openai_stream_usage_event_filter(
+            r#"{"choices":[{"delta":{"content":"hi"}}]}"#
+        ));
+
+        // Codex：response.completed 或任何 usage 字段
+        assert!(codex_stream_usage_event_filter(
+            r#"{"type":"response.completed"}"#
+        ));
+        assert!(codex_stream_usage_event_filter(
+            r#"{"usage":{"input_tokens":1}}"#
+        ));
+        assert!(!codex_stream_usage_event_filter(
+            r#"{"type":"response.output_text.delta","delta":"hi"}"#
+        ));
+
+        // Gemini：usageMetadata
+        assert!(gemini_stream_usage_event_filter(
+            r#"{"usageMetadata":{"totalTokenCount":9}}"#
+        ));
+        assert!(!gemini_stream_usage_event_filter(
+            r#"{"candidates":[{"content":{"parts":[{"text":"hi"}]}}]}"#
+        ));
+    }
+
+    /// 预定义配置的过滤器与 app_type 必须对齐，防止复制粘贴错位。
+    #[test]
+    fn parser_configs_wire_their_own_filters() {
+        // 每个配置对自家 usage 事件的形状都必须放行
+        let probes: [(&UsageParserConfig, &str); 4] = [
+            (
+                &CLAUDE_PARSER_CONFIG,
+                r#"{"type":"message_start","message":{"usage":{"input_tokens":1}}}"#,
+            ),
+            (
+                &OPENAI_PARSER_CONFIG,
+                r#"{"choices":[],"usage":{"total_tokens":3}}"#,
+            ),
+            (&CODEX_PARSER_CONFIG, r#"{"type":"response.completed"}"#),
+            (
+                &GEMINI_PARSER_CONFIG,
+                r#"{"usageMetadata":{"totalTokenCount":3}}"#,
+            ),
+        ];
+        for (config, probe) in probes {
+            let filter = config
+                .stream_event_filter
+                .expect("all configs set a filter");
+            assert!(filter(probe), "{}", config.app_type_str);
+        }
+    }
+
+    /// 模型提取器：事件里没有可用模型名时回退到 fallback，不 panic、不吞掉回退。
+    #[test]
+    fn model_extractors_fall_back_when_events_have_no_model() {
+        let events = vec![serde_json::json!({"type": "content_block_delta"})];
+        for config in [
+            &CLAUDE_PARSER_CONFIG,
+            &OPENAI_PARSER_CONFIG,
+            &GEMINI_PARSER_CONFIG,
+        ] {
+            assert_eq!(
+                (config.model_extractor)(&events, "fallback-model"),
+                "fallback-model",
+                "{}",
+                config.app_type_str
+            );
+        }
+    }
+
+    /// Codex 自动提取：response.completed 里的 response.model 优先于 fallback。
+    #[test]
+    fn codex_model_extractor_prefers_response_model() {
+        let events = vec![serde_json::json!({
+            "type": "response.completed",
+            "response": {"model": "gpt-5.1-codex"}
+        })];
+        assert_eq!(
+            (CODEX_PARSER_CONFIG.model_extractor)(&events, "fallback-model"),
+            "gpt-5.1-codex"
+        );
+    }
+}
