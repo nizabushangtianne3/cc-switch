@@ -31,99 +31,112 @@ pub struct McpApps {
     pub omp: bool,
 }
 
-impl McpApps {
-    /// 检查指定应用是否启用
-    pub fn is_enabled_for(&self, app: &AppType) -> bool {
-        match app {
-            AppType::Claude => self.claude,
-            AppType::Codex => self.codex,
-            AppType::Gemini => self.gemini,
-            AppType::GrokBuild => self.grokbuild,
-            AppType::OpenCode => self.opencode,
-            AppType::OpenClaw => false, // OpenClaw doesn't support MCP
-            AppType::Hermes => self.hermes,
-            AppType::Mcode => self.mcode,
-            AppType::Kimi => self.kimi,
-            AppType::Pi => self.pi,
-            AppType::Omp => self.omp,
-            AppType::ClaudeDesktop => false,
-            AppType::Agy => self.agy,
-        }
-    }
+/// McpApps 与 SkillApps 的 11 个选择位字段名完全一致，
+/// 应用选择逻辑只保留这一份实现，避免两处手工同步后行为漂移。
+///
+/// 两个结构体对 `OpenClaw` 和 `ClaudeDesktop` 都没有选择位，所以这两个
+/// AppType 一律返回 false、设置时忽略：OpenClaw 不支持 MCP；Claude Desktop
+/// 的第三方 profile 不参与 CC Switch 的 skill 同步。将来哪一侧要支持它们，
+/// 必须先给对应的 struct 补字段，再回来改这里。
+macro_rules! impl_shared_apps {
+    ($ty:ident) => {
+        impl $ty {
+            /// 检查指定应用是否启用
+            pub fn is_enabled_for(&self, app: &AppType) -> bool {
+                match app {
+                    AppType::Claude => self.claude,
+                    AppType::Codex => self.codex,
+                    AppType::Gemini => self.gemini,
+                    AppType::GrokBuild => self.grokbuild,
+                    AppType::OpenCode => self.opencode,
+                    AppType::OpenClaw => false, // 无 OpenClaw 选择位
+                    AppType::Hermes => self.hermes,
+                    AppType::Mcode => self.mcode,
+                    AppType::Kimi => self.kimi,
+                    AppType::Pi => self.pi,
+                    AppType::Omp => self.omp,
+                    AppType::ClaudeDesktop => false, // 无 ClaudeDesktop 选择位
+                    AppType::Agy => self.agy,
+                }
+            }
 
-    /// 设置指定应用的启用状态
-    pub fn set_enabled_for(&mut self, app: &AppType, enabled: bool) {
-        match app {
-            AppType::Claude => self.claude = enabled,
-            AppType::Codex => self.codex = enabled,
-            AppType::Gemini => self.gemini = enabled,
-            AppType::GrokBuild => self.grokbuild = enabled,
-            AppType::OpenCode => self.opencode = enabled,
-            AppType::OpenClaw => {} // OpenClaw doesn't support MCP, ignore
-            AppType::Hermes => self.hermes = enabled,
-            AppType::Mcode => self.mcode = enabled,
-            AppType::Kimi => self.kimi = enabled,
-            AppType::Pi => self.pi = enabled,
-            AppType::ClaudeDesktop => {}
-            AppType::Agy => self.agy = enabled,
-            AppType::Omp => self.omp = enabled,
-        }
-    }
+            /// 设置指定应用的启用状态
+            pub fn set_enabled_for(&mut self, app: &AppType, enabled: bool) {
+                match app {
+                    AppType::Claude => self.claude = enabled,
+                    AppType::Codex => self.codex = enabled,
+                    AppType::Gemini => self.gemini = enabled,
+                    AppType::GrokBuild => self.grokbuild = enabled,
+                    AppType::OpenCode => self.opencode = enabled,
+                    AppType::OpenClaw => {} // 无 OpenClaw 选择位，忽略
+                    AppType::Hermes => self.hermes = enabled,
+                    AppType::Mcode => self.mcode = enabled,
+                    AppType::Kimi => self.kimi = enabled,
+                    AppType::Pi => self.pi = enabled,
+                    AppType::ClaudeDesktop => {} // 无 ClaudeDesktop 选择位，忽略
+                    AppType::Agy => self.agy = enabled,
+                    AppType::Omp => self.omp = enabled,
+                }
+            }
 
-    /// 获取所有启用的应用列表
-    pub fn enabled_apps(&self) -> Vec<AppType> {
-        let mut apps = Vec::new();
-        if self.claude {
-            apps.push(AppType::Claude);
-        }
-        if self.codex {
-            apps.push(AppType::Codex);
-        }
-        if self.gemini {
-            apps.push(AppType::Gemini);
-        }
-        if self.grokbuild {
-            apps.push(AppType::GrokBuild);
-        }
-        if self.opencode {
-            apps.push(AppType::OpenCode);
-        }
-        if self.agy {
-            apps.push(AppType::Agy);
-        }
-        if self.kimi {
-            apps.push(AppType::Kimi);
-        }
-        if self.mcode {
-            apps.push(AppType::Mcode);
-        }
-        if self.hermes {
-            apps.push(AppType::Hermes);
-        }
-        if self.pi {
-            apps.push(AppType::Pi);
-        }
-        if self.omp {
-            apps.push(AppType::Omp);
-        }
-        apps
-    }
+            /// 获取所有启用的应用列表
+            pub fn enabled_apps(&self) -> Vec<AppType> {
+                let mut apps = Vec::new();
+                if self.claude {
+                    apps.push(AppType::Claude);
+                }
+                if self.codex {
+                    apps.push(AppType::Codex);
+                }
+                if self.gemini {
+                    apps.push(AppType::Gemini);
+                }
+                if self.grokbuild {
+                    apps.push(AppType::GrokBuild);
+                }
+                if self.opencode {
+                    apps.push(AppType::OpenCode);
+                }
+                if self.agy {
+                    apps.push(AppType::Agy);
+                }
+                if self.kimi {
+                    apps.push(AppType::Kimi);
+                }
+                if self.mcode {
+                    apps.push(AppType::Mcode);
+                }
+                if self.hermes {
+                    apps.push(AppType::Hermes);
+                }
+                if self.pi {
+                    apps.push(AppType::Pi);
+                }
+                if self.omp {
+                    apps.push(AppType::Omp);
+                }
+                apps
+            }
 
-    /// 检查是否所有应用都未启用
-    pub fn is_empty(&self) -> bool {
-        !self.claude
-            && !self.codex
-            && !self.gemini
-            && !self.grokbuild
-            && !self.opencode
-            && !self.hermes
-            && !self.agy
-            && !self.kimi
-            && !self.mcode
-            && !self.pi
-            && !self.omp
-    }
+            /// 检查是否所有应用都未启用
+            pub fn is_empty(&self) -> bool {
+                !self.claude
+                    && !self.codex
+                    && !self.gemini
+                    && !self.grokbuild
+                    && !self.opencode
+                    && !self.hermes
+                    && !self.agy
+                    && !self.kimi
+                    && !self.mcode
+                    && !self.pi
+                    && !self.omp
+            }
+        }
+    };
 }
+
+impl_shared_apps!(McpApps);
 
 /// Skill 应用启用状态（标记 Skill 应用到哪些客户端）
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -152,99 +165,9 @@ pub struct SkillApps {
     pub omp: bool,
 }
 
+impl_shared_apps!(SkillApps);
+
 impl SkillApps {
-    /// 检查指定应用是否启用
-    pub fn is_enabled_for(&self, app: &AppType) -> bool {
-        match app {
-            AppType::Claude => self.claude,
-            AppType::Codex => self.codex,
-            AppType::Gemini => self.gemini,
-            AppType::GrokBuild => self.grokbuild,
-            AppType::OpenCode => self.opencode,
-            AppType::Hermes => self.hermes,
-            AppType::Pi => self.pi,
-            AppType::Mcode => self.mcode,
-            AppType::Kimi => self.kimi,
-            AppType::OpenClaw => false,
-            AppType::Agy => self.agy,
-            AppType::Omp => self.omp,
-            AppType::ClaudeDesktop => false,
-        }
-    }
-
-    /// 设置指定应用的启用状态
-    pub fn set_enabled_for(&mut self, app: &AppType, enabled: bool) {
-        match app {
-            AppType::Claude => self.claude = enabled,
-            AppType::Codex => self.codex = enabled,
-            AppType::Gemini => self.gemini = enabled,
-            AppType::GrokBuild => self.grokbuild = enabled,
-            AppType::OpenCode => self.opencode = enabled,
-            AppType::Hermes => self.hermes = enabled,
-            AppType::Pi => self.pi = enabled,
-            AppType::Mcode => self.mcode = enabled,
-            AppType::Kimi => self.kimi = enabled,
-            AppType::OpenClaw => {}
-            AppType::Agy => self.agy = enabled,
-            AppType::Omp => self.omp = enabled,
-            AppType::ClaudeDesktop => {} // Claude Desktop 3P profiles don't use CC Switch skill sync
-        }
-    }
-
-    /// 获取所有启用的应用列表
-    pub fn enabled_apps(&self) -> Vec<AppType> {
-        let mut apps = Vec::new();
-        if self.claude {
-            apps.push(AppType::Claude);
-        }
-        if self.codex {
-            apps.push(AppType::Codex);
-        }
-        if self.gemini {
-            apps.push(AppType::Gemini);
-        }
-        if self.grokbuild {
-            apps.push(AppType::GrokBuild);
-        }
-        if self.opencode {
-            apps.push(AppType::OpenCode);
-        }
-        if self.agy {
-            apps.push(AppType::Agy);
-        }
-        if self.kimi {
-            apps.push(AppType::Kimi);
-        }
-        if self.mcode {
-            apps.push(AppType::Mcode);
-        }
-        if self.hermes {
-            apps.push(AppType::Hermes);
-        }
-        if self.pi {
-            apps.push(AppType::Pi);
-        }
-        if self.omp {
-            apps.push(AppType::Omp);
-        }
-        apps
-    }
-
-    /// 检查是否所有应用都未启用
-    pub fn is_empty(&self) -> bool {
-        !self.claude
-            && !self.codex
-            && !self.gemini
-            && !self.grokbuild
-            && !self.opencode
-            && !self.hermes
-            && !self.agy
-            && !self.kimi
-            && !self.mcode
-            && !self.pi
-            && !self.omp
-    }
-
     /// 仅启用指定应用（其他应用设为禁用）
     pub fn only(app: &AppType) -> Self {
         let mut apps = Self::default();
