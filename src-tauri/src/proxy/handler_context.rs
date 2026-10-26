@@ -279,6 +279,7 @@ impl RequestContext {
             state.provider_router.clone(),
             non_streaming_timeout,
             state.status.clone(),
+            state.active_connections.clone(),
             state.current_providers.clone(),
             state.gemini_shadow.clone(),
             state.codex_chat_history.clone(),

@@ -42,6 +42,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use smallvec::{smallvec, SmallVec};
 use std::borrow::Cow;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tauri::Manager;
 use tokio::sync::RwLock;
@@ -344,39 +345,31 @@ pub struct ForwardError {
 
 /// 活跃连接 RAII guard
 ///
-/// 构造时把 `ProxyStatus.active_connections` +1；Drop 时在 tokio runtime 上调度
-/// 一个异步任务执行 -1，从而支持把 guard move 进流式 body future（stream 自然结束
-/// 时 guard 与 future 一起 drop）。
+/// 构造 +1、Drop -1，都直接落在共享的原子计数上。`Drop` 不能 await，所以计数
+/// 必须是同步可写的：旧实现在 Drop 里 `handle.spawn` 一个异步任务去做减量，
+/// 每个连接结束都白付一次任务调度加一次 `RwLock::write`，而计数本身只需要一条
+/// `fetch_sub`。`ProxyStatus.active_connections` 那份改为读快照时镜像，给前端的
+/// 序列化形状不变（见 `ProxyState::status_snapshot`）。
 ///
 /// 设计动机：之前在 `forward_with_retry` 出口处同步 -1，但流式响应的 body 实际
 /// 在 `create_logged_passthrough_stream` 内还会继续 yield 字节流，导致 UI 的
 /// `active_connections` 计数过早归零。RAII guard 让"减量"由 Rust 类型系统驱动，
 /// 不需要每条出口路径都手动调用。
 pub(crate) struct ActiveConnectionGuard {
-    status: Arc<RwLock<ProxyStatus>>,
+    active_connections: Arc<AtomicUsize>,
 }
 
 impl ActiveConnectionGuard {
-    pub(crate) async fn acquire(status: Arc<RwLock<ProxyStatus>>) -> Self {
-        {
-            let mut s = status.write().await;
-            s.active_connections = s.active_connections.saturating_add(1);
-        }
-        Self { status }
+    pub(crate) fn acquire(active_connections: Arc<AtomicUsize>) -> Self {
+        active_connections.fetch_add(1, Ordering::Relaxed);
+        Self { active_connections }
     }
 }
 
 impl Drop for ActiveConnectionGuard {
     fn drop(&mut self) {
-        // Drop 不能 await：把减量操作调度到 tokio runtime
-        let status = self.status.clone();
-        if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            handle.spawn(async move {
-                let mut s = status.write().await;
-                s.active_connections = s.active_connections.saturating_sub(1);
-            });
-        }
-        // 没有 runtime 时静默丢失计数（仅 UI 展示用，可接受最终一致性）
+        // 每个 guard 恰好持有一个 +1，也只 drop 一次，配平由构造保证。
+        self.active_connections.fetch_sub(1, Ordering::Relaxed);
     }
 }
 
@@ -384,6 +377,8 @@ pub struct RequestForwarder {
     /// 共享的 ProviderRouter（持有熔断器状态）
     router: Arc<ProviderRouter>,
     status: Arc<RwLock<ProxyStatus>>,
+    /// 活跃连接计数（与 `status` 里的那份同源；Drop 必须同步递减，故用原子量）。
+    active_connections: Arc<AtomicUsize>,
     current_providers: Arc<RwLock<std::collections::HashMap<String, (String, String)>>>,
     gemini_shadow: Arc<GeminiShadowStore>,
     codex_chat_history: Arc<CodexChatHistoryStore>,
@@ -539,6 +534,7 @@ impl RequestForwarder {
         router: Arc<ProviderRouter>,
         non_streaming_timeout: u64,
         status: Arc<RwLock<ProxyStatus>>,
+        active_connections: Arc<AtomicUsize>,
         current_providers: Arc<RwLock<std::collections::HashMap<String, (String, String)>>>,
         gemini_shadow: Arc<GeminiShadowStore>,
         codex_chat_history: Arc<CodexChatHistoryStore>,
@@ -560,6 +556,7 @@ impl RequestForwarder {
         Self {
             router,
             status,
+            active_connections,
             current_providers,
             gemini_shadow,
             codex_chat_history,
@@ -915,7 +912,9 @@ impl RequestForwarder {
                 )
                 .await;
         }
-        let guard = ActiveConnectionGuard::acquire(self.status.clone()).await;
+        // acquire 走原子量，不再为 +1 单独拿一次 status 写锁；下面这一次是每请求
+        // 唯一的 status 写入（原先是两次）。
+        let guard = ActiveConnectionGuard::acquire(self.active_connections.clone());
         {
             let mut s = self.status.write().await;
             s.total_requests = s.total_requests.saturating_add(1);
@@ -5043,6 +5042,7 @@ mod tests {
         RequestForwarder {
             router: Arc::new(ProviderRouter::new(db.clone())),
             status: Arc::new(RwLock::new(ProxyStatus::default())),
+            active_connections: Arc::new(AtomicUsize::new(0)),
             current_providers: Arc::new(RwLock::new(HashMap::new())),
             gemini_shadow: Arc::new(GeminiShadowStore::new()),
             codex_chat_history: Arc::new(CodexChatHistoryStore::default()),
@@ -9117,7 +9117,7 @@ mod tests {
                     assert!(result.connection_guard.is_none(), "no active connection");
                 }
                 assert_eq!(books(&fwd).await, untouched(), "{status}");
-                assert_eq!(fwd.status.read().await.active_connections, 0);
+                assert_eq!(fwd.active_connections.load(Ordering::Relaxed), 0);
                 assert!(breaker_untouched(&fwd, "kimi").await, "{status}");
                 assert_eq!(up.requests.lock().await.len(), 1, "{status}");
             }
@@ -9446,5 +9446,33 @@ mod tests {
 
             requests.lock().await.clone()
         }
+    }
+
+    /// Drop 不能 await，所以递减必须同步生效：不进 tokio runtime 也立刻可见。
+    ///
+    /// 旧实现在 Drop 里 spawn 一个异步任务，没有 runtime 时计数直接漏减。
+    #[test]
+    fn connection_guard_decrements_synchronously_without_a_runtime() {
+        let counter = Arc::new(AtomicUsize::new(0));
+
+        let guard = ActiveConnectionGuard::acquire(Arc::clone(&counter));
+        assert_eq!(counter.load(Ordering::Relaxed), 1);
+
+        drop(guard);
+        assert_eq!(counter.load(Ordering::Relaxed), 0);
+    }
+
+    /// 多个 guard 同时存活时计数累加，逐个 drop 后回到零。
+    #[test]
+    fn connection_guards_balance_across_concurrent_requests() {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let guards: Vec<_> = (0..8)
+            .map(|_| ActiveConnectionGuard::acquire(Arc::clone(&counter)))
+            .collect();
+
+        assert_eq!(counter.load(Ordering::Relaxed), 8);
+
+        drop(guards);
+        assert_eq!(counter.load(Ordering::Relaxed), 0);
     }
 }

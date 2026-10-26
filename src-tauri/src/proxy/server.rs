@@ -25,6 +25,7 @@ use axum::{
 };
 use hyper_util::rt::TokioIo;
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::{oneshot, RwLock};
 use tokio::task::JoinHandle;
@@ -48,6 +49,37 @@ pub struct ProxyState {
     pub app_handle: Option<tauri::AppHandle>,
     /// 故障转移切换管理器
     pub failover_manager: Arc<FailoverSwitchManager>,
+    /// 活跃连接数。与 `ProxyStatus.active_connections` 是同一件事的两种持有方式：
+    /// `Drop` 不能 await，所以 guard 递减走这个原子量；`ProxyStatus` 那份只在读快照
+    /// 时被镜像过来，保持给前端的序列化形状不变。
+    pub active_connections: Arc<AtomicUsize>,
+}
+
+impl ProxyState {
+    /// 给 UI 用的状态快照：`ProxyStatus` 字段 + 活跃连接 + 运行时长 + 当前目标。
+    ///
+    /// 之前 `ProxyServer::get_status` 和 `proxy::handlers::get_status` 各写了一份
+    /// 这段拼接，两个入口的口径会各自漂移；现在只在这里做一次。
+    pub async fn status_snapshot(&self) -> ProxyStatus {
+        let mut status = self.status.read().await.clone();
+        status.active_connections = self.active_connections.load(Ordering::Relaxed);
+
+        if let Some(start) = *self.start_time.read().await {
+            status.uptime_seconds = start.elapsed().as_secs();
+        }
+
+        let current_providers = self.current_providers.read().await;
+        status.active_targets = current_providers
+            .iter()
+            .map(|(app_type, (provider_id, provider_name))| ActiveTarget {
+                app_type: app_type.clone(),
+                provider_id: provider_id.clone(),
+                provider_name: provider_name.clone(),
+            })
+            .collect();
+
+        status
+    }
 }
 
 /// 代理HTTP服务器
@@ -89,6 +121,7 @@ impl ProxyServer {
             codex_chat_history: Arc::new(CodexChatHistoryStore::default()),
             app_handle,
             failover_manager,
+            active_connections: Arc::new(AtomicUsize::new(0)),
         };
 
         Self {
@@ -269,25 +302,7 @@ impl ProxyServer {
     }
 
     pub async fn get_status(&self) -> ProxyStatus {
-        let mut status = self.state.status.read().await.clone();
-
-        // 计算运行时间
-        if let Some(start) = *self.state.start_time.read().await {
-            status.uptime_seconds = start.elapsed().as_secs();
-        }
-
-        // 从 current_providers HashMap 获取每个应用类型当前正在使用的 provider
-        let current_providers = self.state.current_providers.read().await;
-        status.active_targets = current_providers
-            .iter()
-            .map(|(app_type, (provider_id, provider_name))| ActiveTarget {
-                app_type: app_type.clone(),
-                provider_id: provider_id.clone(),
-                provider_name: provider_name.clone(),
-            })
-            .collect();
-
-        status
+        self.state.status_snapshot().await
     }
 
     /// 更新某个应用类型当前“目标供应商”（用于 UI 展示 active_targets）
