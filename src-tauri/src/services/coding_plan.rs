@@ -86,6 +86,22 @@ fn now_millis() -> i64 {
         .as_millis() as i64
 }
 
+/// 凭证失效的回应：三种供应商的形状逐字段相同，只有 error 文案不同。
+fn auth_error(detail: String) -> SubscriptionQuota {
+    SubscriptionQuota {
+        tool: "coding_plan".to_string(),
+        credential_status: CredentialStatus::Expired,
+        credential_message: Some("Invalid API key".to_string()),
+        success: false,
+        tiers: vec![],
+        extra_usage: None,
+        reset_credits: None,
+        credits_balance: None,
+        error: Some(detail),
+        queried_at: Some(now_millis()),
+    }
+}
+
 fn millis_to_iso8601(ms: i64) -> Option<String> {
     let secs = ms / 1000;
     let nsecs = ((ms % 1000) * 1_000_000) as u32;
@@ -408,7 +424,9 @@ async fn query_zhipu_at(url: &str, api_key: &str) -> Result<CodingPlanOutcome, S
 
     let status = resp.status();
     if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
-        return Ok(CodingPlanOutcome::Quota(zhipu_auth_error(status)));
+        return Ok(CodingPlanOutcome::Quota(auth_error(format!(
+            "Authentication failed (HTTP {status})"
+        ))));
     }
 
     if !status.is_success() {
@@ -434,21 +452,6 @@ async fn query_zhipu_at(url: &str, api_key: &str) -> Result<CodingPlanOutcome, S
     };
 
     Ok(zhipu_outcome_from_body(&body))
-}
-
-fn zhipu_auth_error(status: reqwest::StatusCode) -> SubscriptionQuota {
-    SubscriptionQuota {
-        tool: "coding_plan".to_string(),
-        credential_status: CredentialStatus::Expired,
-        credential_message: Some("Invalid API key".to_string()),
-        success: false,
-        tiers: vec![],
-        extra_usage: None,
-        reset_credits: None,
-        credits_balance: None,
-        error: Some(format!("Authentication failed (HTTP {status})")),
-        queried_at: Some(now_millis()),
-    }
 }
 
 /// 智谱个人版：账户没有 Coding Plan（按量付费）单独认出来，交给调用方改查余额。
@@ -963,6 +966,9 @@ async fn query_opencode_go(api_key: &str) -> Result<SubscriptionQuota, String> {
 /// `/provider` / `/provider/v1`。不要复用 provider 的 base_url。
 const COMMAND_CODE_API_BASE: &str = "https://api.commandcode.ai";
 
+/// Command Code 的鉴权失败信息是固定的，不随 HTTP 状态码变化。
+const COMMAND_CODE_AUTH_MESSAGE: &str = "Authentication failed (HTTP 401 Unauthorized)";
+
 enum CommandCodeFetch {
     Body(serde_json::Value),
     AuthExpired,
@@ -1020,21 +1026,6 @@ async fn fetch_command_code_json(
         Err(e) => Ok(CommandCodeFetch::Error(format!(
             "Failed to parse response: {e}"
         ))),
-    }
-}
-
-fn command_code_auth_error() -> SubscriptionQuota {
-    SubscriptionQuota {
-        tool: "coding_plan".to_string(),
-        credential_status: CredentialStatus::Expired,
-        credential_message: Some("Invalid API key".to_string()),
-        success: false,
-        tiers: vec![],
-        extra_usage: None,
-        reset_credits: None,
-        credits_balance: None,
-        error: Some("Authentication failed (HTTP 401 Unauthorized)".to_string()),
-        queried_at: Some(now_millis()),
     }
 }
 
@@ -1163,7 +1154,9 @@ async fn query_command_code_at(base_url: &str, api_key: &str) -> Result<Subscrip
     .await?
     {
         CommandCodeFetch::Body(body) => body,
-        CommandCodeFetch::AuthExpired => return Ok(command_code_auth_error()),
+        CommandCodeFetch::AuthExpired => {
+            return Ok(auth_error(COMMAND_CODE_AUTH_MESSAGE.to_string()))
+        }
         CommandCodeFetch::Error(error) => return Ok(make_error(error)),
     };
 
@@ -1187,7 +1180,9 @@ async fn query_command_code_at(base_url: &str, api_key: &str) -> Result<Subscrip
     .await?
     {
         CommandCodeFetch::Body(body) => body,
-        CommandCodeFetch::AuthExpired => return Ok(command_code_auth_error()),
+        CommandCodeFetch::AuthExpired => {
+            return Ok(auth_error(COMMAND_CODE_AUTH_MESSAGE.to_string()))
+        }
         CommandCodeFetch::Error(error) => return Ok(make_error(error)),
     };
 
@@ -1201,7 +1196,9 @@ async fn query_command_code_at(base_url: &str, api_key: &str) -> Result<Subscrip
     .await?
     {
         CommandCodeFetch::Body(body) => Some(body),
-        CommandCodeFetch::AuthExpired => return Ok(command_code_auth_error()),
+        CommandCodeFetch::AuthExpired => {
+            return Ok(auth_error(COMMAND_CODE_AUTH_MESSAGE.to_string()))
+        }
         CommandCodeFetch::Error(error) => return Ok(make_error(error)),
     };
 
@@ -1228,7 +1225,9 @@ async fn query_command_code_at(base_url: &str, api_key: &str) -> Result<Subscrip
     .await?
     {
         CommandCodeFetch::Body(body) => body,
-        CommandCodeFetch::AuthExpired => return Ok(command_code_auth_error()),
+        CommandCodeFetch::AuthExpired => {
+            return Ok(auth_error(COMMAND_CODE_AUTH_MESSAGE.to_string()))
+        }
         CommandCodeFetch::Error(error) => return Ok(make_error(error)),
     };
 
@@ -1616,21 +1615,6 @@ fn volcengine_success(tiers: Vec<QuotaTier>, plan: Option<String>) -> Subscripti
     }
 }
 
-fn volcengine_auth_error(detail: String) -> SubscriptionQuota {
-    SubscriptionQuota {
-        tool: "coding_plan".to_string(),
-        credential_status: CredentialStatus::Expired,
-        credential_message: Some("Invalid API key".to_string()),
-        success: false,
-        tiers: vec![],
-        extra_usage: None,
-        reset_credits: None,
-        credits_balance: None,
-        error: Some(detail),
-        queried_at: Some(now_millis()),
-    }
-}
-
 async fn query_volcengine(
     base_url: &str,
     access_key_id: &str,
@@ -1648,7 +1632,7 @@ async fn query_volcengine(
 
     // 1) Agent Plan：GetAFPUsage
     match volcengine_openapi_call(&region, access_key_id, secret_access_key, "GetAFPUsage").await {
-        VolcCall::Auth(detail) => return Ok(volcengine_auth_error(detail)),
+        VolcCall::Auth(detail) => return Ok(auth_error(detail)),
         VolcCall::Transient(detail) => return Err(format!("GetAFPUsage: {detail}")),
         VolcCall::Soft(detail) => soft_errors.push(format!("GetAFPUsage: {detail}")),
         VolcCall::Body(body) => {
@@ -1676,7 +1660,7 @@ async fn query_volcengine(
     )
     .await
     {
-        VolcCall::Auth(detail) => return Ok(volcengine_auth_error(detail)),
+        VolcCall::Auth(detail) => return Ok(auth_error(detail)),
         VolcCall::Transient(detail) => return Err(format!("GetCodingPlanUsage: {detail}")),
         VolcCall::Soft(detail) => soft_errors.push(format!("GetCodingPlanUsage: {detail}")),
         VolcCall::Body(body) => {
@@ -1770,7 +1754,7 @@ async fn query_zhipu_team_at(
 
     let status = resp.status();
     if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
-        return Ok(zhipu_auth_error(status));
+        return Ok(auth_error(format!("Authentication failed (HTTP {status})")));
     }
 
     if !status.is_success() {
