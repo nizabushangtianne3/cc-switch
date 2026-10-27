@@ -34,6 +34,7 @@ import {
   ModelDropdown,
   ModelInputWithFetch,
   type DirectModeFormatNotice,
+  type ApiKeyPoolProps,
 } from "./shared";
 import { CopilotAuthSection } from "./CopilotAuthSection";
 import { CodexOAuthSection } from "./CodexOAuthSection";
@@ -61,8 +62,6 @@ import type {
   ProviderCategory,
   ClaudeApiFormat,
   ClaudeApiKeyField,
-  ApiKeyEntry,
-  ApiKeyStrategy,
 } from "@/types";
 import type { ManagedAuthProvider } from "@/lib/api";
 import {
@@ -80,16 +79,12 @@ interface EndpointCandidate {
   url: string;
 }
 
-interface ClaudeFormFieldsProps {
+interface ClaudeFormFieldsProps extends ApiKeyPoolProps {
   providerId?: string;
   // API Key
   shouldShowApiKey: boolean;
   apiKey: string;
   onApiKeyChange: (key: string) => void;
-  apiKeys?: ApiKeyEntry[];
-  apiKeyStrategy?: ApiKeyStrategy;
-  onApiKeysChange?: (entries: ApiKeyEntry[]) => void;
-  onApiKeyStrategyChange?: (strategy: ApiKeyStrategy) => void;
   category?: ProviderCategory;
   shouldShowApiKeyLink: boolean;
   websiteUrl: string;

@@ -6,30 +6,31 @@ import { Button } from "@/components/ui/button";
 import { HelpTip } from "@/components/ui/help-tip";
 import { toast } from "@/lib/toast";
 import EndpointSpeedTest from "./EndpointSpeedTest";
-import { ApiKeySection, EndpointField, ModelInputWithFetch } from "./shared";
+import {
+  ApiKeySection,
+  EndpointField,
+  ModelInputWithFetch,
+  type ApiKeyPoolProps,
+} from "./shared";
 import {
   fetchModelsForConfig,
   getAgyModels,
   showFetchModelsError,
   type FetchedModel,
 } from "@/lib/api/model-fetch";
-import type { ApiKeyEntry, ApiKeyStrategy, ProviderCategory } from "@/types";
+import type { ProviderCategory } from "@/types";
 
 interface EndpointCandidate {
   url: string;
 }
 
-interface GeminiFormFieldsProps {
+interface GeminiFormFieldsProps extends ApiKeyPoolProps {
   appId?: "gemini" | "agy";
   providerId?: string;
   // API Key
   shouldShowApiKey: boolean;
   apiKey: string;
   onApiKeyChange: (key: string) => void;
-  apiKeys?: ApiKeyEntry[];
-  apiKeyStrategy?: ApiKeyStrategy;
-  onApiKeysChange?: (entries: ApiKeyEntry[]) => void;
-  onApiKeyStrategyChange?: (strategy: ApiKeyStrategy) => void;
   category?: ProviderCategory;
   shouldShowApiKeyLink: boolean;
   websiteUrl: string;

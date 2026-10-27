@@ -4,7 +4,16 @@ import { ApiKeyPoolEditor } from "./ApiKeyPoolEditor";
 import type { ApiKeyEntry, ApiKeyStrategy, ProviderCategory } from "@/types";
 import { DEFAULT_API_KEY_STRATEGY } from "@/utils/apiKeyPool";
 
-interface ApiKeySectionProps {
+/** 本地路由供应商的 Key 池字段。三个提供商表单与这里都传同一组。 */
+export interface ApiKeyPoolProps {
+  /** 支持本地路由的供应商传入 Key 池字段后，自动切换为多 Key UI。 */
+  apiKeys?: ApiKeyEntry[];
+  apiKeyStrategy?: ApiKeyStrategy;
+  onApiKeysChange?: (entries: ApiKeyEntry[]) => void;
+  onApiKeyStrategyChange?: (strategy: ApiKeyStrategy) => void;
+}
+
+interface ApiKeySectionProps extends ApiKeyPoolProps {
   id?: string;
   label?: string;
   value: string;
@@ -21,11 +30,6 @@ interface ApiKeySectionProps {
   required?: boolean;
   isPartner?: boolean;
   partnerPromotionKey?: string;
-  /** 支持本地路由的供应商传入 Key 池字段后，自动切换为多 Key UI。 */
-  apiKeys?: ApiKeyEntry[];
-  apiKeyStrategy?: ApiKeyStrategy;
-  onApiKeysChange?: (entries: ApiKeyEntry[]) => void;
-  onApiKeyStrategyChange?: (strategy: ApiKeyStrategy) => void;
 }
 
 export function ApiKeySection({

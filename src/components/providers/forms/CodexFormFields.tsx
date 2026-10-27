@@ -59,6 +59,7 @@ import {
   GptContextWindowHint,
   ModelDropdown,
   type DirectModeFormatNotice,
+  type ApiKeyPoolProps,
 } from "./shared";
 import { XaiOAuthSection } from "./XaiOAuthSection";
 import {
@@ -88,8 +89,6 @@ import {
   metadataFilledAnything,
 } from "./modelMetadataFill";
 import type {
-  ApiKeyEntry,
-  ApiKeyStrategy,
   ClaudeApiKeyField,
   CodexApiFormat,
   CodexCopilotApiFormat,
@@ -134,7 +133,7 @@ export function resolveCopilotReportedPromptLimit(
   return reported ?? current;
 }
 
-interface CodexFormFieldsProps {
+interface CodexFormFieldsProps extends ApiKeyPoolProps {
   appId?: AppId;
   providerId?: string;
   isCopilotPreset?: boolean;
@@ -149,10 +148,6 @@ interface CodexFormFieldsProps {
   // API Key
   codexApiKey: string;
   onApiKeyChange: (key: string) => void;
-  apiKeys?: ApiKeyEntry[];
-  apiKeyStrategy?: ApiKeyStrategy;
-  onApiKeysChange?: (entries: ApiKeyEntry[]) => void;
-  onApiKeyStrategyChange?: (strategy: ApiKeyStrategy) => void;
   category?: ProviderCategory;
   shouldShowApiKeyLink: boolean;
   websiteUrl: string;
