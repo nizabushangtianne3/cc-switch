@@ -6,7 +6,11 @@
 
 use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
-use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{RwLock, RwLockWriteGuard};
+
+// read_inner 只被测试专用的 session_count 使用，见下面 #[cfg(test)] 的几处。
+#[cfg(test)]
+use std::sync::RwLockReadGuard;
 
 /// Composite key for a Gemini shadow session.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -122,7 +126,7 @@ impl Default for GeminiShadowStore {
 
 impl GeminiShadowStore {
     // 观测接口只被单测使用，生产路径一律走 with_limits / Default。
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn new() -> Self {
         Self::default()
     }
@@ -167,7 +171,7 @@ impl GeminiShadowStore {
 
     /// Get the latest assistant content for a provider/session pair.
     // 观测接口只被单测使用；生产路径读整份快照而非单条内容。
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn latest_assistant_content(&self, provider_id: &str, session_id: &str) -> Option<Value> {
         self.get_session(provider_id, session_id)
             .and_then(|snapshot| {
@@ -180,7 +184,7 @@ impl GeminiShadowStore {
 
     /// Get the latest tool calls for a provider/session pair.
     // 观测接口只被单测使用；生产路径读整份快照而非单条 tool_calls。
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn latest_tool_calls(
         &self,
         provider_id: &str,
@@ -210,7 +214,7 @@ impl GeminiShadowStore {
 
     /// Remove a single session from the store.
     // 清理接口只被单测使用；生产路径靠 LRU 上限自然淘汰。
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn clear_session(&self, provider_id: &str, session_id: &str) -> bool {
         let key = GeminiShadowKey::new(provider_id, session_id);
         let mut inner = self.write_inner();
@@ -223,7 +227,7 @@ impl GeminiShadowStore {
 
     /// Remove all sessions for a provider.
     // 清理接口只被单测使用；生产路径靠 LRU 上限自然淘汰。
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn clear_provider(&self, provider_id: &str) -> usize {
         let mut inner = self.write_inner();
         let keys: Vec<_> = inner
@@ -241,11 +245,12 @@ impl GeminiShadowStore {
 
     /// Number of tracked sessions.
     // 观测接口只被单测使用；生产路径不统计会话数。
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn session_count(&self) -> usize {
         self.read_inner().sessions.len()
     }
 
+    #[cfg(test)]
     fn read_inner(&self) -> RwLockReadGuard<'_, GeminiShadowInner> {
         self.inner.read().unwrap_or_else(|poisoned| {
             log::warn!("[GeminiShadow] recovering poisoned read lock");
@@ -279,7 +284,7 @@ impl GeminiShadowStore {
     }
 
     // 只被 clear_session / clear_provider 这两个测试清理接口调用。
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn remove_key_from_order(order: &mut VecDeque<GeminiShadowKey>, key: &GeminiShadowKey) {
         if let Some(pos) = order.iter().position(|existing| existing == key) {
             order.remove(pos);
