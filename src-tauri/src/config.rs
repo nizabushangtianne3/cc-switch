@@ -1028,6 +1028,71 @@ mod tests {
             "测试 home 优先：不得回退到 HOME 下的旧库目录"
         );
     }
+
+    /// `prune_backups_by_extension` 原先在 Hermes 与 OpenClaw 各有一份逐字相同的
+    /// 私有实现、且两边都零测试覆盖；合成一份后把这两条性质钉住。
+    #[test]
+    fn prune_backups_only_prunes_matching_extensions_and_keeps_newest() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let created = std::time::SystemTime::UNIX_EPOCH;
+
+        // 三个匹配扩展名，mtime 依次变新；两个不匹配。
+        for (index, name) in ["a.yaml", "b.yml", "c.yaml"].iter().enumerate() {
+            let path = dir.path().join(name);
+            std::fs::write(&path, b"backup").expect("write matching backup");
+            let file = std::fs::OpenOptions::new()
+                .write(true)
+                .open(&path)
+                .expect("open matching backup");
+            file.set_times(
+                std::fs::FileTimes::new()
+                    .set_modified(created + std::time::Duration::from_secs(index as u64)),
+            )
+            .expect("set mtime");
+        }
+        for name in ["skip.txt", "skip.json"] {
+            std::fs::write(dir.path().join(name), b"not a backup").expect("write other file");
+        }
+
+        crate::config::prune_backups_by_extension(dir.path(), &["yaml", "yml"], "Test")
+            .expect("prune");
+
+        // 不匹配的扩展名一个都不该被碰，且与 retain 取值无关。
+        assert!(dir.path().join("skip.txt").exists(), "txt 不属于备份");
+        assert!(dir.path().join("skip.json").exists(), "json 不在扩展名表里");
+
+        // 匹配的存活数 = min(匹配数, retain)：retain 读全局设置，测试不算死它的值。
+        let retain = crate::settings::effective_backup_retain_count();
+        let survivors: Vec<String> = std::fs::read_dir(dir.path())
+            .expect("read dir")
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name().to_string_lossy().to_string())
+            .collect();
+        let matching = survivors
+            .iter()
+            .filter(|name| name.ends_with(".yaml") || name.ends_with(".yml"))
+            .count();
+        assert_eq!(
+            matching,
+            3.min(retain),
+            "匹配的备份应保留 min(3, retain) 份，实际 {matching} 份"
+        );
+    }
+
+    /// 匹配数不超过保留上限时一个都不删：这条同样与 retain 的具体值无关。
+    #[test]
+    fn prune_backups_keeps_everything_within_the_retain_limit() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        std::fs::write(dir.path().join("a.yaml"), b"backup").expect("write backup");
+
+        crate::config::prune_backups_by_extension(dir.path(), &["yaml", "yml"], "Test")
+            .expect("prune");
+
+        assert!(
+            dir.path().join("a.yaml").exists(),
+            "匹配数不超过保留上限时不该删任何文件"
+        );
+    }
 }
 
 /// 复制文件
@@ -1061,4 +1126,44 @@ pub fn get_claude_config_status() -> ConfigStatus {
         exists: path.exists(),
         path: path.to_string_lossy().to_string(),
     }
+}
+
+/// 按修改时间从旧到新删掉超出保留数的旧备份，只统计扩展名命中 `extensions` 的文件。
+///
+/// Hermes 与 OpenClaw 各有一份逐字相同的私有实现（只差扩展名集合与日志前缀），
+/// 已收成这一份。
+pub(crate) fn prune_backups_by_extension(
+    dir: &Path,
+    extensions: &[&str],
+    label: &str,
+) -> Result<(), AppError> {
+    let retain = crate::settings::effective_backup_retain_count();
+    let mut entries = fs::read_dir(dir)
+        .map_err(|e| AppError::io(dir, e))?
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| {
+            entry
+                .path()
+                .extension()
+                .map(|ext| extensions.iter().any(|want| ext == *want))
+                .unwrap_or(false)
+        })
+        .collect::<Vec<_>>();
+
+    if entries.len() <= retain {
+        return Ok(());
+    }
+
+    entries.sort_by_key(|entry| entry.metadata().and_then(|m| m.modified()).ok());
+    let remove_count = entries.len().saturating_sub(retain);
+    for entry in entries.into_iter().take(remove_count) {
+        if let Err(err) = fs::remove_file(entry.path()) {
+            log::warn!(
+                "Failed to remove old {label} config backup {}: {err}",
+                entry.path().display()
+            );
+        }
+    }
+
+    Ok(())
 }

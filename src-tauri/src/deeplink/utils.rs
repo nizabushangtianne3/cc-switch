@@ -4,7 +4,19 @@
 
 use crate::error::AppError;
 use base64::prelude::*;
+use toml_edit::Item;
 use url::Url;
+
+/// 取 TOML 条目的非空字符串：去掉首尾空白，空串按无值处理。
+///
+/// `codex_link` 与 `grok_link` 都用它读链接附带的 `config.toml` 字段，
+/// 两份逐字相同的私有拷贝已删。
+pub fn non_empty_str(item: Option<&Item>) -> Option<String> {
+    item.and_then(Item::as_str)
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(str::to_string)
+}
 
 /// Validate that a string is a valid HTTP(S) URL
 pub fn validate_url(url_str: &str, field_name: &str) -> Result<(), AppError> {

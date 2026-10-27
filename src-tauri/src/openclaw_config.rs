@@ -5,7 +5,7 @@
 
 use crate::config::{atomic_write, get_app_config_dir};
 use crate::error::AppError;
-use crate::settings::{effective_backup_retain_count, get_openclaw_override_dir};
+use crate::settings::get_openclaw_override_dir;
 use chrono::Local;
 use indexmap::IndexMap;
 use json_five::rt::parser::{
@@ -393,35 +393,7 @@ fn create_openclaw_backup(source: &str) -> Result<PathBuf, AppError> {
 }
 
 fn cleanup_openclaw_backups(dir: &Path) -> Result<(), AppError> {
-    let retain = effective_backup_retain_count();
-    let mut entries = fs::read_dir(dir)
-        .map_err(|e| AppError::io(dir, e))?
-        .filter_map(|entry| entry.ok())
-        .filter(|entry| {
-            entry
-                .path()
-                .extension()
-                .map(|ext| ext == "json5" || ext == "json")
-                .unwrap_or(false)
-        })
-        .collect::<Vec<_>>();
-
-    if entries.len() <= retain {
-        return Ok(());
-    }
-
-    entries.sort_by_key(|entry| entry.metadata().and_then(|m| m.modified()).ok());
-    let remove_count = entries.len().saturating_sub(retain);
-    for entry in entries.into_iter().take(remove_count) {
-        if let Err(err) = fs::remove_file(entry.path()) {
-            log::warn!(
-                "Failed to remove old OpenClaw config backup {}: {err}",
-                entry.path().display()
-            );
-        }
-    }
-
-    Ok(())
+    crate::config::prune_backups_by_extension(dir, &["json5", "json"], "OpenClaw")
 }
 
 fn ensure_object(value: &mut Value) -> &mut Map<String, Value> {

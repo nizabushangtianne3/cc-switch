@@ -11,6 +11,7 @@
 use toml_edit::{DocumentMut, Item, Table, TableLike, Value};
 use url::Url;
 
+use super::utils::non_empty_str;
 use crate::error::AppError;
 use crate::live::floor;
 use crate::live::project::codex::{ROUTE_ID, ROW_TOP_FIELDS};
@@ -253,13 +254,6 @@ fn value_at<'a>(root: &'a Table, segments: &[&str]) -> Option<&'a Value> {
         current = current.get(segment)?.as_table_like()?;
     }
     current.get(last)?.as_value()
-}
-
-fn non_empty_str(item: Option<&Item>) -> Option<String> {
-    item.and_then(Item::as_str)
-        .map(str::trim)
-        .filter(|text| !text.is_empty())
-        .map(str::to_string)
 }
 
 fn undecorated_value(value: &Value) -> Value {

@@ -10,6 +10,7 @@
 
 use toml_edit::{DocumentMut, Item, Table, TableLike, Value};
 
+use super::utils::non_empty_str;
 use crate::error::AppError;
 use crate::grok_config::{DEFAULT_API_BACKEND, DEFAULT_CONTEXT_WINDOW};
 
@@ -190,13 +191,6 @@ fn selected_profile(doc: &DocumentMut) -> Result<(String, &dyn TableLike), AppEr
                 .to_string(),
         )),
     }
-}
-
-fn non_empty_str(item: Option<&Item>) -> Option<String> {
-    item.and_then(Item::as_str)
-        .map(str::trim)
-        .filter(|text| !text.is_empty())
-        .map(str::to_string)
 }
 
 fn undecorated_value(value: &Value) -> Value {
