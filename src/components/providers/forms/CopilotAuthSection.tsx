@@ -24,6 +24,7 @@ import { useCopilotAuth } from "./hooks/useCopilotAuth";
 import {
   ManagedAccountRemoveDialog,
   type ManagedAccountRemoveTarget,
+  confirmManagedAccountRemove,
 } from "./ManagedAccountRemoveDialog";
 import { useManagedAccountUsers } from "./hooks/useManagedAccountUsers";
 import type { GitHubAccount } from "@/lib/api";
@@ -135,20 +136,14 @@ export const CopilotAuthSection: React.FC<CopilotAuthSectionProps> = ({
     }
   }, [accounts, isStatusSuccess, mode, onAccountSelect, selectedAccountId]);
 
-  const confirmRemove = () => {
-    const target = removeTarget;
-    setRemoveTarget(null);
-    if (!target) return;
-    if (target.kind === "all") {
-      logout();
-      return;
-    }
-    removeAccount(target.accountId);
-    // 如果移除的是当前选中的账号，清除选择
-    if (selectedAccountId === target.accountId) {
-      onAccountSelect?.(null);
-    }
-  };
+  const confirmRemove = () =>
+    confirmManagedAccountRemove(removeTarget, {
+      clearTarget: () => setRemoveTarget(null),
+      logout,
+      removeAccount,
+      selectedAccountId,
+      onAccountSelect,
+    });
 
   const statusErrorBanner = isStatusError && (
     <div

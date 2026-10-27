@@ -16,6 +16,34 @@ export type ManagedAccountRemoveTarget =
   | { kind: "one"; accountId: string; login: string }
   | { kind: "all"; accountIds: string[] };
 
+/**
+ * 确认「删除托管账号」这条链路：Copilot 与 xAI 两份实现逐字相同，收在这里。
+ *
+ * 另外两家刻意不走它：Codex 在清选择前还要额外通知 `onSelectionInvalidated`，
+ * Antigravity 则根本没有「选中账号」的概念，见各自 section 里的实现。
+ */
+export function confirmManagedAccountRemove(
+  target: ManagedAccountRemoveTarget | null,
+  handlers: {
+    clearTarget: () => void;
+    logout: () => void;
+    removeAccount: (accountId: string) => void;
+    selectedAccountId: string | null | undefined;
+    onAccountSelect?: (accountId: string | null) => void;
+  },
+): void {
+  if (!target) return;
+  handlers.clearTarget();
+  if (target.kind === "all") {
+    handlers.logout();
+    return;
+  }
+  handlers.removeAccount(target.accountId);
+  if (handlers.selectedAccountId === target.accountId) {
+    handlers.onAccountSelect?.(null);
+  }
+}
+
 interface ManagedAccountRemoveDialogProps {
   target: ManagedAccountRemoveTarget | null;
   /** 服务名：GitHub Copilot / ChatGPT / xAI */

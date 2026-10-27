@@ -29,6 +29,7 @@ import {
   ManagedAccountRemoveDialog,
   ManagedAccountUsage,
   type ManagedAccountRemoveTarget,
+  confirmManagedAccountRemove,
 } from "./ManagedAccountRemoveDialog";
 import { useManagedAccountUsers } from "./hooks/useManagedAccountUsers";
 import {
@@ -106,17 +107,14 @@ export const XaiOAuthSection: React.FC<XaiOAuthSectionProps> = ({
     setRemoveTarget({ kind: "one", accountId, login });
   };
 
-  const confirmRemove = () => {
-    const target = removeTarget;
-    setRemoveTarget(null);
-    if (!target) return;
-    if (target.kind === "all") {
-      logout();
-      return;
-    }
-    removeAccount(target.accountId);
-    if (selectedAccountId === target.accountId) onAccountSelect?.(null);
-  };
+  const confirmRemove = () =>
+    confirmManagedAccountRemove(removeTarget, {
+      clearTarget: () => setRemoveTarget(null),
+      logout,
+      removeAccount,
+      selectedAccountId,
+      onAccountSelect,
+    });
 
   const removeDialog = (
     <ManagedAccountRemoveDialog
