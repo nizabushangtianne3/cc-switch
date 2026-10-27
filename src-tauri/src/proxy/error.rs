@@ -50,8 +50,8 @@ pub enum ProxyError {
     #[error("配置错误: {0}")]
     ConfigError(String),
 
-    // 只由测试构造；保留变体是为了 error_mapper 的 422 映射与错误分类。
-    #[allow(dead_code)]
+    // 转发链路与各 transform_* 适配器大量构造；error_mapper 把它映射成 422，
+    // 错误分类里归为可重试。
     #[error("格式转换错误: {0}")]
     TransformError(String),
 
