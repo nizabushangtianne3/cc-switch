@@ -605,7 +605,7 @@ impl CopilotAuthManager {
     pub async fn list_accounts(&self) -> Vec<GitHubAccount> {
         let accounts = self.accounts.read().await.clone();
         let default_account_id = self.resolve_default_account_id().await;
-        Self::sorted_accounts(&accounts, default_account_id.as_deref())
+        oauth_accounts::sorted_accounts(&accounts, default_account_id.as_deref())
     }
 
     /// 获取指定账号信息
@@ -1277,7 +1277,8 @@ impl CopilotAuthManager {
         let copilot_tokens = self.copilot_tokens.read().await.clone();
         let migration_error = self.migration_error.read().await.clone();
 
-        let account_list = Self::sorted_accounts(&accounts, default_account_id.as_deref());
+        let account_list =
+            oauth_accounts::sorted_accounts(&accounts, default_account_id.as_deref());
         let authenticated = !account_list.is_empty();
         let username = default_account_id
             .as_ref()
@@ -1353,35 +1354,11 @@ impl CopilotAuthManager {
 
     // ==================== 内部方法 ====================
 
-    fn sorted_accounts(
-        accounts: &HashMap<String, GitHubAccountData>,
-        default_account_id: Option<&str>,
-    ) -> Vec<GitHubAccount> {
-        let mut account_list: Vec<GitHubAccount> =
-            accounts.values().map(GitHubAccount::from).collect();
-        account_list.sort_by(|a, b| {
-            let a_default = default_account_id == Some(a.id.as_str());
-            let b_default = default_account_id == Some(b.id.as_str());
-
-            b_default
-                .cmp(&a_default)
-                .then_with(|| b.authenticated_at.cmp(&a.authenticated_at))
-                .then_with(|| a.login.cmp(&b.login))
-        });
-        account_list
-    }
-
     async fn resolve_default_account_id(&self) -> Option<String> {
-        let stored_default = self.default_account_id.read().await.clone();
-        let accounts = self.accounts.read().await;
-
-        if let Some(default_id) = stored_default {
-            if accounts.contains_key(&default_id) {
-                return Some(default_id);
-            }
-        }
-
-        oauth_accounts::fallback_default_account_id(&accounts, |a| Some(a.authenticated_at))
+        oauth_accounts::resolve_default_account_id(&self.default_account_id, &self.accounts, |a| {
+            Some(a.authenticated_at)
+        })
+        .await
     }
 
     /// 获取指定账号的 GitHub 域名

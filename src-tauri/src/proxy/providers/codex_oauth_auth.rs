@@ -1412,7 +1412,7 @@ impl CodexOAuthManager {
     pub async fn list_accounts(&self) -> Vec<GitHubAccount> {
         let accounts = self.accounts.read().await.clone();
         let default_id = self.resolve_default_account_id().await;
-        Self::sorted_accounts(&accounts, default_id.as_deref())
+        oauth_accounts::sorted_accounts(&accounts, default_id.as_deref())
     }
 
     pub async fn remove_account(&self, account_id: &str) -> Result<(), CodexOAuthError> {
@@ -1572,7 +1572,7 @@ impl CodexOAuthManager {
     pub async fn get_status(&self) -> CodexOAuthStatus {
         let accounts_map = self.accounts.read().await.clone();
         let default_id = self.resolve_default_account_id().await;
-        let account_list = Self::sorted_accounts(&accounts_map, default_id.as_deref());
+        let account_list = oauth_accounts::sorted_accounts(&accounts_map, default_id.as_deref());
         let authenticated = !account_list.is_empty();
         let username = default_id
             .as_ref()
@@ -1890,33 +1890,11 @@ impl CodexOAuthManager {
         Ok(account)
     }
 
-    fn sorted_accounts(
-        accounts: &HashMap<String, CodexAccountData>,
-        default_account_id: Option<&str>,
-    ) -> Vec<GitHubAccount> {
-        let mut list: Vec<GitHubAccount> = accounts.values().map(GitHubAccount::from).collect();
-        list.sort_by(|a, b| {
-            let a_default = default_account_id == Some(a.id.as_str());
-            let b_default = default_account_id == Some(b.id.as_str());
-            b_default
-                .cmp(&a_default)
-                .then_with(|| b.authenticated_at.cmp(&a.authenticated_at))
-                .then_with(|| a.login.cmp(&b.login))
-        });
-        list
-    }
-
     async fn resolve_default_account_id(&self) -> Option<String> {
-        let stored = self.default_account_id.read().await.clone();
-        let accounts = self.accounts.read().await;
-
-        if let Some(id) = stored {
-            if accounts.contains_key(&id) {
-                return Some(id);
-            }
-        }
-
-        oauth_accounts::fallback_default_account_id(&accounts, |a| Some(a.authenticated_at))
+        oauth_accounts::resolve_default_account_id(&self.default_account_id, &self.accounts, |a| {
+            Some(a.authenticated_at)
+        })
+        .await
     }
 
     async fn get_refresh_lock(&self, account_id: &str) -> Arc<Mutex<()>> {
