@@ -8,9 +8,9 @@
 //! （`env_http_headers`）或本机证书（`mtls_cert_dir`）的表直接拒绝；`env_key` 丢掉，Key
 //! 用链接自己给的（只给了 `env_key` 的链接由调用方拒绝）。
 
-use toml_edit::{DocumentMut, Item, Table, TableLike, Value};
+use toml_edit::{DocumentMut, Item, Table, TableLike};
 
-use super::utils::non_empty_str;
+use super::utils::{non_empty_str, undecorated};
 use crate::error::AppError;
 use crate::grok_config::{DEFAULT_API_BACKEND, DEFAULT_CONTEXT_WINDOW};
 
@@ -190,30 +190,5 @@ fn selected_profile(doc: &DocumentMut) -> Result<(String, &dyn TableLike), AppEr
              to import"
                 .to_string(),
         )),
-    }
-}
-
-fn undecorated_value(value: &Value) -> Value {
-    let mut value = value.clone();
-    value.decor_mut().clear();
-    value
-}
-
-/// 去掉原文的注释和空白；子表保留成子表。
-fn undecorated(item: &Item) -> Item {
-    match item {
-        Item::Value(value) => Item::Value(undecorated_value(value)),
-        Item::Table(table) => {
-            let mut table = table.clone();
-            table.decor_mut().clear();
-            table.set_implicit(false);
-            for (_, value) in table.iter_mut() {
-                if let Some(value) = value.as_value_mut() {
-                    value.decor_mut().clear();
-                }
-            }
-            Item::Table(table)
-        }
-        other => other.clone(),
     }
 }

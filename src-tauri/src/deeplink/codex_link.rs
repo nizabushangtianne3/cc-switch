@@ -11,7 +11,7 @@
 use toml_edit::{DocumentMut, Item, Table, TableLike, Value};
 use url::Url;
 
-use super::utils::non_empty_str;
+use super::utils::{non_empty_str, undecorated, undecorated_value};
 use crate::error::AppError;
 use crate::live::floor;
 use crate::live::project::codex::{ROUTE_ID, ROW_TOP_FIELDS};
@@ -254,29 +254,4 @@ fn value_at<'a>(root: &'a Table, segments: &[&str]) -> Option<&'a Value> {
         current = current.get(segment)?.as_table_like()?;
     }
     current.get(last)?.as_value()
-}
-
-fn undecorated_value(value: &Value) -> Value {
-    let mut value = value.clone();
-    value.decor_mut().clear();
-    value
-}
-
-/// 去掉原文的注释和空白；子表保留成子表（`[model_providers.custom.http_headers]`）。
-fn undecorated(item: &Item) -> Item {
-    match item {
-        Item::Value(value) => Item::Value(undecorated_value(value)),
-        Item::Table(table) => {
-            let mut table = table.clone();
-            table.decor_mut().clear();
-            table.set_implicit(false);
-            for (_, value) in table.iter_mut() {
-                if let Some(value) = value.as_value_mut() {
-                    value.decor_mut().clear();
-                }
-            }
-            Item::Table(table)
-        }
-        other => other.clone(),
-    }
 }

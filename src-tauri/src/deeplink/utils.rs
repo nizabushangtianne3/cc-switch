@@ -4,7 +4,7 @@
 
 use crate::error::AppError;
 use base64::prelude::*;
-use toml_edit::Item;
+use toml_edit::{Item, Value};
 use url::Url;
 
 /// 取 TOML 条目的非空字符串：去掉首尾空白，空串按无值处理。
@@ -16,6 +16,35 @@ pub fn non_empty_str(item: Option<&Item>) -> Option<String> {
         .map(str::trim)
         .filter(|text| !text.is_empty())
         .map(str::to_string)
+}
+
+/// 去掉值的注释和空白装饰。
+pub fn undecorated_value(value: &Value) -> Value {
+    let mut value = value.clone();
+    value.decor_mut().clear();
+    value
+}
+
+/// 去掉原文的注释和空白；子表保留成子表（`[model_providers.custom.http_headers]`）。
+///
+/// `codex_link` 与 `grok_link` 都用它规范化链接附带的 `config.toml`，两份逐字
+/// 相同的私有拷贝已删。
+pub fn undecorated(item: &Item) -> Item {
+    match item {
+        Item::Value(value) => Item::Value(undecorated_value(value)),
+        Item::Table(table) => {
+            let mut table = table.clone();
+            table.decor_mut().clear();
+            table.set_implicit(false);
+            for (_, value) in table.iter_mut() {
+                if let Some(value) = value.as_value_mut() {
+                    value.decor_mut().clear();
+                }
+            }
+            Item::Table(table)
+        }
+        other => other.clone(),
+    }
 }
 
 /// Validate that a string is a valid HTTP(S) URL
