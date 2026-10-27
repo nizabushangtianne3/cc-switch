@@ -19,6 +19,11 @@ export { useCopilotAuth } from "./useCopilotAuth";
 export { useCodexOauth } from "./useCodexOauth";
 export { useXaiOauth } from "./useXaiOauth";
 export {
+  selectedAccountExists,
+  selectedCodexAccountIsUsable,
+  selectedXaiAccountIsUsable,
+} from "./managedAccountSelection";
+export {
   useDraftEditorProjection,
   type EditorBaseChange,
 } from "./useDraftEditorProjection";

@@ -65,6 +65,11 @@ import {
 import { resolveManagedAccountId } from "@/lib/authBinding";
 import type { ManagedAuthProvider } from "@/lib/api";
 import { useCopilotAuth, useCodexOauth, useXaiOauth } from "./hooks";
+import {
+  selectedAccountExists,
+  selectedCodexAccountIsUsable,
+  selectedXaiAccountIsUsable,
+} from "./hooks";
 import { isOAuthProviderType } from "@/config/constants";
 
 export type ClaudeDesktopProviderFormValues = ProviderFormData & {
@@ -710,31 +715,14 @@ export function ClaudeDesktopProviderForm({
       );
       return;
     }
-    const selectedAccountExists = (
-      accountId: string | null,
-      accounts: Array<{ id: string }>,
-    ) =>
-      accountId === null ||
-      accounts.some((account) => account.id === accountId);
-    const selectedCodexAccountIsUsable = (accountId: string | null) => {
-      const effectiveAccountId =
-        accountId ??
-        codexOauthDefaultAccountId ??
-        codexOauthAccounts.find((account) => account.is_default)?.id ??
-        codexOauthAccounts[0]?.id;
-      return (
-        !!effectiveAccountId &&
-        codexOauthAccounts.some(
-          (account) =>
-            account.id === effectiveAccountId && !account.reauth_required,
-        )
+    const codexAccountUsable = (accountId: string | null) =>
+      selectedCodexAccountIsUsable(
+        accountId,
+        codexOauthDefaultAccountId,
+        codexOauthAccounts,
       );
-    };
-    const selectedXaiAccountIsUsable = (accountId: string | null) =>
-      accountId === null ||
-      xaiOauthAccounts.some(
-        (account) => account.id === accountId && !account.requires_reauth,
-      );
+    const xaiAccountUsable = (accountId: string | null) =>
+      selectedXaiAccountIsUsable(accountId, xaiOauthAccounts);
     const managedAuthState =
       activeProviderType === "github_copilot"
         ? {
@@ -770,9 +758,9 @@ export function ClaudeDesktopProviderForm({
     }
     const selectedManagedAccountIsUsable =
       activeProviderType === "codex_oauth"
-        ? selectedCodexAccountIsUsable(selectedCodexAccountId)
+        ? codexAccountUsable(selectedCodexAccountId)
         : activeProviderType === "xai_oauth"
-          ? selectedXaiAccountIsUsable(selectedXaiAccountId)
+          ? xaiAccountUsable(selectedXaiAccountId)
           : managedAuthState
             ? selectedAccountExists(
                 managedAuthState.accountId,

@@ -128,6 +128,11 @@ import {
   useCodexOauth,
   useXaiOauth,
 } from "./hooks";
+import {
+  selectedAccountExists,
+  selectedCodexAccountIsUsable,
+  selectedXaiAccountIsUsable,
+} from "./hooks";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
   CLAUDE_DEFAULT_CONFIG,
@@ -1503,31 +1508,14 @@ function ProviderFormFull({
       return;
     }
 
-    const selectedAccountExists = (
-      accountId: string | null,
-      accounts: Array<{ id: string }>,
-    ) =>
-      accountId === null ||
-      accounts.some((account) => account.id === accountId);
-    const selectedCodexAccountIsUsable = (accountId: string | null) => {
-      const effectiveAccountId =
-        accountId ??
-        codexOauthDefaultAccountId ??
-        codexOauthAccounts.find((account) => account.is_default)?.id ??
-        codexOauthAccounts[0]?.id;
-      return (
-        !!effectiveAccountId &&
-        codexOauthAccounts.some(
-          (account) =>
-            account.id === effectiveAccountId && !account.reauth_required,
-        )
+    const codexAccountUsable = (accountId: string | null) =>
+      selectedCodexAccountIsUsable(
+        accountId,
+        codexOauthDefaultAccountId,
+        codexOauthAccounts,
       );
-    };
-    const selectedXaiAccountIsUsable = (accountId: string | null) =>
-      accountId === null ||
-      xaiOauthAccounts.some(
-        (account) => account.id === accountId && !account.requires_reauth,
-      );
+    const xaiAccountUsable = (accountId: string | null) =>
+      selectedXaiAccountIsUsable(accountId, xaiOauthAccounts);
     if (
       isCopilotProvider &&
       !selectedAccountExists(selectedGitHubAccountId, copilotAccounts)
@@ -1541,7 +1529,7 @@ function ProviderFormFull({
     }
     if (
       requiresCodexOauthLogin &&
-      !selectedCodexAccountIsUsable(selectedCodexAccountId)
+      !codexAccountUsable(selectedCodexAccountId)
     ) {
       toast.error(
         t("managedAuth.selectedAccountNeedsReauth", {
@@ -1550,10 +1538,7 @@ function ProviderFormFull({
       );
       return;
     }
-    if (
-      isXaiOauthProvider &&
-      !selectedXaiAccountIsUsable(selectedXaiAccountId)
-    ) {
+    if (isXaiOauthProvider && !xaiAccountUsable(selectedXaiAccountId)) {
       toast.error(
         t("managedAuth.selectedAccountNeedsReauth", {
           defaultValue: "已绑定 xAI 账号不存在或需要重新登录",
