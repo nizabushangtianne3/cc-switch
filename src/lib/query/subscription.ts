@@ -206,11 +206,16 @@ export function useXaiOauthQuotaByAccountId(
 }
 
 /**
- * Antigravity 账号的剩余额度（按账号 ID，用该账号自己的令牌直接查，不用先切号）。
- * 授权中心逐个账号、以及绑了这个账号的官方卡共用同一份缓存。
+ * 托管账号剩余额度查询的公共骨架：accountId 已是确定的那一个，不再做空值兜底。
+ *
+ * Antigravity 与 Kimi 官方两份 hook 逐字相同，只差 react-query 的 key 前缀和实际
+ * 调用哪个后端接口，故收在这里。刻意不并进 codex / xai 那两个：它们的 staleTime 与
+ * refetchInterval 策略不同，accountId 还要兜底成 "default"（见各自注释）。
  */
-export function useAgyAccountQuota(
+function useManagedAccountQuota(
+  keyPrefix: "agy_oauth" | "kimi_oauth",
   accountId: string,
+  fetchQuota: (accountId: string) => Promise<SubscriptionQuota>,
   options: UseCodexOauthQuotaOptions = {},
 ) {
   const {
@@ -223,8 +228,8 @@ export function useAgyAccountQuota(
       ? Math.max(autoQueryIntervalMinutes, 1) * 60 * 1000
       : false;
   const query = useQuery({
-    queryKey: ["agy_oauth", "quota", accountId],
-    queryFn: () => subscriptionApi.getAgyAccountQuota(accountId),
+    queryKey: [keyPrefix, "quota", accountId],
+    queryFn: () => fetchQuota(accountId),
     enabled,
     refetchInterval,
     refetchIntervalInBackground: Boolean(refetchInterval),
@@ -237,6 +242,22 @@ export function useAgyAccountQuota(
 }
 
 /**
+ * Antigravity 账号的剩余额度（按账号 ID，用该账号自己的令牌直接查，不用先切号）。
+ * 授权中心逐个账号、以及绑了这个账号的官方卡共用同一份缓存。
+ */
+export function useAgyAccountQuota(
+  accountId: string,
+  options: UseCodexOauthQuotaOptions = {},
+) {
+  return useManagedAccountQuota(
+    "agy_oauth",
+    accountId,
+    subscriptionApi.getAgyAccountQuota,
+    options,
+  );
+}
+
+/**
  * Kimi 官方账号的剩余额度（按授权中心账号 ID，也就是它的供应商 ID）。
  * 令牌快过期时后端会拿 Kimi 同款文件锁续期；授权中心那一行和官方卡共用同一份缓存。
  */
@@ -244,25 +265,10 @@ export function useKimiAccountQuota(
   accountId: string,
   options: UseCodexOauthQuotaOptions = {},
 ) {
-  const {
-    enabled = true,
-    autoQuery = false,
-    autoQueryIntervalMinutes = 5,
-  } = options;
-  const refetchInterval =
-    autoQuery && autoQueryIntervalMinutes > 0
-      ? Math.max(autoQueryIntervalMinutes, 1) * 60 * 1000
-      : false;
-  const query = useQuery({
-    queryKey: ["kimi_oauth", "quota", accountId],
-    queryFn: () => kimiOAuthApi.quota(accountId),
-    enabled,
-    refetchInterval,
-    refetchIntervalInBackground: Boolean(refetchInterval),
-    refetchOnWindowFocus: Boolean(refetchInterval),
-    staleTime: REFETCH_INTERVAL,
-    retry: 1,
-  });
-
-  return useQuotaKeepLastGood(query, accountId);
+  return useManagedAccountQuota(
+    "kimi_oauth",
+    accountId,
+    kimiOAuthApi.quota,
+    options,
+  );
 }
