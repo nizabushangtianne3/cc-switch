@@ -21,7 +21,7 @@ fn prepare(provider: &mut Provider) -> Result<(), AppError> {
 }
 
 pub(super) fn list(state: &AppState) -> Result<IndexMap<String, Provider>, AppError> {
-    let _guard = futures::executor::block_on(state.proxy_service.lock_switch_for_app("omp"));
+    let _guard = state.proxy_service.lock_switch_for_app_blocking("omp");
     if let Err(error) = sync_native(state) {
         log::warn!("Failed to read Oh My Pi providers; showing saved catalog: {error}");
     }
@@ -52,7 +52,7 @@ fn sync_native(state: &AppState) -> Result<usize, AppError> {
     Ok(changed)
 }
 pub(super) fn import_from_live(state: &AppState) -> Result<usize, AppError> {
-    let _guard = futures::executor::block_on(state.proxy_service.lock_switch_for_app("omp"));
+    let _guard = state.proxy_service.lock_switch_for_app_blocking("omp");
     sync_native(state)
 }
 pub(super) fn add(
@@ -60,7 +60,7 @@ pub(super) fn add(
     mut provider: Provider,
     add_to_live: bool,
 ) -> Result<bool, AppError> {
-    let _guard = futures::executor::block_on(state.proxy_service.lock_switch_for_app("omp"));
+    let _guard = state.proxy_service.lock_switch_for_app_blocking("omp");
     prepare(&mut provider)?;
     if state.db.get_provider_by_id(&provider.id, "omp")?.is_some() {
         return Err(AppError::Config("omp.errors.duplicateProvider".into()));
@@ -88,7 +88,7 @@ pub(super) fn update(
     original_id: Option<&str>,
     mut provider: Provider,
 ) -> Result<bool, AppError> {
-    let _guard = futures::executor::block_on(state.proxy_service.lock_switch_for_app("omp"));
+    let _guard = state.proxy_service.lock_switch_for_app_blocking("omp");
     if original_id.is_some_and(|id| id != provider.id) {
         return Err(AppError::Config("omp.errors.renameProvider".into()));
     }
@@ -108,13 +108,13 @@ pub(super) fn update(
     )
 }
 pub(super) fn delete(state: &AppState, id: &str) -> Result<(), AppError> {
-    let _guard = futures::executor::block_on(state.proxy_service.lock_switch_for_app("omp"));
+    let _guard = state.proxy_service.lock_switch_for_app_blocking("omp");
     omp_config::change_and_commit(id, None, Change::Remove, |_| {
         state.db.delete_provider("omp", id)
     })
 }
 pub(super) fn remove(state: &AppState, id: &str) -> Result<(), AppError> {
-    let _guard = futures::executor::block_on(state.proxy_service.lock_switch_for_app("omp"));
+    let _guard = state.proxy_service.lock_switch_for_app_blocking("omp");
     let mut provider = state
         .db
         .get_provider_by_id(id, "omp")?
@@ -128,7 +128,7 @@ pub(super) fn remove(state: &AppState, id: &str) -> Result<(), AppError> {
     })
 }
 pub(super) fn enable(state: &AppState, id: &str) -> Result<SwitchResult, AppError> {
-    let _guard = futures::executor::block_on(state.proxy_service.lock_switch_for_app("omp"));
+    let _guard = state.proxy_service.lock_switch_for_app_blocking("omp");
     let mut provider = state
         .db
         .get_provider_by_id(id, "omp")?

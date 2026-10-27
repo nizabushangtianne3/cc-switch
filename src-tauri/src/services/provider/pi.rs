@@ -9,7 +9,7 @@ use serde_json::Value;
 const PI_APP: &str = "pi";
 
 pub(super) fn list(state: &AppState) -> Result<IndexMap<String, Provider>, AppError> {
-    let _guard = futures::executor::block_on(state.proxy_service.lock_switch_for_app(PI_APP));
+    let _guard = state.proxy_service.lock_switch_for_app_blocking(PI_APP);
     let providers = match crate::pi_config::read_pi_native_providers() {
         Ok(native) => match sync_native_locked(state, &native) {
             Ok((_, providers)) => providers,
@@ -27,7 +27,7 @@ pub(super) fn list(state: &AppState) -> Result<IndexMap<String, Provider>, AppEr
 }
 
 pub(super) fn import_from_live(state: &AppState) -> Result<usize, AppError> {
-    let _guard = futures::executor::block_on(state.proxy_service.lock_switch_for_app(PI_APP));
+    let _guard = state.proxy_service.lock_switch_for_app_blocking(PI_APP);
     let native = crate::pi_config::read_pi_native_providers()?;
     let (changed, _providers) = sync_native_locked(state, &native)?;
     Ok(changed)
@@ -39,8 +39,9 @@ pub(super) fn add(
     add_to_live: bool,
 ) -> Result<bool, AppError> {
     let app_type = AppType::Pi;
-    let _guard =
-        futures::executor::block_on(state.proxy_service.lock_switch_for_app(app_type.as_str()));
+    let _guard = state
+        .proxy_service
+        .lock_switch_for_app_blocking(app_type.as_str());
     strip_unsupported_pi_metadata(&mut provider);
     ProviderService::validate_provider_settings(&app_type, &provider)?;
     align_native_display_name(&mut provider);
@@ -98,8 +99,9 @@ pub(super) fn update_usage_script(
             "Usage metadata updates only support Pi and Omp".into(),
         ));
     }
-    let _guard =
-        futures::executor::block_on(state.proxy_service.lock_switch_for_app(app_type.as_str()));
+    let _guard = state
+        .proxy_service
+        .lock_switch_for_app_blocking(app_type.as_str());
     super::validate_usage_script(&script)?;
 
     let mut provider = state
@@ -124,8 +126,9 @@ pub(super) fn update(
     mut provider: Provider,
 ) -> Result<bool, AppError> {
     let app_type = AppType::Pi;
-    let _guard =
-        futures::executor::block_on(state.proxy_service.lock_switch_for_app(app_type.as_str()));
+    let _guard = state
+        .proxy_service
+        .lock_switch_for_app_blocking(app_type.as_str());
     let original_id = original_id.unwrap_or(&provider.id).to_string();
     if original_id != provider.id {
         return Err(AppError::InvalidInput(
@@ -162,8 +165,9 @@ pub(super) fn update(
 
 pub(super) fn delete(state: &AppState, id: &str) -> Result<(), AppError> {
     let app_type = AppType::Pi;
-    let _guard =
-        futures::executor::block_on(state.proxy_service.lock_switch_for_app(app_type.as_str()));
+    let _guard = state
+        .proxy_service
+        .lock_switch_for_app_blocking(app_type.as_str());
     if !state.db.provider_exists(app_type.as_str(), id)? {
         return Ok(());
     }
@@ -187,8 +191,9 @@ pub(super) fn delete(state: &AppState, id: &str) -> Result<(), AppError> {
 
 pub(super) fn remove(state: &AppState, id: &str) -> Result<(), AppError> {
     let app_type = AppType::Pi;
-    let _guard =
-        futures::executor::block_on(state.proxy_service.lock_switch_for_app(app_type.as_str()));
+    let _guard = state
+        .proxy_service
+        .lock_switch_for_app_blocking(app_type.as_str());
     let provider = state
         .db
         .get_provider_by_id(id, app_type.as_str())?
@@ -211,8 +216,9 @@ pub(super) fn remove(state: &AppState, id: &str) -> Result<(), AppError> {
 
 pub(super) fn enable(state: &AppState, id: &str) -> Result<SwitchResult, AppError> {
     let app_type = AppType::Pi;
-    let _guard =
-        futures::executor::block_on(state.proxy_service.lock_switch_for_app(app_type.as_str()));
+    let _guard = state
+        .proxy_service
+        .lock_switch_for_app_blocking(app_type.as_str());
     let provider = state
         .db
         .get_provider_by_id(id, app_type.as_str())?

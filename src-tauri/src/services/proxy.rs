@@ -80,6 +80,17 @@ impl ProxyService {
         self.switch_locks.lock_for_app(app_type).await
     }
 
+    /// 同步上下文里取应用切换锁。
+    ///
+    /// 内部 `block_on`，所以**只能**从同步命令/同步函数调用：放进 async 命令会在运行时
+    /// 线程上 panic。async 上下文请直接用 [`Self::lock_switch_for_app`] 并 await。
+    pub(crate) fn lock_switch_for_app_blocking(
+        &self,
+        app_type: &str,
+    ) -> tokio::sync::OwnedMutexGuard<()> {
+        futures::executor::block_on(self.lock_switch_for_app(app_type))
+    }
+
     /// 启动代理服务器。成功、失败都让托盘比对一次（图标圆点、问题区、「退出」的后果跟着变）。
     pub async fn start(&self) -> Result<ProxyServerInfo, String> {
         let result = self.start_server().await;
