@@ -14,6 +14,7 @@ use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
 
 use super::copilot_auth::GitHubDeviceCodeResponse;
+use super::oauth_accounts;
 
 const XAI_ISSUER: &str = "https://auth.x.ai";
 const XAI_DISCOVERY_URL: &str = "https://auth.x.ai/.well-known/openid-configuration";
@@ -443,7 +444,9 @@ impl XaiOAuthManager {
         }
         let stored_default = self.default_account_id.read().await.clone();
         let default_account_id = if stored_default.as_deref() == Some(account_id) {
-            Self::fallback_default_account_id(&accounts)
+            oauth_accounts::fallback_default_account_id(&accounts, |a| {
+                (!a.requires_reauth).then_some(a.authenticated_at)
+            })
         } else {
             stored_default.filter(|id| Self::is_usable_account(&accounts, id))
         };
@@ -659,7 +662,9 @@ impl XaiOAuthManager {
             .get_mut(account_id)
             .ok_or_else(|| XaiOAuthError::AccountNotFound(account_id.to_string()))?;
         account.requires_reauth = true;
-        let default_account_id = Self::fallback_default_account_id(&accounts);
+        let default_account_id = oauth_accounts::fallback_default_account_id(&accounts, |a| {
+            (!a.requires_reauth).then_some(a.authenticated_at)
+        });
         self.persist_and_commit(accounts, default_account_id)
             .await?;
         self.access_tokens.write().await.remove(account_id);
@@ -746,21 +751,10 @@ impl XaiOAuthManager {
         let accounts = self.accounts.read().await;
         match stored {
             Some(id) if Self::is_usable_account(&accounts, &id) => Some(id),
-            _ => Self::fallback_default_account_id(&accounts),
+            _ => oauth_accounts::fallback_default_account_id(&accounts, |a| {
+                (!a.requires_reauth).then_some(a.authenticated_at)
+            }),
         }
-    }
-
-    fn fallback_default_account_id(accounts: &HashMap<String, XaiAccountData>) -> Option<String> {
-        accounts
-            .iter()
-            .filter(|(_, account)| !account.requires_reauth)
-            .max_by(|(id_a, account_a), (id_b, account_b)| {
-                account_a
-                    .authenticated_at
-                    .cmp(&account_b.authenticated_at)
-                    .then_with(|| id_b.cmp(id_a))
-            })
-            .map(|(id, _)| id.clone())
     }
 
     fn is_usable_account(accounts: &HashMap<String, XaiAccountData>, id: &str) -> bool {
@@ -1111,7 +1105,8 @@ mod tests {
             },
         );
         assert_eq!(
-            XaiOAuthManager::fallback_default_account_id(&accounts),
+            oauth_accounts::fallback_default_account_id(&accounts, |a| (!a.requires_reauth)
+                .then_some(a.authenticated_at)),
             Some("valid".to_string())
         );
     }

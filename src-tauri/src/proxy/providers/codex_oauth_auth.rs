@@ -30,6 +30,7 @@ use tokio::sync::{Mutex, RwLock};
 use uuid::Uuid;
 
 use super::copilot_auth::{GitHubAccount, GitHubDeviceCodeResponse};
+use super::oauth_accounts;
 
 mod browser;
 
@@ -1462,7 +1463,9 @@ impl CodexOAuthManager {
             let accounts = self.accounts.read().await;
             let mut default = self.default_account_id.write().await;
             if default.as_deref() == Some(account_id) {
-                *default = Self::fallback_default_account_id(&accounts);
+                *default = oauth_accounts::fallback_default_account_id(&accounts, |a| {
+                    Some(a.authenticated_at)
+                });
             }
         }
 
@@ -1887,17 +1890,6 @@ impl CodexOAuthManager {
         Ok(account)
     }
 
-    fn fallback_default_account_id(accounts: &HashMap<String, CodexAccountData>) -> Option<String> {
-        accounts
-            .iter()
-            .max_by(|(id_a, a), (id_b, b)| {
-                a.authenticated_at
-                    .cmp(&b.authenticated_at)
-                    .then_with(|| id_b.cmp(id_a))
-            })
-            .map(|(id, _)| id.clone())
-    }
-
     fn sorted_accounts(
         accounts: &HashMap<String, CodexAccountData>,
         default_account_id: Option<&str>,
@@ -1924,7 +1916,7 @@ impl CodexOAuthManager {
             }
         }
 
-        Self::fallback_default_account_id(&accounts)
+        oauth_accounts::fallback_default_account_id(&accounts, |a| Some(a.authenticated_at))
     }
 
     async fn get_refresh_lock(&self, account_id: &str) -> Arc<Mutex<()>> {
@@ -2025,7 +2017,9 @@ impl CodexOAuthManager {
             *default = store.default_account_id;
             if default.is_none() {
                 if let Ok(accounts) = self.accounts.try_read() {
-                    *default = Self::fallback_default_account_id(&accounts);
+                    *default = oauth_accounts::fallback_default_account_id(&accounts, |a| {
+                        Some(a.authenticated_at)
+                    });
                 }
             }
         }

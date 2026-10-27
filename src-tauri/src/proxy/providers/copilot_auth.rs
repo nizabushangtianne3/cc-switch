@@ -22,6 +22,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
 
+use super::oauth_accounts;
 use crate::proxy::error::ProxyError;
 
 /// GitHub OAuth 客户端 ID（VS Code）- 用于 github.com
@@ -651,7 +652,9 @@ impl CopilotAuthManager {
             let accounts = self.accounts.read().await;
             let mut default_account_id = self.default_account_id.write().await;
             if default_account_id.as_deref() == Some(account_id) {
-                *default_account_id = Self::fallback_default_account_id(&accounts);
+                *default_account_id = oauth_accounts::fallback_default_account_id(&accounts, |a| {
+                    Some(a.authenticated_at)
+                });
             }
         }
 
@@ -1350,19 +1353,6 @@ impl CopilotAuthManager {
 
     // ==================== 内部方法 ====================
 
-    fn fallback_default_account_id(
-        accounts: &HashMap<String, GitHubAccountData>,
-    ) -> Option<String> {
-        accounts
-            .iter()
-            .max_by(|(id_a, a), (id_b, b)| {
-                a.authenticated_at
-                    .cmp(&b.authenticated_at)
-                    .then_with(|| id_b.cmp(id_a))
-            })
-            .map(|(id, _)| id.clone())
-    }
-
     fn sorted_accounts(
         accounts: &HashMap<String, GitHubAccountData>,
         default_account_id: Option<&str>,
@@ -1391,7 +1381,7 @@ impl CopilotAuthManager {
             }
         }
 
-        Self::fallback_default_account_id(&accounts)
+        oauth_accounts::fallback_default_account_id(&accounts, |a| Some(a.authenticated_at))
     }
 
     /// 获取指定账号的 GitHub 域名
@@ -1538,7 +1528,10 @@ impl CopilotAuthManager {
                 *default_account_id = store.default_account_id;
                 if default_account_id.is_none() {
                     if let Ok(accounts) = self.accounts.try_read() {
-                        *default_account_id = Self::fallback_default_account_id(&accounts);
+                        *default_account_id =
+                            oauth_accounts::fallback_default_account_id(&accounts, |a| {
+                                Some(a.authenticated_at)
+                            });
                     }
                 }
             }
@@ -1948,7 +1941,7 @@ mod tests {
         );
 
         assert_eq!(
-            CopilotAuthManager::fallback_default_account_id(&accounts),
+            oauth_accounts::fallback_default_account_id(&accounts, |a| Some(a.authenticated_at)),
             Some("67890".to_string())
         );
     }
