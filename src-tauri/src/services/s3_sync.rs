@@ -5,7 +5,6 @@
 
 use std::collections::BTreeMap;
 
-use chrono::Utc;
 use serde_json::Value;
 
 use crate::error::AppError;
@@ -160,14 +159,7 @@ fn persist_sync_success(
     manifest_hash: String,
     etag: Option<String>,
 ) -> Result<(), AppError> {
-    let status = WebDavSyncStatus {
-        last_sync_at: Some(Utc::now().timestamp()),
-        last_error: None,
-        last_error_source: None,
-        last_local_manifest_hash: Some(manifest_hash.clone()),
-        last_remote_manifest_hash: Some(manifest_hash),
-        last_remote_etag: etag,
-    };
+    let status = WebDavSyncStatus::synced(manifest_hash, etag);
     settings.status = status.clone();
     update_s3_sync_status(status)
 }

@@ -120,6 +120,23 @@ pub struct WebDavSyncStatus {
     pub last_remote_manifest_hash: Option<String>,
 }
 
+impl WebDavSyncStatus {
+    /// 一次成功同步写入的状态：时间取现在，错误字段清空，manifest 哈希与 ETag 记上去。
+    ///
+    /// S3 和 WebDAV 同步成功后都记这一份；本地 manifest 与远端 manifest 记同一个值，
+    /// 因为上传和下载走的是同一份 manifest。
+    pub(crate) fn synced(manifest_hash: String, etag: Option<String>) -> Self {
+        Self {
+            last_sync_at: Some(chrono::Utc::now().timestamp()),
+            last_error: None,
+            last_error_source: None,
+            last_local_manifest_hash: Some(manifest_hash.clone()),
+            last_remote_manifest_hash: Some(manifest_hash),
+            last_remote_etag: etag,
+        }
+    }
+}
+
 fn default_remote_root() -> String {
     "cc-switch-sync".to_string()
 }
