@@ -317,6 +317,51 @@ export function CopilotAccountQuota({
   );
 }
 
+/**
+ * 托管账号额度列的公共外壳：xAI / Kimi / Antigravity 三个组件逐字相同，只差调哪个
+ * hook 查额度，故收在这里。查询本身由各自的 hook 负责（key 前缀和兜底策略不同），
+ * 这里只管把结果画成同一列。
+ *
+ * `emptyNoteKey` 是「查成功但一档都没有」时要显示的那句灰字：只有 Kimi 官方号会
+ * 遇到（没订阅 Kimi Code 的号返回空对象），其余两家不传。
+ */
+function ManagedAccountQuotaColumn({
+  login,
+  quota,
+  loading,
+  refetch,
+  emptyNoteKey,
+}: {
+  login: string;
+  quota: SubscriptionQuota | undefined;
+  loading: boolean;
+  refetch: () => void;
+  emptyNoteKey?: string;
+}) {
+  const { t, i18n } = useTranslation();
+  const display = useQuotaDisplay();
+  const state = subscriptionQuotaState(
+    t,
+    quota,
+    loading,
+    i18n.language,
+    display,
+  );
+  return (
+    <AccountQuotaColumn
+      login={login}
+      state={
+        emptyNoteKey && !state && quota?.success
+          ? { kind: "note", text: t(emptyNoteKey) }
+          : state
+      }
+      queriedAt={quota?.queriedAt ?? null}
+      loading={loading}
+      onRefresh={() => void refetch()}
+    />
+  );
+}
+
 /** xAI 账号的订阅额度（get_xai_oauth_quota(accountId)） */
 export function XaiAccountQuota({
   accountId,
@@ -325,8 +370,6 @@ export function XaiAccountQuota({
   accountId: string;
   login: string;
 }) {
-  const { t, i18n } = useTranslation();
-  const display = useQuotaDisplay();
   const {
     data: quota,
     isFetching: loading,
@@ -336,12 +379,11 @@ export function XaiAccountQuota({
     autoQuery: false,
   });
   return (
-    <AccountQuotaColumn
+    <ManagedAccountQuotaColumn
       login={login}
-      state={subscriptionQuotaState(t, quota, loading, i18n.language, display)}
-      queriedAt={quota?.queriedAt ?? null}
+      quota={quota}
       loading={loading}
-      onRefresh={() => void refetch()}
+      refetch={refetch}
     />
   );
 }
@@ -354,32 +396,18 @@ export function KimiAccountQuota({
   accountId: string;
   login: string;
 }) {
-  const { t, i18n } = useTranslation();
-  const display = useQuotaDisplay();
   const {
     data: quota,
     isFetching: loading,
     refetch,
   } = useKimiAccountQuota(accountId, { enabled: true, autoQuery: false });
-  const state = subscriptionQuotaState(
-    t,
-    quota,
-    loading,
-    i18n.language,
-    display,
-  );
   return (
-    <AccountQuotaColumn
+    <ManagedAccountQuotaColumn
       login={login}
-      // 没订阅 Kimi Code 的号，额度接口返回空对象：查成功但一档都没有
-      state={
-        !state && quota?.success
-          ? { kind: "note", text: t("kimi.oauth.noSubscription") }
-          : state
-      }
-      queriedAt={quota?.queriedAt ?? null}
+      quota={quota}
       loading={loading}
-      onRefresh={() => void refetch()}
+      refetch={refetch}
+      emptyNoteKey="kimi.oauth.noSubscription"
     />
   );
 }
@@ -392,20 +420,17 @@ export function AgyAccountQuota({
   accountId: string;
   login: string;
 }) {
-  const { t, i18n } = useTranslation();
-  const display = useQuotaDisplay();
   const {
     data: quota,
     isFetching: loading,
     refetch,
   } = useAgyAccountQuota(accountId, { enabled: true, autoQuery: false });
   return (
-    <AccountQuotaColumn
+    <ManagedAccountQuotaColumn
       login={login}
-      state={subscriptionQuotaState(t, quota, loading, i18n.language, display)}
-      queriedAt={quota?.queriedAt ?? null}
+      quota={quota}
       loading={loading}
-      onRefresh={() => void refetch()}
+      refetch={refetch}
     />
   );
 }
