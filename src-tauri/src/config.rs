@@ -370,6 +370,31 @@ pub fn read_json_file<T: for<'a> Deserialize<'a>>(path: &Path) -> Result<T, AppE
     serde_json::from_str(&content).map_err(|e| AppError::json(path, e))
 }
 
+/// 读 JSON 配置，文件不存在时按空对象返回（调用方接着往里塞键）。
+///
+/// 跟 [`read_json_file`] 的差别就在缺文件这一步：那里报错，这里给 `{}`——
+/// `claude_mcp` 与 `gemini_mcp` 要的是"没有 mcpServers 就是空的"。
+pub(crate) fn read_json_value(path: &Path) -> Result<Value, AppError> {
+    if !path.exists() {
+        return Ok(serde_json::json!({}));
+    }
+    let content = fs::read_to_string(path).map_err(|e| AppError::io(path, e))?;
+    let value: Value = serde_json::from_str(&content).map_err(|e| AppError::json(path, e))?;
+    Ok(value)
+}
+
+/// 原样写 JSON 配置（不排序键，保留调用方给定的字段顺序）。
+///
+/// 跟 [`write_json_file`] 的差别也是排序：那条会把键按字母排，这里不排。
+pub(crate) fn write_json_value(path: &Path, value: &Value) -> Result<(), AppError> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| AppError::io(parent, e))?;
+    }
+    let json =
+        serde_json::to_string_pretty(value).map_err(|e| AppError::JsonSerialize { source: e })?;
+    atomic_write(path, json.as_bytes())
+}
+
 /// 递归排序 JSON 对象的键（按字母顺序），确保序列化输出是确定性的
 fn sort_json_keys(value: &Value) -> Value {
     match value {

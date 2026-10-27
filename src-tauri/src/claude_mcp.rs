@@ -4,7 +4,7 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::config::{atomic_write, get_claude_mcp_path, is_wsl_path};
+use crate::config::{get_claude_mcp_path, is_wsl_path, read_json_value, write_json_value};
 use crate::error::AppError;
 
 /// 需要在 Windows 上用 cmd /c 包装的命令
@@ -75,24 +75,6 @@ pub struct McpStatus {
 
 fn user_config_path() -> PathBuf {
     get_claude_mcp_path()
-}
-
-fn read_json_value(path: &Path) -> Result<Value, AppError> {
-    if !path.exists() {
-        return Ok(serde_json::json!({}));
-    }
-    let content = fs::read_to_string(path).map_err(|e| AppError::io(path, e))?;
-    let value: Value = serde_json::from_str(&content).map_err(|e| AppError::json(path, e))?;
-    Ok(value)
-}
-
-fn write_json_value(path: &Path, value: &Value) -> Result<(), AppError> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| AppError::io(parent, e))?;
-    }
-    let json =
-        serde_json::to_string_pretty(value).map_err(|e| AppError::JsonSerialize { source: e })?;
-    atomic_write(path, json.as_bytes())
 }
 
 pub fn get_mcp_status() -> Result<McpStatus, AppError> {
