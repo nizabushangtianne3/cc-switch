@@ -1,10 +1,13 @@
-//! SQL fragment helpers shared across usage aggregation queries.
+//! SQL fragment helpers shared across usage aggregation queries, plus the
+//! schema introspection probe that the `session_usage_*` importers share.
 //!
 //! Anthropic reports `input_tokens` as fresh (cache reads counted
 //! separately); OpenAI Responses API and Google Gemini's
 //! `promptTokenCount` both include the cached portion. Any aggregation
 //! summing `input_tokens` across providers must route through
 //! [`fresh_input_sql`] to recover a consistent semantics.
+
+use crate::error::AppError;
 
 /// Set of `app_type` values whose stored `input_tokens` already includes
 /// `cache_read_tokens`. Aggregations subtract cache reads from these rows
@@ -83,6 +86,19 @@ pub fn real_total_tokens_sql(alias: &str) -> String {
     )
 }
 
+/// 目标库里这张表在不在。
+///
+/// `session_usage_codex` 与 `session_usage_opencode` 各有一份逐字相同的私有副本，
+/// 已收成这里——两个 importer 都要先确认外部库的表没被用户删掉再查。
+pub fn sqlite_table_exists(conn: &rusqlite::Connection, table: &str) -> Result<bool, AppError> {
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1)",
+        [table],
+        |row| row.get(0),
+    )
+    .map_err(|error| AppError::Database(format!("查询表 {table} 失败: {error}")))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -103,6 +119,13 @@ mod tests {
         )
         .unwrap();
         conn
+    }
+
+    #[test]
+    fn sqlite_table_exists_reports_missing_and_present_tables() {
+        let conn = setup_conn();
+        assert!(sqlite_table_exists(&conn, "proxy_request_logs").unwrap());
+        assert!(!sqlite_table_exists(&conn, "not_a_table").unwrap());
     }
 
     #[test]

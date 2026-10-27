@@ -22,6 +22,7 @@ use crate::proxy::usage::parser::TokenUsage;
 use crate::services::session_usage::{
     metadata_modified_nanos, update_sync_state, SessionSyncResult,
 };
+use crate::services::sql_helpers::sqlite_table_exists;
 use crate::services::usage_stats::{find_model_pricing, should_skip_session_insert, DedupKey};
 use rust_decimal::Decimal;
 use std::fs;
@@ -67,15 +68,6 @@ fn detect_schema(conn: &rusqlite::Connection) -> Result<OpenCodeSchema, AppError
     } else {
         Ok(OpenCodeSchema::V1)
     }
-}
-
-fn sqlite_table_exists(conn: &rusqlite::Connection, table: &str) -> Result<bool, AppError> {
-    conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1)",
-        [table],
-        |row| row.get(0),
-    )
-    .map_err(|error| AppError::Database(format!("查询表 {table} 失败: {error}")))
 }
 
 /// 同步 OpenCode 使用数据

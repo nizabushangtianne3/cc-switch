@@ -25,7 +25,7 @@ use crate::services::session_usage::{
     parse_timestamp_millis, update_sync_state, update_sync_state_on_conn, EstimatedTiming,
     SessionSyncResult,
 };
-use crate::services::sql_helpers::INPUT_TOKEN_SEMANTICS_TOTAL;
+use crate::services::sql_helpers::{sqlite_table_exists, INPUT_TOKEN_SEMANTICS_TOTAL};
 use crate::services::usage_stats::{
     find_model_pricing, has_suspected_codex_session_duplicate, should_skip_session_insert, DedupKey,
 };
@@ -549,15 +549,6 @@ fn is_codex_cursor_path(file_path: &str, codex_dir: &Path) -> bool {
         .replace('\\', "/")
         .split('/')
         .any(|segment| matches!(segment, "sessions" | "archived_sessions"))
-}
-
-fn sqlite_table_exists(conn: &rusqlite::Connection, table: &str) -> Result<bool, AppError> {
-    conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1)",
-        [table],
-        |row| row.get(0),
-    )
-    .map_err(|error| AppError::Database(format!("查询表 {table} 失败: {error}")))
 }
 
 fn sqlite_column_exists(
