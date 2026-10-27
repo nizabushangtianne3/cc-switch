@@ -290,14 +290,14 @@ impl CircuitBreaker {
     /// 获取当前状态
     ///
     /// 断路器状态读取只服务于单元测试与诊断，`--lib` 视角下没有调用方，
-    /// 因此保留 #[allow(dead_code)]；删掉它会让 forwarder 的熔断用例编不过。
-    #[allow(dead_code)]
+    /// 按测试专用编译，生产构建不带它。
+    #[cfg(test)]
     pub async fn get_state(&self) -> CircuitState {
         *self.state.read().await
     }
 
     /// 获取统计信息
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub async fn get_stats(&self) -> CircuitBreakerStats {
         CircuitBreakerStats {
             state: *self.state.read().await,
@@ -309,7 +309,7 @@ impl CircuitBreaker {
     }
 
     /// 重置熔断器（手动恢复）
-    #[allow(dead_code)]
+    /// 生产路径经 `ProviderRouter::reset_provider_breaker` 手动重置时调用。
     pub async fn reset(&self) {
         log::info!("[{}] 熔断器手动重置 → Closed", log_cb::MANUAL_RESET);
         self.transition_to_closed().await;
