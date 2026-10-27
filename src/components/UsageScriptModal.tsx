@@ -273,14 +273,14 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
       baseUrl: string | undefined;
     } => {
       try {
-        const config = provider.settingsConfig;
+        const config = provider.settingsConfig as Record<string, any>;
         if (!config) return { apiKey: undefined, baseUrl: undefined };
 
         // 处理不同应用的配置格式
         if (appId === "claude" || appId === "claude-desktop") {
           // Claude / Claude Desktop: { env: { ANTHROPIC_AUTH_TOKEN | ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL } }
           // Key fallbacks mirror the backend resolver (Provider::resolve_usage_credentials).
-          const env = (config as any).env || {};
+          const env = config.env || {};
           return {
             apiKey:
               env.ANTHROPIC_AUTH_TOKEN ||
@@ -291,8 +291,8 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
           };
         } else if (appId === "codex") {
           // Codex: { auth: { OPENAI_API_KEY }, config: TOML string with base_url }
-          const auth = (config as any).auth || {};
-          const configToml = (config as any).config || "";
+          const auth = config.auth || {};
+          const configToml = config.config || "";
           const apiKey =
             typeof auth.OPENAI_API_KEY === "string" &&
             auth.OPENAI_API_KEY.trim()
@@ -305,16 +305,13 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
         } else if (appId === "gemini" || appId === "agy") {
           // Gemini: { env: { GEMINI_API_KEY, GOOGLE_GEMINI_BASE_URL } }
           // Key fallback mirrors the backend resolver (Provider::resolve_usage_credentials).
-          const env = (config as any).env || {};
+          const env = config.env || {};
           return {
             apiKey: env.GEMINI_API_KEY || env.GOOGLE_API_KEY,
             baseUrl: env.GOOGLE_GEMINI_BASE_URL,
           };
         } else if (appId === "grokbuild") {
-          const grokConfig = parseGrokBuildConfig(
-            (config as any).config,
-            provider.name,
-          );
+          const grokConfig = parseGrokBuildConfig(config.config, provider.name);
           return {
             apiKey: grokConfig.apiKey,
             baseUrl: grokConfig.baseUrl,
@@ -322,28 +319,27 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
         } else if (appId === "hermes") {
           // Hermes: settingsConfig 顶层扁平（snake_case，对应 config.yaml）
           return {
-            apiKey: (config as any).api_key,
-            baseUrl: (config as any).base_url,
+            apiKey: config.api_key,
+            baseUrl: config.base_url,
           };
         } else if (appId === "pi" || appId === "omp") {
           // Pi / Oh My Pi: provider values are camelCase; a model may override baseUrl.
-          const root = config as any;
-          const firstModel = Array.isArray(root.models)
-            ? root.models[0]
+          const firstModel = Array.isArray(config.models)
+            ? config.models[0]
             : undefined;
           return {
-            apiKey: root.apiKey,
-            baseUrl: firstModel?.baseUrl || root.baseUrl,
+            apiKey: config.apiKey,
+            baseUrl: firstModel?.baseUrl || config.baseUrl,
           };
         } else if (appId === "openclaw") {
           // OpenClaw: settingsConfig 顶层扁平（camelCase，对应 openclaw.json）
           return {
-            apiKey: (config as any).apiKey,
-            baseUrl: (config as any).baseUrl,
+            apiKey: config.apiKey,
+            baseUrl: config.baseUrl,
           };
         } else if (appId === "opencode") {
           // OpenCode (OMO): 凭据嵌在 options.{baseURL, apiKey}（SDK options 对象）
-          const options = (config as any).options || {};
+          const options = config.options || {};
           return {
             apiKey: options.apiKey,
             baseUrl: options.baseURL,
