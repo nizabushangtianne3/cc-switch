@@ -2,6 +2,7 @@
  * Hermes Agent provider presets configuration
  * Hermes uses custom_providers array in config.yaml
  */
+import { PRESET_BRAND_IDENTITIES } from "./presetBrandIdentities";
 import type { ProviderCategory } from "../types";
 import type { PresetTheme, TemplateValueConfig } from "./claudeProviderPresets";
 import type { PresetFamilyFields } from "./presetFamilies";
@@ -237,9 +238,7 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
     },
   },
   {
-    name: "PackyCode",
-    websiteUrl: "https://www.packyapi.ai",
-    apiKeyUrl: "https://www.packyapi.ai/register?aff=cc-switch",
+    ...PRESET_BRAND_IDENTITIES.packycode,
     settingsConfig: {
       name: "packycode",
       base_url: "https://www.packyapi.ai",
@@ -268,18 +267,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "third_party",
-    isPartner: true,
-    partnerPromotionKey: "packycode",
-    icon: "packycode",
     suggestedDefaults: {
       model: { default: "claude-opus-5-5", provider: "packycode" },
     },
   },
   {
-    name: "APINebula",
-    websiteUrl: "https://apinebula.ai",
-    apiKeyUrl: "https://apinebula.ai/VjM74M",
+    ...PRESET_BRAND_IDENTITIES.apinebula,
     settingsConfig: {
       name: "apinebula",
       base_url: "https://apinebula.ai/v1",
@@ -290,10 +283,6 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         { id: "gpt-6-astra", name: "GPT-6 Astra", context_length: 272000 },
       ],
     },
-    category: "third_party",
-    isPartner: true,
-    partnerPromotionKey: "apinebula",
-    icon: "apinebula",
     suggestedDefaults: {
       model: { default: "gpt-6.1-sol", provider: "apinebula" },
     },
@@ -331,9 +320,7 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
     },
   },
   {
-    name: "hao.ai",
-    websiteUrl: "https://hao.ai",
-    apiKeyUrl: "https://hao.ai/invite/DTBZS3OR",
+    ...PRESET_BRAND_IDENTITIES.haoai,
     settingsConfig: {
       name: "hao_ai",
       base_url: "https://api.hao.ai/anthropic",
@@ -352,19 +339,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "aggregator",
     suggestedDefaults: {
       model: { default: "anthropic/claude-opus-5-5", provider: "hao_ai" },
     },
-    isPartner: true,
-    partnerPromotionKey: "haoai",
-    icon: "haoai",
   },
   {
-    name: "FennoAI",
-    websiteUrl: "https://api.fenno.ai",
-    apiKeyUrl:
-      "https://api.fenno.ai/register?redirect=/purchase?tab=subscription%26group=16&aff=P9MR3D3PLCNL",
+    ...PRESET_BRAND_IDENTITIES.fennoai,
     settingsConfig: {
       name: "fenno",
       base_url: "https://api.fenno.ai/v1",
@@ -372,10 +352,6 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
       api_mode: "chat_completions",
       models: [{ id: "gpt-6.1-sol", name: "GPT-6.1 Sol" }],
     },
-    category: "aggregator",
-    isPartner: true,
-    partnerPromotionKey: "fenno",
-    icon: "fenno",
     suggestedDefaults: {
       model: { default: "gpt-6.1-sol", provider: "fenno" },
     },
@@ -428,9 +404,7 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
     },
   },
   {
-    name: "OpenModel",
-    websiteUrl: "https://www.openmodel.ai",
-    apiKeyUrl: "https://www.openmodel.ai?ref=cc-switch",
+    ...PRESET_BRAND_IDENTITIES.openmodel,
     settingsConfig: {
       name: "openmodel",
       base_url: "https://api.openmodel.ai",
@@ -459,18 +433,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "aggregator",
     suggestedDefaults: {
       model: { default: "claude-opus-5-5", provider: "openmodel" },
     },
-    isPartner: true,
-    partnerPromotionKey: "openmodel",
-    icon: "openmodel",
   },
   {
-    name: "GrooRoute Pro",
-    websiteUrl: "https://grooroute.pro",
-    apiKeyUrl: "https://grooroute.pro/sign-up?aff=qqm9",
+    ...PRESET_BRAND_IDENTITIES["grooroute-pro"],
     settingsConfig: {
       name: "grooroute_pro",
       base_url: "https://grooroute.pro",
@@ -489,18 +457,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "aggregator",
     suggestedDefaults: {
       model: { default: "claude-opus-5-5", provider: "grooroute_pro" },
     },
-    isPartner: true,
-    partnerPromotionKey: "grooroute",
-    icon: "grooroute",
   },
   {
-    name: "DIT.ai",
-    websiteUrl: "https://dit.ai",
-    apiKeyUrl: "https://dit.ai?utm_source=ccswitch",
+    ...PRESET_BRAND_IDENTITIES.ditai,
     settingsConfig: {
       name: "dit_ai",
       base_url: "https://api.dit.ai",
@@ -519,18 +481,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "aggregator",
     suggestedDefaults: {
       model: { default: "claude-opus-5-5", provider: "dit_ai" },
     },
-    isPartner: true,
-    partnerPromotionKey: "dit",
-    icon: "dit",
   },
   {
-    name: "BuyToken",
-    websiteUrl: "https://buytoken.work",
-    apiKeyUrl: "https://buytoken.work/sign-up?aff=cc-switch",
+    ...PRESET_BRAND_IDENTITIES.buytoken,
     settingsConfig: {
       name: "buytoken",
       base_url: "https://api.buytoken.work",
@@ -549,18 +505,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "aggregator",
     suggestedDefaults: {
       model: { default: "claude-opus-5-5", provider: "buytoken" },
     },
-    isPartner: true,
-    partnerPromotionKey: "buytoken",
-    icon: "buytoken",
   },
   {
-    name: "V-API",
-    websiteUrl: "https://gpt.ge",
-    apiKeyUrl: "https://gpt.ge/signup?aff=URNP",
+    ...PRESET_BRAND_IDENTITIES["v-api"],
     settingsConfig: {
       name: "vapi",
       base_url: "https://api.gpt.ge",
@@ -584,19 +534,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "aggregator",
     suggestedDefaults: {
       model: { default: "claude-opus-5-5", provider: "vapi" },
     },
-    isPartner: true,
-    partnerPromotionKey: "vapi",
-    icon: "vapi",
   },
   {
-    name: "TokenFactory",
-    nameKey: "providerForm.presets.tokenfactory",
-    websiteUrl: "https://tokenfactory.cn",
-    apiKeyUrl: "https://console.tokenfactory.cn/login",
+    ...PRESET_BRAND_IDENTITIES.tokenfactory,
     settingsConfig: {
       name: "tokenfactory",
       // 官方 Hermes 文档（docs.tokenfactory.cn/tools/hermes，2026-10-15 核对）
@@ -625,13 +568,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         { id: "qwen3.8-flash", name: "Qwen3.8 Flash", context_length: 1000000 },
       ],
     },
-    category: "aggregator",
     suggestedDefaults: {
       model: { default: "glm-5.3", provider: "tokenfactory" },
     },
-    icon: "tokenfactory",
   },
   {
+    ...PRESET_BRAND_IDENTITIES["fluxa-token-plan"],
     // FluxA AgentMarket 以合作价转售的百度智能云 TokenPlan：产品页写明
     // "purchase it through AgentMarket, then use Baidu AI Cloud's endpoint and
     // API key directly"，端点取其所链的百度国际站 Token Plan Enterprise 文档
@@ -643,9 +585,6 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
     // Kimi K2.6 是定稿赞助文案点名的模型，FluxA 产品页模型表与百度国际站
     // team 文档都没列它：id / 窗口取 FluxA baidu-ai-cloud 模型目录（categories
     // 只有 text）与国内 Token Plan 预设（262144）双重印证，非臆造
-    name: "FluxA Token Plan",
-    websiteUrl: "https://agentmarket.fluxapay.xyz/",
-    apiKeyUrl: "https://agentmarket.fluxapay.xyz/marketplace/tokenplans",
     settingsConfig: {
       name: "fluxa_tokenplan",
       base_url: "https://api.baiduqianfan.ai/v2/tokenplan/team",
@@ -662,18 +601,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         { id: "kimi-k2.6", name: "Kimi K2.6" },
       ],
     },
-    category: "aggregator",
-    isPartner: true,
-    partnerPromotionKey: "fluxa",
-    icon: "fluxa",
     suggestedDefaults: {
       model: { default: "deepseek-v4-pro", provider: "fluxa_tokenplan" },
     },
   },
   {
-    name: "AIGoCode",
-    websiteUrl: "https://aigocode.net",
-    apiKeyUrl: "https://aigocode.net/invite/CC-SWITCH",
+    ...PRESET_BRAND_IDENTITIES.aigocode,
     settingsConfig: {
       name: "aigocode",
       base_url: "https://api.aigocode.dev",
@@ -702,20 +635,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "third_party",
-    isPartner: true,
-    partnerPromotionKey: "aigocode",
-    icon: "aigocode",
-    iconColor: "#5B7FFF",
     suggestedDefaults: {
       model: { default: "claude-opus-5-5", provider: "aigocode" },
     },
   },
   {
-    name: "Qiniu",
-    nameKey: "providerForm.presets.qiniu",
-    websiteUrl: "https://s.qiniu.com/nMvAvy",
-    apiKeyUrl: "https://s.qiniu.com/nMvAvy",
+    ...PRESET_BRAND_IDENTITIES.qiniu,
     settingsConfig: {
       name: "qiniu",
       base_url: "https://api.qnaigc.com/v1",
@@ -732,10 +657,6 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "aggregator",
-    isPartner: true,
-    partnerPromotionKey: "qiniu",
-    icon: "qiniu",
     suggestedDefaults: {
       model: { default: "gpt-6-astra", provider: "qiniu" },
     },
@@ -777,9 +698,7 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
     },
   },
   {
-    name: "SubRouter",
-    websiteUrl: "https://subrouter.ai",
-    apiKeyUrl: "https://subrouter.ai/register?aff=l3ri",
+    ...PRESET_BRAND_IDENTITIES.subrouter,
     settingsConfig: {
       name: "subrouter",
       base_url: "https://subrouter.ai/v1",
@@ -790,19 +709,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         { id: "gpt-6-astra", name: "GPT-6 Astra", context_length: 272000 },
       ],
     },
-    category: "aggregator",
-    isPartner: true,
-    partnerPromotionKey: "subrouter",
-    icon: "subrouter",
     suggestedDefaults: {
       model: { default: "gpt-6.1-sol", provider: "subrouter" },
     },
   },
   {
-    name: "Shengsuanyun",
-    nameKey: "providerForm.presets.shengsuanyun",
-    websiteUrl: "https://www.shengsuanyun.com/?from=CH_4HHXMRYF",
-    apiKeyUrl: "https://www.shengsuanyun.com/?from=CH_4HHXMRYF",
+    ...PRESET_BRAND_IDENTITIES.shengsuanyun,
     settingsConfig: {
       name: "shengsuanyun",
       base_url: "https://router.shengsuanyun.com/api/v1",
@@ -818,18 +730,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         { id: "openai/gpt-6-luna", name: "GPT-6 Luna", context_length: 272000 },
       ],
     },
-    category: "aggregator",
-    isPartner: true,
-    partnerPromotionKey: "shengsuanyun",
-    icon: "shengsuanyun",
     suggestedDefaults: {
       model: { default: "openai/gpt-6.1-sol", provider: "shengsuanyun" },
     },
   },
   {
-    name: "88API",
-    websiteUrl: "https://88api.ai",
-    apiKeyUrl: "https://88api.ai/sign-up?aff=HSGY",
+    ...PRESET_BRAND_IDENTITIES["88api"],
     settingsConfig: {
       name: "88api",
       base_url: "https://api.88api.ai",
@@ -858,18 +764,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "aggregator",
-    isPartner: true,
-    partnerPromotionKey: "88api",
-    icon: "88api",
     suggestedDefaults: {
       model: { default: "claude-opus-5-5", provider: "88api" },
     },
   },
   {
-    name: "APIKEY.FUN",
-    websiteUrl: "https://apikey.fan",
-    apiKeyUrl: "https://apikey.fan/register?aff=CCSwitch",
+    ...PRESET_BRAND_IDENTITIES.apikeyfun,
     settingsConfig: {
       name: "apikeyfun",
       base_url: "https://api.apikey.fan",
@@ -898,18 +798,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "third_party",
-    isPartner: true,
-    partnerPromotionKey: "apikeyfun",
-    icon: "apikeyfun",
     suggestedDefaults: {
       model: { default: "claude-opus-5-5", provider: "apikeyfun" },
     },
   },
   {
-    name: "9527CODE",
-    websiteUrl: "https://9527.codes",
-    apiKeyUrl: "https://9527.codes/register?aff=e5zI",
+    ...PRESET_BRAND_IDENTITIES["9527code"],
     settingsConfig: {
       name: "9527code",
       base_url: "https://9527.codes",
@@ -938,18 +832,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "aggregator",
-    isPartner: true,
-    partnerPromotionKey: "9527code",
-    icon: "9527code",
     suggestedDefaults: {
       model: { default: "claude-opus-5-5", provider: "9527code" },
     },
   },
   {
-    name: "Code0",
-    websiteUrl: "https://code0.ai",
-    apiKeyUrl: "https://code0.ai/agent/register/B2XHxGjGmRvqgznY",
+    ...PRESET_BRAND_IDENTITIES.code0,
     settingsConfig: {
       name: "code0",
       base_url: "https://code0.ai/v1",
@@ -960,17 +848,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         { id: "gpt-6-astra", name: "GPT-6 Astra", context_length: 272000 },
       ],
     },
-    category: "aggregator",
-    icon: "code0",
     suggestedDefaults: {
       model: { default: "gpt-6.1-sol", provider: "code0" },
     },
   },
   {
-    name: "TeamoRouter",
-    websiteUrl: "https://teamorouter.cn",
-    apiKeyUrl:
-      "https://teamorouter.cn/?utm_source=cc_switch&utm_medium=referral&utm_campaign=ai_directory",
+    ...PRESET_BRAND_IDENTITIES.teamorouter,
     settingsConfig: {
       name: "teamorouter",
       base_url: "https://api.teamorouter.cn/v1",
@@ -982,18 +865,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         { id: "gpt-5.6-sol", name: "GPT-5.6 Sol" },
       ],
     },
-    category: "aggregator",
-    isPartner: true,
-    partnerPromotionKey: "teamorouter",
-    icon: "teamorouter",
     suggestedDefaults: {
       model: { default: "gpt-6.1-sol", provider: "teamorouter" },
     },
   },
   {
-    name: "PPIO",
-    websiteUrl: "https://ppio.com",
-    apiKeyUrl: "https://ppio.com/activity/ccswitch",
+    ...PRESET_BRAND_IDENTITIES.ppio,
     settingsConfig: {
       name: "ppio",
       base_url: "https://api.ppio.com/openai/v1",
@@ -1018,11 +895,6 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "aggregator",
-    isPartner: true,
-    partnerPromotionKey: "ppio",
-    icon: "ppio",
-    iconColor: "#2874FF",
     suggestedDefaults: {
       model: {
         default: "deepseek/deepseek-v4.1-flash",
@@ -1031,9 +903,7 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
     },
   },
   {
-    name: "ClaudeCN",
-    websiteUrl: "https://claudecn.top",
-    apiKeyUrl: "https://claudecn.ai/register?aff=HEL9",
+    ...PRESET_BRAND_IDENTITIES.claudecn,
     settingsConfig: {
       name: "claudecn",
       base_url: "https://claudecn.top",
@@ -1062,10 +932,6 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "third_party",
-    isPartner: true,
-    partnerPromotionKey: "claudecn",
-    icon: "claudecn",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -1078,13 +944,7 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
     },
   },
   {
-    name: "火山 Agent Plan",
-    family: "volcengine",
-    planKey: "agentPlan",
-    websiteUrl:
-      "https://www.volcengine.com/activity/agentplan?ac=MMAP8JTTCAQ2&rc=6J6FV5N2&utm_source=OWO&utm_medium=devrel-1&utm_campaign=hw&utm_term=ccswitch&utm_content=hw",
-    apiKeyUrl:
-      "https://www.volcengine.com/activity/agentplan?ac=MMAP8JTTCAQ2&rc=6J6FV5N2&utm_source=OWO&utm_medium=devrel-1&utm_campaign=hw&utm_term=ccswitch&utm_content=hw",
+    ...PRESET_BRAND_IDENTITIES["火山-agent-plan"],
     settingsConfig: {
       name: "ark_agentplan",
       base_url: "https://ark.cn-beijing.volces.com/api/plan",
@@ -1097,11 +957,6 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "cn_official",
-    isPartner: true,
-    partnerPromotionKey: "volcengine_agentplan",
-    icon: "huoshan",
-    iconColor: "#3370FF",
     suggestedDefaults: {
       model: {
         default: "ark-code-latest",
@@ -1110,13 +965,7 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
     },
   },
   {
-    name: "火山 Coding Plan",
-    family: "volcengine",
-    planKey: "codingPlan",
-    websiteUrl:
-      "https://www.volcengine.com/activity/codingplan?ac=MMAP8JTTCAQ2&rc=6J6FV5N2&utm_campaign=hw&utm_content=ccswitch&utm_medium=devrel_tool_web&utm_source=OWO&utm_term=ccswitch",
-    apiKeyUrl:
-      "https://www.volcengine.com/activity/codingplan?ac=MMAP8JTTCAQ2&rc=6J6FV5N2&utm_campaign=hw&utm_content=ccswitch&utm_medium=devrel_tool_web&utm_source=OWO&utm_term=ccswitch",
+    ...PRESET_BRAND_IDENTITIES["火山-coding-plan"],
     settingsConfig: {
       name: "ark_codingplan",
       base_url: "https://ark.cn-beijing.volces.com/api/coding",
@@ -1129,11 +978,6 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "cn_official",
-    isPartner: true,
-    partnerPromotionKey: "volcengine_codingplan",
-    icon: "huoshan",
-    iconColor: "#3370FF",
     suggestedDefaults: {
       model: {
         default: "ark-code-latest",
@@ -1142,11 +986,7 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
     },
   },
   {
-    name: "BytePlus",
-    websiteUrl:
-      "https://www.byteplus.com/en/product/modelark?utm_campaign=hw&utm_content=ccswitch&utm_medium=devrel_tool_web&utm_source=OWO&utm_term=ccswitch",
-    apiKeyUrl:
-      "https://www.byteplus.com/en/product/modelark?utm_campaign=hw&utm_content=ccswitch&utm_medium=devrel_tool_web&utm_source=OWO&utm_term=ccswitch",
+    ...PRESET_BRAND_IDENTITIES.byteplus,
     settingsConfig: {
       name: "byteplus",
       base_url: "https://ark.ap-southeast.bytepluses.com/api/coding",
@@ -1159,11 +999,6 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "cn_official",
-    isPartner: true,
-    partnerPromotionKey: "byteplus",
-    icon: "byteplus",
-    iconColor: "#3370FF",
     suggestedDefaults: {
       model: {
         default: "ark-code-latest",
@@ -1172,14 +1007,7 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
     },
   },
   {
-    name: "Volcengine Doubao",
-    family: "volcengine",
-    planKey: "payg",
-    nameKey: "providerForm.presets.doubaoseed",
-    websiteUrl:
-      "https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey?apikey=%7B%7D&utm_campaign=hw&utm_content=ccswitch&utm_medium=devrel_tool_web&utm_source=OWO&utm_term=ccswitch",
-    apiKeyUrl:
-      "https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey?apikey=%7B%7D&utm_campaign=hw&utm_content=ccswitch&utm_medium=devrel_tool_web&utm_source=OWO&utm_term=ccswitch",
+    ...PRESET_BRAND_IDENTITIES["volcengine-doubao"],
     settingsConfig: {
       name: "doubao_seed",
       base_url: "https://ark.cn-beijing.volces.com/api/compatible",
@@ -1192,11 +1020,6 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "cn_official",
-    isPartner: true,
-    partnerPromotionKey: "doubaoseed",
-    icon: "doubao",
-    iconColor: "#3370FF",
     suggestedDefaults: {
       model: {
         default: "doubao-seed-2-1-pro-260915",
@@ -1205,11 +1028,7 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
     },
   },
   {
-    name: "SiliconFlow",
-    family: "siliconflow",
-    regionKey: "cn",
-    websiteUrl: "https://siliconflow.cn",
-    apiKeyUrl: "https://cloud.siliconflow.cn/i/YflgU2Ve",
+    ...PRESET_BRAND_IDENTITIES.siliconflow,
     settingsConfig: {
       name: "siliconflow",
       base_url: "https://api.siliconflow.cn/v1",
@@ -1224,11 +1043,6 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "aggregator",
-    isPartner: true,
-    partnerPromotionKey: "siliconflow",
-    icon: "siliconflow",
-    iconColor: "#6E29F6",
     suggestedDefaults: {
       model: {
         default: "deepseek-ai/DeepSeek-V4-Flash",
@@ -1237,11 +1051,7 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
     },
   },
   {
-    name: "SiliconFlow en",
-    family: "siliconflow",
-    regionKey: "intl",
-    websiteUrl: "https://siliconflow.com",
-    apiKeyUrl: "https://cloud.siliconflow.cn/i/YflgU2Ve",
+    ...PRESET_BRAND_IDENTITIES["siliconflow-en"],
     settingsConfig: {
       name: "siliconflow_en",
       base_url: "https://api.siliconflow.com/v1",
@@ -1263,11 +1073,6 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "aggregator",
-    isPartner: true,
-    partnerPromotionKey: "siliconflow",
-    icon: "siliconflow",
-    iconColor: "#000000",
     suggestedDefaults: {
       model: {
         default: "MiniMaxAI/MiniMax-M3",
@@ -1276,9 +1081,7 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
     },
   },
   {
-    name: "A6API",
-    websiteUrl: "https://www.a6api.com",
-    apiKeyUrl: "https://a6api.com/register?aff=AqNr",
+    ...PRESET_BRAND_IDENTITIES.a6api,
     settingsConfig: {
       name: "a6api",
       base_url: "https://api.a6api.com/v1",
@@ -1289,22 +1092,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         { id: "gpt-6-astra", name: "GPT-6 Astra", context_length: 272000 },
       ],
     },
-    category: "aggregator",
-    isPartner: true,
-    partnerPromotionKey: "a6api",
-    icon: "a6api",
     suggestedDefaults: {
       model: { default: "gpt-6.1-sol", provider: "a6api" },
     },
   },
   {
-    name: "Compshare",
-    family: "compshare",
-    planKey: "payg",
-    nameKey: "providerForm.presets.ucloud",
-    websiteUrl: "https://www.compshare.cn",
-    apiKeyUrl:
-      "https://www.compshare.cn/coding-plan?ytag=GPU_YY_YX_git_cc-switch",
+    ...PRESET_BRAND_IDENTITIES.compshare,
     settingsConfig: {
       name: "compshare",
       base_url: "https://api.modelverse.cn/v1",
@@ -1323,23 +1116,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         { id: "mimo-v2.6-pro", name: "MiMo V2.6 Pro", context_length: 1048576 },
       ],
     },
-    category: "aggregator",
-    isPartner: true,
-    partnerPromotionKey: "ucloud",
-    icon: "ucloud",
-    iconColor: "#000000",
     suggestedDefaults: {
       model: { default: "gpt-6-astra", provider: "compshare" },
     },
   },
   {
-    name: "Compshare Coding Plan",
-    family: "compshare",
-    planKey: "codingPlan",
-    nameKey: "providerForm.presets.ucloudCoding",
-    websiteUrl: "https://www.compshare.cn",
-    apiKeyUrl:
-      "https://www.compshare.cn/coding-plan?ytag=GPU_YY_YX_git_cc-switch",
+    ...PRESET_BRAND_IDENTITIES["compshare-coding-plan"],
     settingsConfig: {
       name: "compshare_coding",
       base_url: "https://cp.compshare.cn/v1",
@@ -1347,19 +1129,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
       api_mode: "chat_completions",
       models: [{ id: "gpt-5.6-sol", name: "GPT-5.6 Sol" }],
     },
-    category: "aggregator",
-    isPartner: true,
-    partnerPromotionKey: "ucloud",
-    icon: "ucloud",
-    iconColor: "#000000",
     suggestedDefaults: {
       model: { default: "gpt-5.6-sol", provider: "compshare_coding" },
     },
   },
   {
-    name: "CCSub",
-    websiteUrl: "https://www.ccsub.net",
-    apiKeyUrl: "https://www.ccsub.net/register?ref=Y6Z8DXEA",
+    ...PRESET_BRAND_IDENTITIES.ccsub,
     settingsConfig: {
       name: "ccsub",
       base_url: "https://www.ccsub.net/v1",
@@ -1369,18 +1144,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         { id: "gpt-6.1-sol", name: "GPT-6.1 Sol", context_length: 272000 },
       ],
     },
-    category: "aggregator",
-    isPartner: true,
-    partnerPromotionKey: "ccsub",
-    icon: "ccsub",
     suggestedDefaults: {
       model: { default: "gpt-6.1-sol", provider: "ccsub" },
     },
   },
   {
-    name: "SSSAiCode",
-    websiteUrl: "https://sssaicodeapi.com",
-    apiKeyUrl: "https://sssaicodeapi.com/register?ref=DCP0SM",
+    ...PRESET_BRAND_IDENTITIES.sssaicode,
     settingsConfig: {
       name: "sssaicode",
       base_url: "https://node-hk.sssaicodeapi.com/api",
@@ -1404,19 +1173,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "third_party",
-    isPartner: true,
-    partnerPromotionKey: "sssaicode",
-    icon: "sssaicode",
-    iconColor: "#000000",
     suggestedDefaults: {
       model: { default: "claude-opus-5-5", provider: "sssaicode" },
     },
   },
   {
-    name: "SoleAPI",
-    websiteUrl: "https://soleapi.com",
-    apiKeyUrl: "https://soleapi.com/r/ccswitch",
+    ...PRESET_BRAND_IDENTITIES.soleapi,
     settingsConfig: {
       name: "soleapi",
       base_url: "https://soleapi.com",
@@ -1440,18 +1202,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "aggregator",
-    isPartner: true,
-    partnerPromotionKey: "soleapi",
-    icon: "soleapi",
     suggestedDefaults: {
       model: { default: "claude-opus-5-5", provider: "soleapi" },
     },
   },
   {
-    name: "Micu",
-    websiteUrl: "https://www.micuapi.ai",
-    apiKeyUrl: "https://www.micuapi.ai/register?aff=aOYQ",
+    ...PRESET_BRAND_IDENTITIES.micu,
     settingsConfig: {
       name: "micu",
       base_url: "https://www.micuapi.ai",
@@ -1480,19 +1236,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "third_party",
-    isPartner: true,
-    partnerPromotionKey: "micu",
-    icon: "micu",
-    iconColor: "#000000",
     suggestedDefaults: {
       model: { default: "claude-opus-5-5", provider: "micu" },
     },
   },
   {
-    name: "RightCode",
-    websiteUrl: "https://www.rightapi.ai",
-    apiKeyUrl: "https://www.rightapi.ai/register?aff=CCSWITCH",
+    ...PRESET_BRAND_IDENTITIES.rightcode,
     settingsConfig: {
       name: "rightcode",
       base_url: "https://www.rightapi.ai/claude",
@@ -1516,19 +1265,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "third_party",
-    isPartner: true,
-    partnerPromotionKey: "rightcode",
-    icon: "rc",
-    iconColor: "#E96B2C",
     suggestedDefaults: {
       model: { default: "claude-opus-5-5", provider: "rightcode" },
     },
   },
   {
-    name: "Cubence",
-    websiteUrl: "https://cubence.com",
-    apiKeyUrl: "https://cubence.com/signup?code=CCSWITCH&source=ccs",
+    ...PRESET_BRAND_IDENTITIES.cubence,
     settingsConfig: {
       name: "cubence",
       base_url: "https://api.cubence.com",
@@ -1552,11 +1294,6 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "third_party",
-    isPartner: true,
-    partnerPromotionKey: "cubence",
-    icon: "cubence",
-    iconColor: "#000000",
     suggestedDefaults: {
       model: { default: "claude-opus-5-5", provider: "cubence" },
     },
@@ -1622,11 +1359,7 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
     icon: "dmxapi",
   },
   {
-    name: "SudoCode.chat",
-    family: "sudocode",
-    websiteUrl: "https://sudocode.chat",
-    apiKeyUrl:
-      "https://sudocode.chat/sign-up?aff=CC-SWITCH&utm_source=cc-switch&utm_medium=sponsor&utm_campaign=ccswitch",
+    ...PRESET_BRAND_IDENTITIES.sudocodechat,
     settingsConfig: {
       name: "sudocode",
       base_url: "https://api.sudocode.chat/v1",
@@ -1639,10 +1372,6 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         { id: "gpt-6-astra", name: "GPT-6 Astra", context_length: 272000 },
       ],
     },
-    category: "third_party",
-    isPartner: true,
-    partnerPromotionKey: "sudocode",
-    icon: "sudocode",
     suggestedDefaults: {
       model: { default: "gpt-6.1-sol", provider: "sudocode" },
     },
@@ -1671,9 +1400,7 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
     },
   },
   {
-    name: "XycAi",
-    websiteUrl: "https://xycai.us",
-    apiKeyUrl: "https://xycai.us/register?aff=Uhu9",
+    ...PRESET_BRAND_IDENTITIES.xycai,
     settingsConfig: {
       name: "xycai",
       base_url: "https://apicdn.xycai.us/v1",
@@ -1684,19 +1411,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         { id: "gpt-6-astra", name: "GPT-6 Astra", context_length: 272000 },
       ],
     },
-    category: "aggregator",
-    isPartner: true,
-    partnerPromotionKey: "xycai",
-    icon: "xycai",
     suggestedDefaults: {
       model: { default: "gpt-6.1-sol", provider: "xycai" },
     },
   },
   {
-    name: "Modelflare",
-    websiteUrl: "https://modelflare.dev",
-    apiKeyUrl:
-      "https://modelflare.dev/sign-up?utm_medium=referral&utm_source=ccswitch",
+    ...PRESET_BRAND_IDENTITIES.modelflare,
     settingsConfig: {
       name: "modelflare",
       // Chat Completions + /v1（docs.modelflare.dev/guides/endpoints，
@@ -1709,18 +1429,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         { id: "gpt-6-astra", name: "GPT-6 Astra", context_length: 272000 },
       ],
     },
-    category: "aggregator",
     suggestedDefaults: {
       model: { default: "gpt-6.1-sol", provider: "modelflare" },
     },
-    isPartner: true,
-    partnerPromotionKey: "modelflare",
-    icon: "modelflare",
   },
   {
-    name: "AllTokens",
-    websiteUrl: "https://alltokens.cc",
-    apiKeyUrl: "https://alltokens.cc/register",
+    ...PRESET_BRAND_IDENTITIES.alltokens,
     settingsConfig: {
       name: "alltokens",
       // Sub2API 网关：Key 绑定单个分组，须用 GPT 分组的 Key；GPT 账号池原生走
@@ -1734,19 +1448,13 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         { id: "gpt-6-luna", name: "GPT-6 Luna", context_length: 272000 },
       ],
     },
-    category: "aggregator",
     suggestedDefaults: {
       model: { default: "gpt-6.1-sol", provider: "alltokens" },
     },
-    isPartner: true,
-    partnerPromotionKey: "alltokens",
-    icon: "alltokens",
   },
   {
-    name: "AllTokens SI",
-    websiteUrl: "https://alltokens.si",
+    ...PRESET_BRAND_IDENTITIES["alltokens-si"],
     // 站点关闭了个人注册（/api/status 的 register_enabled=false），只能企业注册
-    apiKeyUrl: "https://alltokens.si/enterprise-register",
     settingsConfig: {
       name: "alltokens_si",
       // new-api 网关，目录见 alltokens.si/api/pricing（2026-10-19 核对）：GPT 分组
@@ -1759,20 +1467,13 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         { id: "gpt-6-astra", name: "GPT-6 Astra", context_length: 272000 },
       ],
     },
-    category: "aggregator",
     suggestedDefaults: {
       model: { default: "gpt-6.1-sol", provider: "alltokens_si" },
     },
-    isPartner: true,
-    partnerPromotionKey: "alltokens_si",
-    icon: "alltokens-si",
   },
   // ===== 非赞助商预设：应用内展示按显示名排序，此处文件顺序不影响展示 =====
   {
-    name: "Tu-zi",
-    nameKey: "providerForm.presets.tuzi",
-    websiteUrl: "https://api.tu-zi.com",
-    apiKeyUrl: "https://api.tu-zi.com/token",
+    ...PRESET_BRAND_IDENTITIES["tu-zi"],
     settingsConfig: {
       name: "tuzi",
       base_url: "https://api.tu-zi.com",
@@ -1801,16 +1502,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "aggregator",
-    icon: "tuzi",
     suggestedDefaults: {
       model: { default: "claude-opus-5-5", provider: "tuzi" },
     },
   },
   {
-    name: "Amux",
-    websiteUrl: "https://amux.ai",
-    apiKeyUrl: "https://amux.ai",
+    ...PRESET_BRAND_IDENTITIES.amux,
     settingsConfig: {
       name: "amux",
       base_url: "https://api.amux.ai/v1",
@@ -1821,16 +1518,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         { id: "gpt-6-astra", name: "GPT-6 Astra", context_length: 272000 },
       ],
     },
-    category: "aggregator",
-    icon: "amux",
     suggestedDefaults: {
       model: { default: "gpt-6.1-sol", provider: "amux" },
     },
   },
   {
-    name: "AtlasCloud",
-    websiteUrl: "https://www.atlascloud.ai/console/coding-plan",
-    apiKeyUrl: "https://www.atlascloud.ai/console/coding-plan",
+    ...PRESET_BRAND_IDENTITIES.atlascloud,
     settingsConfig: {
       name: "atlascloud",
       base_url: "https://api.atlascloud.ai/v1",
@@ -1846,16 +1539,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         { id: "moonshotai/kimi-k3", name: "Kimi K3", context_length: 1048576 },
       ],
     },
-    category: "aggregator",
-    icon: "atlascloud",
     suggestedDefaults: {
       model: { default: "zai-org/glm-5.3", provider: "atlascloud" },
     },
   },
   {
-    name: "Soshow",
-    websiteUrl: "https://aimarket.so-show.com",
-    apiKeyUrl: "https://aimarket.so-show.com/workbench/access-key",
+    ...PRESET_BRAND_IDENTITIES.soshow,
     settingsConfig: {
       name: "soshow",
       base_url: "https://maas.so-show.com",
@@ -1866,8 +1555,6 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         { id: "claude-sonnet-5", name: "Claude Sonnet 5" },
       ],
     },
-    category: "aggregator",
-    icon: "soshow",
     suggestedDefaults: {
       model: { default: "claude-opus-5", provider: "soshow" },
     },
@@ -2043,11 +1730,7 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
   // apiFormat "openai_chat" → api_mode "chat_completions"；
   // ANTHROPIC_MODEL / DEFAULT_HAIKU / SONNET / OPUS_MODEL 去重后塞进 models[]。
   {
-    name: "Zhipu GLM",
-    family: "zhipu",
-    regionKey: "cn",
-    websiteUrl: "https://open.bigmodel.cn",
-    apiKeyUrl: "https://www.bigmodel.cn/claude-code",
+    ...PRESET_BRAND_IDENTITIES["zhipu-glm"],
     settingsConfig: {
       name: "zhipu_glm",
       base_url: "https://open.bigmodel.cn/api/coding/paas/v4",
@@ -2058,19 +1741,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         { id: "glm-5.3-flash", name: "GLM-5.3-Flash", context_length: 1048576 },
       ],
     },
-    category: "cn_official",
-    icon: "zhipu",
-    iconColor: "#0F62FE",
     suggestedDefaults: {
       model: { default: "glm-5.3", provider: "zhipu_glm" },
     },
   },
   {
-    name: "Zhipu GLM en",
-    family: "zhipu",
-    regionKey: "intl",
-    websiteUrl: "https://z.ai",
-    apiKeyUrl: "https://z.ai/subscribe",
+    ...PRESET_BRAND_IDENTITIES["zhipu-glm-en"],
     settingsConfig: {
       name: "zhipu_glm_en",
       base_url: "https://api.z.ai/api/coding/paas/v4",
@@ -2081,9 +1757,6 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         { id: "glm-5.3-flash", name: "GLM-5.3-Flash", context_length: 1048576 },
       ],
     },
-    category: "cn_official",
-    icon: "zhipu",
-    iconColor: "#0F62FE",
     suggestedDefaults: {
       model: { default: "glm-5.3", provider: "zhipu_glm_en" },
     },
@@ -2320,12 +1993,7 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
     },
   },
   {
-    name: "千问AI平台",
-    family: "qianwen",
-    planKey: "payg",
-    websiteUrl: "https://platform.qianwenai.com/?utm_content=g_20000002971",
-    apiKeyUrl:
-      "https://platform.qianwenai.com/home/api-keys?utm_content=g_20000002972",
+    ...PRESET_BRAND_IDENTITIES["千问ai平台"],
     settingsConfig: {
       name: "qianwenai",
       base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1",
@@ -2336,18 +2004,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         { id: "qwen3.8-flash", name: "Qwen3.8 Flash", context_length: 983616 },
       ],
     },
-    category: "cn_official",
-    icon: "qianwenai",
-    iconColor: "#624AFF",
     suggestedDefaults: {
       model: { default: "qwen3.8-max", provider: "qianwenai" },
     },
   },
   {
-    name: "千问AI平台 Coding Plan",
-    family: "qianwen",
-    planKey: "codingPlan",
-    websiteUrl: "https://bailian.console.aliyun.com",
+    ...PRESET_BRAND_IDENTITIES["千问ai平台-coding-plan"],
     settingsConfig: {
       name: "qianwenai_coding_plan",
       base_url: "https://coding.dashscope.aliyuncs.com/apps/anthropic",
@@ -2358,9 +2020,6 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         { id: "qwen3-max", name: "Qwen3 Max" },
       ],
     },
-    category: "cn_official",
-    icon: "qianwenai",
-    iconColor: "#624AFF",
     suggestedDefaults: {
       model: {
         default: "qwen3-coder-plus",
@@ -2369,13 +2028,7 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
     },
   },
   {
-    name: "千问AI平台 Token Plan",
-    family: "qianwen",
-    planKey: "tokenPlan",
-    websiteUrl:
-      "https://platform.qianwenai.com/pricing/token-plan?utm_content=g_20000002977",
-    apiKeyUrl:
-      "https://platform.qianwenai.com/home/api-keys?utm_content=g_20000002978",
+    ...PRESET_BRAND_IDENTITIES["千问ai平台-token-plan"],
     settingsConfig: {
       name: "qianwenai_token_plan",
       base_url:
@@ -2387,9 +2040,6 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         { id: "qwen3.8-flash", name: "Qwen3.8 Flash", context_length: 983616 },
       ],
     },
-    category: "cn_official",
-    icon: "qianwenai",
-    iconColor: "#624AFF",
     suggestedDefaults: {
       model: { default: "qwen3.8-max", provider: "qianwenai_token_plan" },
     },
@@ -2399,11 +2049,7 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
   // QwenCloud 与 Token Plan 都用 anthropic_messages，地址不带 /v1（与官方
   // hermes 文档一致，这点和 OpenCode / OpenClaw 不同，勿互相照搬）。
   {
-    name: "QwenCloud",
-    family: "qwencloud",
-    planKey: "payg",
-    websiteUrl: "https://home.qwencloud.com/?utm_content=g_20000002974",
-    apiKeyUrl: "https://home.qwencloud.com/api-keys?utm_content=g_20000002975",
+    ...PRESET_BRAND_IDENTITIES.qwencloud,
     settingsConfig: {
       name: "qwencloud",
       base_url: "https://dashscope-intl.aliyuncs.com/apps/anthropic",
@@ -2415,19 +2061,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         { id: "qwen3.7-max", name: "Qwen3.7 Max", context_length: 1000000 },
       ],
     },
-    category: "cn_official",
-    icon: "qwencloud",
-    iconColor: "#6336E7",
     suggestedDefaults: {
       model: { default: "qwen3.8-max", provider: "qwencloud" },
     },
   },
   {
-    name: "QwenCloud For Coding",
-    family: "qwencloud",
-    planKey: "coding",
-    websiteUrl: "https://www.qwencloud.com",
-    apiKeyUrl: "https://home.qwencloud.com/api-keys",
+    ...PRESET_BRAND_IDENTITIES["qwencloud-for-coding"],
     settingsConfig: {
       name: "qwencloud_coding",
       base_url: "https://coding-intl.dashscope.aliyuncs.com/apps/anthropic",
@@ -2443,20 +2082,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "cn_official",
-    icon: "qwencloud",
-    iconColor: "#6336E7",
     suggestedDefaults: {
       model: { default: "qwen3.7-plus", provider: "qwencloud_coding" },
     },
   },
   {
-    name: "QwenCloud Token Plan",
-    family: "qwencloud",
-    planKey: "tokenPlan",
-    websiteUrl:
-      "https://www.qwencloud.com/pricing/token-plan?utm_content=g_20000002980",
-    apiKeyUrl: "https://home.qwencloud.com/api-keys?utm_content=g_20000002981",
+    ...PRESET_BRAND_IDENTITIES["qwencloud-token-plan"],
     settingsConfig: {
       name: "qwencloud_token_plan",
       base_url:
@@ -2472,9 +2103,6 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         { id: "qwen3.6-flash", name: "Qwen3.6 Flash", context_length: 1000000 },
       ],
     },
-    category: "cn_official",
-    icon: "qwencloud",
-    iconColor: "#6336E7",
     suggestedDefaults: {
       model: { default: "qwen3.8-max", provider: "qwencloud_token_plan" },
     },
@@ -2539,11 +2167,7 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
     },
   },
   {
-    name: "StreamLake",
-    family: "streamlake",
-    regionKey: "cn",
-    websiteUrl: "https://www.streamlake.com",
-    apiKeyUrl: "https://console.streamlake.com/console/wanqing/api-key",
+    ...PRESET_BRAND_IDENTITIES.streamlake,
     settingsConfig: {
       name: "streamlake",
       base_url:
@@ -2552,18 +2176,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
       api_mode: "anthropic_messages",
       models: [{ id: "kat-coder-pro-v2.5", name: "KAT-Coder Pro V2.5" }],
     },
-    category: "cn_official",
-    icon: "streamlake",
     suggestedDefaults: {
       model: { default: "kat-coder-pro-v2.5", provider: "streamlake" },
     },
   },
   {
-    name: "StreamLake en",
-    family: "streamlake",
-    regionKey: "intl",
-    websiteUrl: "https://console.streamlake.ai",
-    apiKeyUrl: "https://console.streamlake.ai/console/api-key",
+    ...PRESET_BRAND_IDENTITIES["streamlake-en"],
     settingsConfig: {
       name: "streamlake_en",
       base_url:
@@ -2572,16 +2190,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
       api_mode: "anthropic_messages",
       models: [{ id: "kat-coder-pro-v2.5", name: "KAT-Coder Pro V2.5" }],
     },
-    category: "cn_official",
-    icon: "streamlake",
     suggestedDefaults: {
       model: { default: "kat-coder-pro-v2.5", provider: "streamlake_en" },
     },
   },
   {
-    name: "Longcat",
-    websiteUrl: "https://longcat.chat/platform",
-    apiKeyUrl: "https://longcat.chat/platform/api_keys",
+    ...PRESET_BRAND_IDENTITIES.longcat,
     settingsConfig: {
       name: "longcat",
       base_url: "https://api.longcat.chat/openai/v1",
@@ -2589,19 +2203,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
       api_mode: "chat_completions",
       models: [{ id: "LongCat-2.0", name: "LongCat 2.0" }],
     },
-    category: "cn_official",
-    icon: "longcat",
-    iconColor: "#29E154",
     suggestedDefaults: {
       model: { default: "LongCat-2.0", provider: "longcat" },
     },
   },
   {
-    name: "MiniMax",
-    family: "minimax",
-    regionKey: "cn",
-    websiteUrl: "https://platform.minimax.cn",
-    apiKeyUrl: "https://platform.minimax.cn/subscribe/token-plan",
+    ...PRESET_BRAND_IDENTITIES.minimax,
     // `minimax` / `minimax-cn` are Hermes built-ins that shadow custom_providers
     providerKey: "cc-switch-minimax",
     settingsConfig: {
@@ -2620,20 +2227,13 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
       // M3.1 can't disable thinking; Hermes' title request sends reasoning_effort:none
       title_generation_model: "MiniMax-M3",
     },
-    category: "cn_official",
     theme: { backgroundColor: "#f64551", textColor: "#FFFFFF" },
-    icon: "minimax",
-    iconColor: "#FF6B6B",
     suggestedDefaults: {
       model: { default: "MiniMax-M3.1-Flash", provider: "cc-switch-minimax" },
     },
   },
   {
-    name: "MiniMax en",
-    family: "minimax",
-    regionKey: "intl",
-    websiteUrl: "https://platform.minimax.io",
-    apiKeyUrl: "https://platform.minimax.io/subscribe/coding-plan",
+    ...PRESET_BRAND_IDENTITIES["minimax-en"],
     providerKey: "cc-switch-minimax-en",
     settingsConfig: {
       name: "cc-switch-minimax-en",
@@ -2651,10 +2251,7 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
       // M3.1 can't disable thinking; Hermes' title request sends reasoning_effort:none
       title_generation_model: "MiniMax-M3",
     },
-    category: "cn_official",
     theme: { backgroundColor: "#f64551", textColor: "#FFFFFF" },
-    icon: "minimax",
-    iconColor: "#FF6B6B",
     suggestedDefaults: {
       model: {
         default: "MiniMax-M3.1-Flash",
@@ -2663,9 +2260,7 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
     },
   },
   {
-    name: "BaiLing",
-    websiteUrl: "https://developer.ant-ling.com/zh-CN/docs/",
-    apiKeyUrl: "https://chat.ant-ling.com/open",
+    ...PRESET_BRAND_IDENTITIES.bailing,
     settingsConfig: {
       name: "bailing",
       base_url: "https://api.ant-ling.com/anthropic",
@@ -2673,11 +2268,9 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
       api_mode: "anthropic_messages",
       models: [{ id: "Ling-2.6-1T", name: "Ling 2.6 1T" }],
     },
-    category: "cn_official",
     suggestedDefaults: {
       model: { default: "Ling-2.6-1T", provider: "bailing" },
     },
-    icon: "bailing",
   },
   {
     name: "AiHubMix",
@@ -2701,9 +2294,7 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
     },
   },
   {
-    name: "CherryIN",
-    websiteUrl: "https://open.cherryin.ai",
-    apiKeyUrl: "https://open.cherryin.ai/console/token",
+    ...PRESET_BRAND_IDENTITIES.cherryin,
     settingsConfig: {
       name: "cherryin",
       base_url: "https://open.cherryin.net",
@@ -2727,16 +2318,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "aggregator",
-    icon: "cherryin",
     suggestedDefaults: {
       model: { default: "anthropic/claude-opus-5.5", provider: "cherryin" },
     },
   },
   {
-    name: "E-FlowCode",
-    websiteUrl: "https://e-flowcode.cc",
-    apiKeyUrl: "https://e-flowcode.cc",
+    ...PRESET_BRAND_IDENTITIES["e-flowcode"],
     settingsConfig: {
       name: "eflowcode",
       base_url: "https://e-flowcode.cc",
@@ -2765,17 +2352,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "third_party",
-    icon: "eflowcode",
-    iconColor: "#000000",
     suggestedDefaults: {
       model: { default: "claude-opus-5-5", provider: "eflowcode" },
     },
   },
   {
-    name: "TheRouter",
-    websiteUrl: "https://therouter.ai",
-    apiKeyUrl: "https://dashboard.therouter.ai",
+    ...PRESET_BRAND_IDENTITIES.therouter,
     settingsConfig: {
       name: "therouter",
       base_url: "https://api.therouter.ai/v1",
@@ -2786,19 +2368,15 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         { id: "openai/gpt-6-luna", name: "GPT-6 Luna" },
       ],
     },
-    category: "aggregator",
     suggestedDefaults: {
       model: {
         default: "openai/gpt-6.1-sol",
         provider: "therouter",
       },
     },
-    icon: "therouter",
   },
   {
-    name: "Baseten",
-    websiteUrl: "https://www.baseten.co",
-    apiKeyUrl: "https://app.baseten.co/settings/api_keys",
+    ...PRESET_BRAND_IDENTITIES.baseten,
     settingsConfig: {
       name: "baseten",
       // OpenAI Chat 端点 /v1/chat/completions（docs.baseten.co/development/
@@ -2826,16 +2404,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "aggregator",
-    icon: "baseten",
     suggestedDefaults: {
       model: { default: "zai-org/GLM-5.3", provider: "baseten" },
     },
   },
   {
-    name: "Novita AI",
-    websiteUrl: "https://novita.ai",
-    apiKeyUrl: "https://novita.ai",
+    ...PRESET_BRAND_IDENTITIES["novita-ai"],
     settingsConfig: {
       name: "novita",
       base_url: "https://api.novita.ai/v3/openai",
@@ -2875,17 +2449,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "aggregator",
-    icon: "novita",
-    iconColor: "#000000",
     suggestedDefaults: {
       model: { default: "zai-org/glm-5.3", provider: "novita" },
     },
   },
   {
-    name: "Nvidia",
-    websiteUrl: "https://build.nvidia.com",
-    apiKeyUrl: "https://build.nvidia.com/settings/api-keys",
+    ...PRESET_BRAND_IDENTITIES.nvidia,
     settingsConfig: {
       name: "nvidia",
       base_url: "https://integrate.api.nvidia.com",
@@ -2905,17 +2474,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "aggregator",
-    icon: "nvidia",
-    iconColor: "#000000",
     suggestedDefaults: {
       model: { default: "moonshotai/kimi-k2.6", provider: "nvidia" },
     },
   },
   {
-    name: "Ollama Cloud",
-    websiteUrl: "https://ollama.com",
-    apiKeyUrl: "https://ollama.com/settings/keys",
+    ...PRESET_BRAND_IDENTITIES["ollama-cloud"],
     settingsConfig: {
       // Hermes 自带内置 provider ollama-cloud（读 OLLAMA_API_KEY），用下划线
       // 名避免与之同名，确保走这里的 custom_providers 与 api_key
@@ -2946,15 +2510,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         { id: "minimax-m3", name: "MiniMax M3", context_length: 512000 },
       ],
     },
-    category: "cloud_provider",
-    icon: "ollama",
     suggestedDefaults: {
       model: { default: "glm-5.3", provider: "ollama_cloud" },
     },
   },
   {
-    name: "Ollama",
-    websiteUrl: "https://ollama.com",
+    ...PRESET_BRAND_IDENTITIES.ollama,
     settingsConfig: {
       // Hermes 里 ollama / local 都是指向 custom 的别名（hermes_cli/auth.py），
       // 照 ollama_cloud 先例换名避开
@@ -2972,15 +2533,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         { id: "gpt-oss:20b", name: "GPT-OSS 20B", context_length: 131072 },
       ],
     },
-    category: "local",
-    icon: "ollama",
     suggestedDefaults: {
       model: { default: "qwen3.5", provider: "ollama-local" },
     },
   },
   {
-    name: "LM Studio",
-    websiteUrl: "https://lmstudio.ai",
+    ...PRESET_BRAND_IDENTITIES["lm-studio"],
     settingsConfig: {
       // Hermes 内置 provider lmstudio，且 lm-studio / lm_studio 都是它的别名
       //（hermes_cli/auth.py），照 ollama-local 先例换名避开
@@ -3002,15 +2560,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "local",
-    icon: "lmstudio",
     suggestedDefaults: {
       model: { default: "openai/gpt-oss-20b", provider: "lmstudio-local" },
     },
   },
   {
-    name: "llama.cpp",
-    websiteUrl: "https://github.com/ggml-org/llama.cpp",
+    ...PRESET_BRAND_IDENTITIES.llamacpp,
     settingsConfig: {
       // Hermes 里 llamacpp / llama.cpp / llama-cpp 都是指向 custom 的别名
       //（hermes_cli/auth.py、providers.py），照 lmstudio-local 先例换名避开
@@ -3035,8 +2590,6 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "local",
-    icon: "llamacpp",
     suggestedDefaults: {
       model: {
         default: "ggml-org/Qwen3-Coder-30B-A3B-Instruct-Q8_0-GGUF",
@@ -3045,8 +2598,7 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
     },
   },
   {
-    name: "vLLM",
-    websiteUrl: "https://vllm.ai",
+    ...PRESET_BRAND_IDENTITIES.vllm,
     settingsConfig: {
       // Hermes 里 vllm / local 都是指向 custom 的别名（hermes_cli/providers.py），
       // 照 llamacpp-local 先例换名避开
@@ -3072,16 +2624,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "local",
-    icon: "vllm",
     suggestedDefaults: {
       model: { default: "Qwen/Qwen3.6-27B", provider: "vllm-local" },
     },
   },
   {
-    name: "Meta Model API",
-    websiteUrl: "https://dev.meta.ai",
-    apiKeyUrl: "https://dev.meta.ai",
+    ...PRESET_BRAND_IDENTITIES["meta-model-api"],
     settingsConfig: {
       name: "meta",
       // OpenAI Chat 端点 /v1/chat/completions（dev.meta.ai/docs/coding-agents.md，
@@ -3102,16 +2650,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "cn_official",
-    icon: "meta",
     suggestedDefaults: {
       model: { default: "muse-wonder-1.0", provider: "meta" },
     },
   },
   {
-    name: "DeepInfra",
-    websiteUrl: "https://deepinfra.com",
-    apiKeyUrl: "https://deepinfra.com/dash/api_keys",
+    ...PRESET_BRAND_IDENTITIES.deepinfra,
     settingsConfig: {
       name: "deepinfra",
       // 官方 Hermes 接入文档给旧版 Hermes 的自定义端点即 /v1/openai Chat
@@ -3141,8 +2685,6 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "aggregator",
-    icon: "deepinfra",
     suggestedDefaults: {
       model: {
         default: "deepseek-ai/DeepSeek-V4.1-Flash-1017",
@@ -3151,10 +2693,7 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
     },
   },
   {
-    name: "Vercel AI Gateway",
-    websiteUrl: "https://vercel.com/ai-gateway",
-    apiKeyUrl:
-      "https://vercel.com/d?to=%2F%5Bteam%5D%2F%7E%2Fai-gateway%2Fapi-keys",
+    ...PRESET_BRAND_IDENTITIES["vercel-ai-gateway"],
     settingsConfig: {
       // 与 Vercel CLI 写的自定义供应商同名（vercel.com/docs/ai-gateway/
       // coding-agents/hermes，2026-10-14 核对）；Hermes 内置的 ai-gateway 默认
@@ -3212,8 +2751,6 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "aggregator",
-    icon: "vercel",
     suggestedDefaults: {
       model: {
         default: "anthropic/claude-sonnet-5.5",
@@ -3222,9 +2759,7 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
     },
   },
   {
-    name: "Nebius Token Factory",
-    websiteUrl: "https://nebius.com/token-factory",
-    apiKeyUrl: "https://tokenfactory.nebius.com/project/api-keys",
+    ...PRESET_BRAND_IDENTITIES["nebius-token-factory"],
     settingsConfig: {
       name: "nebius",
       // OpenAI Chat 端点 base 为 /v1（docs.tokenfactory.nebius.com/switch.md，
@@ -3268,16 +2803,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "aggregator",
-    icon: "nebius",
     suggestedDefaults: {
       model: { default: "zai-org/GLM-5.3", provider: "nebius" },
     },
   },
   {
-    name: "Groq",
-    websiteUrl: "https://groq.com",
-    apiKeyUrl: "https://console.groq.com/keys",
+    ...PRESET_BRAND_IDENTITIES.groq,
     settingsConfig: {
       name: "groq",
       // OpenAI Chat 端点 base 为 /openai/v1（console.groq.com/docs/openai，
@@ -3299,16 +2830,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "aggregator",
-    icon: "groq",
     suggestedDefaults: {
       model: { default: "openai/gpt-oss-120b", provider: "groq" },
     },
   },
   {
-    name: "SambaNova",
-    websiteUrl: "https://sambanova.ai",
-    apiKeyUrl: "https://cloud.sambanova.ai/apis",
+    ...PRESET_BRAND_IDENTITIES.sambanova,
     settingsConfig: {
       name: "sambanova",
       // OpenAI Chat 端点 base 为 /v1（docs.sambanova.ai/docs/en/integrations/
@@ -3323,16 +2850,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         { id: "gpt-oss-120b", name: "gpt-oss-120b", context_length: 131072 },
       ],
     },
-    category: "cloud_provider",
-    icon: "sambanova",
     suggestedDefaults: {
       model: { default: "MiniMax-M3", provider: "sambanova" },
     },
   },
   {
-    name: "DigitalOcean",
-    websiteUrl: "https://www.digitalocean.com/products/ai-platform",
-    apiKeyUrl: "https://cloud.digitalocean.com/model-studio/manage-keys",
+    ...PRESET_BRAND_IDENTITIES.digitalocean,
     settingsConfig: {
       name: "digitalocean",
       // OpenAI Chat 端点 base 为 /v1（docs.digitalocean.com/products/inference/
@@ -3358,17 +2881,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "cloud_provider",
-    icon: "digitalocean",
     suggestedDefaults: {
       model: { default: "glm-5.3", provider: "digitalocean" },
     },
   },
   {
-    name: "Hugging Face",
-    websiteUrl: "https://huggingface.co/inference/models",
-    apiKeyUrl:
-      "https://huggingface.co/settings/tokens/new?ownUserPermissions=inference.serverless.write&tokenType=fineGrained",
+    ...PRESET_BRAND_IDENTITIES["hugging-face"],
     settingsConfig: {
       // Hermes 内置 provider huggingface（别名 hf，hermes-agent.nousresearch.com/
       // docs/integrations/providers，2026-10-14 核对），与 custom_providers 同名
@@ -3410,8 +2928,6 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "aggregator",
-    icon: "huggingface",
     suggestedDefaults: {
       model: {
         default: "zai-org/GLM-5.3:baseten",
@@ -3420,9 +2936,7 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
     },
   },
   {
-    name: "Fireworks AI",
-    websiteUrl: "https://fireworks.ai",
-    apiKeyUrl: "https://app.fireworks.ai/settings/users/api-keys",
+    ...PRESET_BRAND_IDENTITIES["fireworks-ai"],
     settingsConfig: {
       // Hermes 内置 provider fireworks（别名 fireworks-ai / fw，hermes-agent.
       // nousresearch.com/docs/integrations/providers，2026-10-14 核对），与
@@ -3463,8 +2977,6 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "cloud_provider",
-    icon: "fireworks",
     suggestedDefaults: {
       model: {
         default: "accounts/fireworks/models/glm-5p3",
@@ -3473,9 +2985,7 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
     },
   },
   {
-    name: "Mistral AI",
-    websiteUrl: "https://mistral.ai",
-    apiKeyUrl: "https://console.mistral.ai/api-keys",
+    ...PRESET_BRAND_IDENTITIES["mistral-ai"],
     settingsConfig: {
       // Hermes 内置的 Mistral 只有语音与转写，没有 LLM provider，名字不冲突
       name: "mistral",
@@ -3498,16 +3008,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "cn_official",
-    icon: "mistral",
     suggestedDefaults: {
       model: { default: "mistral-medium-3-5", provider: "mistral" },
     },
   },
   {
-    name: "Cloudflare AI Gateway",
-    websiteUrl: "https://developers.cloudflare.com/ai-gateway/",
-    apiKeyUrl: "https://dash.cloudflare.com/profile/api-tokens",
+    ...PRESET_BRAND_IDENTITIES["cloudflare-ai-gateway"],
     settingsConfig: {
       // Hermes 没有内置的 Cloudflare provider，名字不冲突
       name: "cloudflare",
@@ -3537,16 +3043,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "cloud_provider",
-    icon: "cloudflare",
     suggestedDefaults: {
       model: { default: "openai/gpt-6.1-sol", provider: "cloudflare" },
     },
   },
   {
-    name: "PIPELLM",
-    websiteUrl: "https://code.pipellm.ai",
-    apiKeyUrl: "https://code.pipellm.ai/login?ref=uvw650za",
+    ...PRESET_BRAND_IDENTITIES.pipellm,
     settingsConfig: {
       name: "pipellm",
       base_url: "https://cc-api.pipellm.ai",
@@ -3570,18 +3072,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "aggregator",
-    icon: "pipellm",
     suggestedDefaults: {
       model: { default: "claude-opus-5-5", provider: "pipellm" },
     },
   },
   {
-    name: "Xiaomi MiMo",
-    family: "xiaomi-mimo",
-    planKey: "payg",
-    websiteUrl: "https://platform.xiaomimimo.com",
-    apiKeyUrl: "https://platform.xiaomimimo.com/#/console/api-keys",
+    ...PRESET_BRAND_IDENTITIES["xiaomi-mimo"],
     settingsConfig: {
       name: "xiaomi_mimo",
       base_url: "https://api.xiaomimimo.com/v1",
@@ -3601,19 +3097,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "cn_official",
-    icon: "xiaomimimo",
-    iconColor: "#000000",
     suggestedDefaults: {
       model: { default: "mimo-v2.6-pro", provider: "xiaomi_mimo" },
     },
   },
   {
-    name: "Xiaomi MiMo Token Plan (China)",
-    family: "xiaomi-mimo",
-    planKey: "tokenPlan",
-    websiteUrl: "https://platform.xiaomimimo.com/#/token-plan",
-    apiKeyUrl: "https://platform.xiaomimimo.com/#/console/plan-manage",
+    ...PRESET_BRAND_IDENTITIES["xiaomi-mimo-token-plan-china"],
     settingsConfig: {
       name: "xiaomi_mimo_token_plan",
       base_url: "https://token-plan-cn.xiaomimimo.com/v1",
@@ -3628,17 +3117,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "cn_official",
-    icon: "xiaomimimo",
-    iconColor: "#000000",
     suggestedDefaults: {
       model: { default: "mimo-v2.6-pro", provider: "xiaomi_mimo_token_plan" },
     },
   },
   {
-    name: "JieKou AI",
-    websiteUrl: "https://jiekou.ai/#model-library",
-    apiKeyUrl: "https://jiekou.ai/settings/key-management",
+    ...PRESET_BRAND_IDENTITIES["jiekou-ai"],
     settingsConfig: {
       name: "jiekou",
       base_url: "https://api.jiekou.ai/openai/v1",
@@ -3667,17 +3151,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "aggregator",
-    icon: "jiekou",
-    iconColor: "#000000",
     suggestedDefaults: {
       model: { default: "claude-fable-5-1", provider: "jiekou" },
     },
   },
   {
-    name: "AICodeWith",
-    websiteUrl: "https://aicodewith.ai",
-    apiKeyUrl: "https://aicodewith.ai/login?tab=register",
+    ...PRESET_BRAND_IDENTITIES.aicodewith,
     settingsConfig: {
       name: "aicodewith",
       base_url: "https://api.aicodewith.ai/v1",
@@ -3689,9 +3168,6 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         { id: "gpt-6-astra", name: "GPT-6 Astra", context_length: 272000 },
       ],
     },
-    category: "aggregator",
-    icon: "aicodewith",
-    iconColor: "#3A3B40",
     suggestedDefaults: {
       model: { default: "gpt-6.1-sol", provider: "aicodewith" },
     },
@@ -3735,9 +3211,7 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
     icon: "soruxgpt",
   },
   {
-    name: "IKunCode",
-    websiteUrl: "https://api.ikuncode.ai",
-    apiKeyUrl: "https://api.ikuncode.ai/console/token",
+    ...PRESET_BRAND_IDENTITIES.ikuncode,
     settingsConfig: {
       name: "ikuncode",
       base_url: "https://api.ikuncode.ai",
@@ -3766,16 +3240,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "aggregator",
     suggestedDefaults: {
       model: { default: "claude-opus-5-5", provider: "ikuncode" },
     },
-    icon: "ikuncode",
   },
   {
-    name: "RunToken",
-    websiteUrl: "https://www.runtoken.ai",
-    apiKeyUrl: "https://www.runtoken.ai/console/token",
+    ...PRESET_BRAND_IDENTITIES.runtoken,
     settingsConfig: {
       name: "runtoken",
       base_url: "https://www.runtoken.ai",
@@ -3804,16 +3274,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "aggregator",
     suggestedDefaults: {
       model: { default: "claude-opus-5-5", provider: "runtoken" },
     },
-    icon: "runtoken",
   },
   {
-    name: "BotCF",
-    websiteUrl: "https://botcf.com",
-    apiKeyUrl: "https://botcf.com/console/token",
+    ...PRESET_BRAND_IDENTITIES.botcf,
     settingsConfig: {
       name: "botcf",
       base_url: "https://botcf.com",
@@ -3842,17 +3308,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "aggregator",
     suggestedDefaults: {
       model: { default: "claude-opus-5-5", provider: "botcf" },
     },
-    icon: "botcf",
   },
   {
-    name: "YYLX",
-    nameKey: "providerForm.presets.yylx",
-    websiteUrl: "https://yylx.io",
-    apiKeyUrl: "https://app.yylx.io/keys",
+    ...PRESET_BRAND_IDENTITIES.yylx,
     settingsConfig: {
       name: "yylx",
       base_url: "https://app.yylx.io",
@@ -3881,16 +3342,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "aggregator",
     suggestedDefaults: {
       model: { default: "claude-opus-5-5", provider: "yylx" },
     },
-    icon: "yylx",
   },
   {
-    name: "TokenFlux",
-    websiteUrl: "https://tokenflux.dev",
-    apiKeyUrl: "https://tokenflux.dev/keys",
+    ...PRESET_BRAND_IDENTITIES.tokenflux,
     settingsConfig: {
       name: "tokenflux",
       base_url: "https://tokenflux.dev",
@@ -3919,16 +3376,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "aggregator",
     suggestedDefaults: {
       model: { default: "claude-opus-5-5", provider: "tokenflux" },
     },
-    icon: "tokenflux",
   },
   {
-    name: "NekoCode",
-    websiteUrl: "https://nekoapi.ai",
-    apiKeyUrl: "https://nekoapi.ai/token",
+    ...PRESET_BRAND_IDENTITIES.nekocode,
     settingsConfig: {
       name: "nekocode",
       base_url: "https://nekoapi.ai",
@@ -3955,16 +3408,12 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "aggregator",
     suggestedDefaults: {
       model: { default: "claude-opus-5-5", provider: "nekocode" },
     },
-    icon: "nekocode",
   },
   {
-    name: "AIComing",
-    websiteUrl: "https://aicoming.top",
-    apiKeyUrl: "https://aicoming.top/console#keys",
+    ...PRESET_BRAND_IDENTITIES.aicoming,
     settingsConfig: {
       name: "aicoming",
       base_url: "https://api.aicoming.top",
@@ -3993,10 +3442,8 @@ export const hermesProviderPresets: HermesProviderPreset[] = [
         },
       ],
     },
-    category: "aggregator",
     suggestedDefaults: {
       model: { default: "claude-opus-5-5", provider: "aicoming" },
     },
-    icon: "aicoming",
   },
 ];

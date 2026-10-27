@@ -1,3 +1,4 @@
+import { PRESET_BRAND_IDENTITIES } from "./presetBrandIdentities";
 import type { ProviderCategory, OpenCodeProviderConfig } from "../types";
 import type { PresetTheme, TemplateValueConfig } from "./claudeProviderPresets";
 import type { PresetFamilyFields } from "./presetFamilies";
@@ -510,9 +511,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
   },
 
   {
-    name: "PackyCode",
-    websiteUrl: "https://www.packyapi.ai",
-    apiKeyUrl: "https://www.packyapi.ai/register?aff=cc-switch",
+    ...PRESET_BRAND_IDENTITIES.packycode,
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
       name: "PackyCode",
@@ -542,10 +541,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "third_party",
-    isPartner: true,
-    partnerPromotionKey: "packycode",
-    icon: "packycode",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -555,9 +550,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "APINebula",
-    websiteUrl: "https://apinebula.ai",
-    apiKeyUrl: "https://apinebula.ai/VjM74M",
+    ...PRESET_BRAND_IDENTITIES.apinebula,
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "APINebula",
@@ -576,10 +569,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "third_party",
-    isPartner: true,
-    partnerPromotionKey: "apinebula",
-    icon: "apinebula",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -619,9 +608,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "hao.ai",
-    websiteUrl: "https://hao.ai",
-    apiKeyUrl: "https://hao.ai/invite/DTBZS3OR",
+    ...PRESET_BRAND_IDENTITIES.haoai,
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
       name: "hao.ai",
@@ -645,7 +632,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -653,15 +639,9 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         editorValue: "",
       },
     },
-    isPartner: true,
-    partnerPromotionKey: "haoai",
-    icon: "haoai",
   },
   {
-    name: "FennoAI",
-    websiteUrl: "https://api.fenno.ai",
-    apiKeyUrl:
-      "https://api.fenno.ai/register?redirect=/purchase?tab=subscription%26group=16&aff=P9MR3D3PLCNL",
+    ...PRESET_BRAND_IDENTITIES.fennoai,
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "FennoAI",
@@ -674,10 +654,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         "gpt-6.1-sol": { name: "GPT-6.1 Sol", reasoning: true },
       },
     },
-    category: "aggregator",
-    isPartner: true,
-    partnerPromotionKey: "fenno",
-    icon: "fenno",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -738,9 +714,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "OpenModel",
-    websiteUrl: "https://www.openmodel.ai",
-    apiKeyUrl: "https://www.openmodel.ai?ref=cc-switch",
+    ...PRESET_BRAND_IDENTITIES.openmodel,
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
       name: "OpenModel",
@@ -776,7 +750,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -784,14 +757,9 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         editorValue: "",
       },
     },
-    isPartner: true,
-    partnerPromotionKey: "openmodel",
-    icon: "openmodel",
   },
   {
-    name: "GrooRoute Pro",
-    websiteUrl: "https://grooroute.pro",
-    apiKeyUrl: "https://grooroute.pro/sign-up?aff=qqm9",
+    ...PRESET_BRAND_IDENTITIES["grooroute-pro"],
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
       name: "GrooRoute Pro",
@@ -815,7 +783,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -823,14 +790,9 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         editorValue: "",
       },
     },
-    isPartner: true,
-    partnerPromotionKey: "grooroute",
-    icon: "grooroute",
   },
   {
-    name: "DIT.ai",
-    websiteUrl: "https://dit.ai",
-    apiKeyUrl: "https://dit.ai?utm_source=ccswitch",
+    ...PRESET_BRAND_IDENTITIES.ditai,
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
       name: "DIT.ai",
@@ -854,7 +816,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -862,14 +823,9 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         editorValue: "",
       },
     },
-    isPartner: true,
-    partnerPromotionKey: "dit",
-    icon: "dit",
   },
   {
-    name: "BuyToken",
-    websiteUrl: "https://buytoken.work",
-    apiKeyUrl: "https://buytoken.work/sign-up?aff=cc-switch",
+    ...PRESET_BRAND_IDENTITIES.buytoken,
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
       name: "BuyToken",
@@ -893,7 +849,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -901,14 +856,9 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         editorValue: "",
       },
     },
-    isPartner: true,
-    partnerPromotionKey: "buytoken",
-    icon: "buytoken",
   },
   {
-    name: "V-API",
-    websiteUrl: "https://gpt.ge",
-    apiKeyUrl: "https://gpt.ge/signup?aff=URNP",
+    ...PRESET_BRAND_IDENTITIES["v-api"],
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
       name: "V-API",
@@ -938,7 +888,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -946,15 +895,9 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         editorValue: "",
       },
     },
-    isPartner: true,
-    partnerPromotionKey: "vapi",
-    icon: "vapi",
   },
   {
-    name: "TokenFactory",
-    nameKey: "providerForm.presets.tokenfactory",
-    websiteUrl: "https://tokenfactory.cn",
-    apiKeyUrl: "https://console.tokenfactory.cn/login",
+    ...PRESET_BRAND_IDENTITIES.tokenfactory,
     // 官方 OpenCode 文档（docs.tokenfactory.cn/tools/opencode，2026-10-15
     // 核对）：openai-compatible + /v1
     settingsConfig: {
@@ -1010,7 +953,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -1018,9 +960,9 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         editorValue: "",
       },
     },
-    icon: "tokenfactory",
   },
   {
+    ...PRESET_BRAND_IDENTITIES["fluxa-token-plan"],
     // FluxA AgentMarket 以合作价转售的百度智能云 TokenPlan：产品页写明
     // "purchase it through AgentMarket, then use Baidu AI Cloud's endpoint and
     // API key directly"，端点取其所链的百度国际站 Token Plan Enterprise 文档
@@ -1032,9 +974,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     // team 文档都没列它：id / 窗口取 FluxA baidu-ai-cloud 模型目录（categories
     // 只有 text）与国内 Token Plan 预设（262144）双重印证，非臆造。
     // 不开 setCacheKey：与仓库内其余 Token Plan 预设（腾讯/百度）保持一致
-    name: "FluxA Token Plan",
-    websiteUrl: "https://agentmarket.fluxapay.xyz/",
-    apiKeyUrl: "https://agentmarket.fluxapay.xyz/marketplace/tokenplans",
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "FluxA Token Plan",
@@ -1056,10 +995,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         "kimi-k2.6": { name: "Kimi K2.6", reasoning: true },
       },
     },
-    category: "aggregator",
-    isPartner: true,
-    partnerPromotionKey: "fluxa",
-    icon: "fluxa",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -1069,9 +1004,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "AIGoCode",
-    websiteUrl: "https://aigocode.net",
-    apiKeyUrl: "https://aigocode.net/invite/CC-SWITCH",
+    ...PRESET_BRAND_IDENTITIES.aigocode,
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
       name: "AIGoCode",
@@ -1091,11 +1024,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         "claude-opus-5-5": { name: "Claude Opus 5.5", reasoning: true },
       },
     },
-    category: "third_party",
-    isPartner: true,
-    partnerPromotionKey: "aigocode",
-    icon: "aigocode",
-    iconColor: "#5B7FFF",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -1105,10 +1033,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "Qiniu",
-    nameKey: "providerForm.presets.qiniu",
-    websiteUrl: "https://s.qiniu.com/nMvAvy",
-    apiKeyUrl: "https://s.qiniu.com/nMvAvy",
+    ...PRESET_BRAND_IDENTITIES.qiniu,
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "Qiniu",
@@ -1144,10 +1069,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
-    isPartner: true,
-    partnerPromotionKey: "qiniu",
-    icon: "qiniu",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -1187,9 +1108,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "SubRouter",
-    websiteUrl: "https://subrouter.ai",
-    apiKeyUrl: "https://subrouter.ai/register?aff=l3ri",
+    ...PRESET_BRAND_IDENTITIES.subrouter,
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "SubRouter",
@@ -1208,10 +1127,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
-    isPartner: true,
-    partnerPromotionKey: "subrouter",
-    icon: "subrouter",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -1221,10 +1136,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "Shengsuanyun",
-    nameKey: "providerForm.presets.shengsuanyun",
-    websiteUrl: "https://www.shengsuanyun.com/?from=CH_4HHXMRYF",
-    apiKeyUrl: "https://www.shengsuanyun.com/?from=CH_4HHXMRYF",
+    ...PRESET_BRAND_IDENTITIES.shengsuanyun,
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
       name: "Shengsuanyun",
@@ -1254,10 +1166,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
-    isPartner: true,
-    partnerPromotionKey: "shengsuanyun",
-    icon: "shengsuanyun",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -1267,9 +1175,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "88API",
-    websiteUrl: "https://88api.ai",
-    apiKeyUrl: "https://88api.ai/sign-up?aff=HSGY",
+    ...PRESET_BRAND_IDENTITIES["88api"],
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
       name: "88API",
@@ -1305,10 +1211,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
-    isPartner: true,
-    partnerPromotionKey: "88api",
-    icon: "88api",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -1318,9 +1220,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "APIKEY.FUN",
-    websiteUrl: "https://apikey.fan",
-    apiKeyUrl: "https://apikey.fan/register?aff=CCSwitch",
+    ...PRESET_BRAND_IDENTITIES.apikeyfun,
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
       name: "APIKEY.FUN",
@@ -1341,10 +1241,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         "claude-haiku-5-5": { name: "Claude Haiku 5.5", reasoning: true },
       },
     },
-    category: "third_party",
-    isPartner: true,
-    partnerPromotionKey: "apikeyfun",
-    icon: "apikeyfun",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -1354,9 +1250,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "9527CODE",
-    websiteUrl: "https://9527.codes",
-    apiKeyUrl: "https://9527.codes/register?aff=e5zI",
+    ...PRESET_BRAND_IDENTITIES["9527code"],
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
       name: "9527CODE",
@@ -1392,10 +1286,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
-    isPartner: true,
-    partnerPromotionKey: "9527code",
-    icon: "9527code",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -1405,9 +1295,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "Code0",
-    websiteUrl: "https://code0.ai",
-    apiKeyUrl: "https://code0.ai/agent/register/B2XHxGjGmRvqgznY",
+    ...PRESET_BRAND_IDENTITIES.code0,
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "Code0",
@@ -1426,8 +1314,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
-    icon: "code0",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -1437,10 +1323,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "TeamoRouter",
-    websiteUrl: "https://teamorouter.cn",
-    apiKeyUrl:
-      "https://teamorouter.cn/?utm_source=cc_switch&utm_medium=referral&utm_campaign=ai_directory",
+    ...PRESET_BRAND_IDENTITIES.teamorouter,
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "TeamoRouter",
@@ -1460,10 +1343,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         "gpt-5.6-sol": { name: "GPT-5.6 Sol", reasoning: true },
       },
     },
-    category: "aggregator",
-    isPartner: true,
-    partnerPromotionKey: "teamorouter",
-    icon: "teamorouter",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -1473,9 +1352,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "PPIO",
-    websiteUrl: "https://ppio.com",
-    apiKeyUrl: "https://ppio.com/activity/ccswitch",
+    ...PRESET_BRAND_IDENTITIES.ppio,
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "PPIO",
@@ -1509,11 +1386,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
-    isPartner: true,
-    partnerPromotionKey: "ppio",
-    icon: "ppio",
-    iconColor: "#2874FF",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -1523,9 +1395,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "ClaudeCN",
-    websiteUrl: "https://claudecn.top",
-    apiKeyUrl: "https://claudecn.ai/register?aff=HEL9",
+    ...PRESET_BRAND_IDENTITIES.claudecn,
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
       name: "ClaudeCN",
@@ -1561,10 +1431,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "third_party",
-    isPartner: true,
-    partnerPromotionKey: "claudecn",
-    icon: "claudecn",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -1574,13 +1440,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "火山 Agent Plan",
-    family: "volcengine",
-    planKey: "agentPlan",
-    websiteUrl:
-      "https://www.volcengine.com/activity/agentplan?ac=MMAP8JTTCAQ2&rc=6J6FV5N2&utm_source=OWO&utm_medium=devrel-1&utm_campaign=hw&utm_term=ccswitch&utm_content=hw",
-    apiKeyUrl:
-      "https://www.volcengine.com/activity/agentplan?ac=MMAP8JTTCAQ2&rc=6J6FV5N2&utm_source=OWO&utm_medium=devrel-1&utm_campaign=hw&utm_term=ccswitch&utm_content=hw",
+    ...PRESET_BRAND_IDENTITIES["火山-agent-plan"],
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "火山 Agent Plan",
@@ -1595,11 +1455,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "cn_official",
-    isPartner: true,
-    partnerPromotionKey: "volcengine_agentplan",
-    icon: "huoshan",
-    iconColor: "#3370FF",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -1609,13 +1464,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "火山 Coding Plan",
-    family: "volcengine",
-    planKey: "codingPlan",
-    websiteUrl:
-      "https://www.volcengine.com/activity/codingplan?ac=MMAP8JTTCAQ2&rc=6J6FV5N2&utm_campaign=hw&utm_content=ccswitch&utm_medium=devrel_tool_web&utm_source=OWO&utm_term=ccswitch",
-    apiKeyUrl:
-      "https://www.volcengine.com/activity/codingplan?ac=MMAP8JTTCAQ2&rc=6J6FV5N2&utm_campaign=hw&utm_content=ccswitch&utm_medium=devrel_tool_web&utm_source=OWO&utm_term=ccswitch",
+    ...PRESET_BRAND_IDENTITIES["火山-coding-plan"],
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "火山 Coding Plan",
@@ -1630,11 +1479,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "cn_official",
-    isPartner: true,
-    partnerPromotionKey: "volcengine_codingplan",
-    icon: "huoshan",
-    iconColor: "#3370FF",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -1644,11 +1488,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "BytePlus",
-    websiteUrl:
-      "https://www.byteplus.com/en/product/modelark?utm_campaign=hw&utm_content=ccswitch&utm_medium=devrel_tool_web&utm_source=OWO&utm_term=ccswitch",
-    apiKeyUrl:
-      "https://www.byteplus.com/en/product/modelark?utm_campaign=hw&utm_content=ccswitch&utm_medium=devrel_tool_web&utm_source=OWO&utm_term=ccswitch",
+    ...PRESET_BRAND_IDENTITIES.byteplus,
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "BytePlus",
@@ -1663,11 +1503,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "cn_official",
-    isPartner: true,
-    partnerPromotionKey: "byteplus",
-    icon: "byteplus",
-    iconColor: "#3370FF",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -1677,14 +1512,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "Volcengine Doubao",
-    family: "volcengine",
-    planKey: "payg",
-    nameKey: "providerForm.presets.doubaoseed",
-    websiteUrl:
-      "https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey?apikey=%7B%7D&utm_campaign=hw&utm_content=ccswitch&utm_medium=devrel_tool_web&utm_source=OWO&utm_term=ccswitch",
-    apiKeyUrl:
-      "https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey?apikey=%7B%7D&utm_campaign=hw&utm_content=ccswitch&utm_medium=devrel_tool_web&utm_source=OWO&utm_term=ccswitch",
+    ...PRESET_BRAND_IDENTITIES["volcengine-doubao"],
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "Volcengine Doubao",
@@ -1700,11 +1528,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "cn_official",
-    isPartner: true,
-    partnerPromotionKey: "doubaoseed",
-    icon: "doubao",
-    iconColor: "#3370FF",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -1714,9 +1537,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "A6API",
-    websiteUrl: "https://www.a6api.com",
-    apiKeyUrl: "https://a6api.com/register?aff=AqNr",
+    ...PRESET_BRAND_IDENTITIES.a6api,
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "A6API",
@@ -1735,10 +1556,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
-    isPartner: true,
-    partnerPromotionKey: "a6api",
-    icon: "a6api",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -1748,9 +1565,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "CCSub",
-    websiteUrl: "https://www.ccsub.net",
-    apiKeyUrl: "https://www.ccsub.net/register?ref=Y6Z8DXEA",
+    ...PRESET_BRAND_IDENTITIES.ccsub,
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "CCSub",
@@ -1772,10 +1587,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
-    isPartner: true,
-    partnerPromotionKey: "ccsub",
-    icon: "ccsub",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -1785,9 +1596,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "SSSAiCode",
-    websiteUrl: "https://sssaicodeapi.com",
-    apiKeyUrl: "https://sssaicodeapi.com/register?ref=DCP0SM",
+    ...PRESET_BRAND_IDENTITIES.sssaicode,
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
       name: "SSSAiCode",
@@ -1801,11 +1610,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         "claude-opus-5-5": { name: "Claude Opus 5.5", reasoning: true },
       },
     },
-    category: "third_party",
-    isPartner: true,
-    partnerPromotionKey: "sssaicode",
-    icon: "sssaicode",
-    iconColor: "#000000",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -1815,9 +1619,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "SoleAPI",
-    websiteUrl: "https://soleapi.com",
-    apiKeyUrl: "https://soleapi.com/r/ccswitch",
+    ...PRESET_BRAND_IDENTITIES.soleapi,
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
       name: "SoleAPI",
@@ -1832,10 +1634,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         "claude-haiku-5-5": { name: "Claude Haiku 5.5", reasoning: true },
       },
     },
-    category: "aggregator",
-    isPartner: true,
-    partnerPromotionKey: "soleapi",
-    icon: "soleapi",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -1845,9 +1643,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "Micu",
-    websiteUrl: "https://www.micuapi.ai",
-    apiKeyUrl: "https://www.micuapi.ai/register?aff=aOYQ",
+    ...PRESET_BRAND_IDENTITIES.micu,
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
       name: "Micu",
@@ -1867,11 +1663,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         "claude-sonnet-5-5": { name: "Claude Sonnet 5.5", reasoning: true },
       },
     },
-    category: "third_party",
-    isPartner: true,
-    partnerPromotionKey: "micu",
-    icon: "micu",
-    iconColor: "#000000",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -1881,9 +1672,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "RightCode",
-    websiteUrl: "https://www.rightapi.ai",
-    apiKeyUrl: "https://www.rightapi.ai/register?aff=CCSWITCH",
+    ...PRESET_BRAND_IDENTITIES.rightcode,
     settingsConfig: {
       npm: "@ai-sdk/openai",
       name: "RightCode",
@@ -1896,11 +1685,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         "gpt-6.1-sol": { name: "GPT-6.1 Sol", reasoning: true },
       },
     },
-    category: "third_party",
-    isPartner: true,
-    partnerPromotionKey: "rightcode",
-    icon: "rc",
-    iconColor: "#E96B2C",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -1910,9 +1694,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "Cubence",
-    websiteUrl: "https://cubence.com",
-    apiKeyUrl: "https://cubence.com/signup?code=CCSWITCH&source=ccs",
+    ...PRESET_BRAND_IDENTITIES.cubence,
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
       name: "Cubence",
@@ -1926,11 +1708,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         "claude-opus-5-5": { name: "Claude Opus 5.5", reasoning: true },
       },
     },
-    category: "third_party",
-    isPartner: true,
-    partnerPromotionKey: "cubence",
-    icon: "cubence",
-    iconColor: "#000000",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -2005,11 +1782,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     icon: "dmxapi",
   },
   {
-    name: "SudoCode.chat",
-    family: "sudocode",
-    websiteUrl: "https://sudocode.chat",
-    apiKeyUrl:
-      "https://sudocode.chat/sign-up?aff=CC-SWITCH&utm_source=cc-switch&utm_medium=sponsor&utm_campaign=ccswitch",
+    ...PRESET_BRAND_IDENTITIES.sudocodechat,
     settingsConfig: {
       npm: "@ai-sdk/openai",
       name: "SudoCode.chat",
@@ -2045,10 +1818,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "third_party",
-    isPartner: true,
-    partnerPromotionKey: "sudocode",
-    icon: "sudocode",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -2103,9 +1872,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "XycAi",
-    websiteUrl: "https://xycai.us",
-    apiKeyUrl: "https://xycai.us/register?aff=Uhu9",
+    ...PRESET_BRAND_IDENTITIES.xycai,
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "XycAi",
@@ -2124,10 +1891,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
-    isPartner: true,
-    partnerPromotionKey: "xycai",
-    icon: "xycai",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -2137,10 +1900,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "Modelflare",
-    websiteUrl: "https://modelflare.dev",
-    apiKeyUrl:
-      "https://modelflare.dev/sign-up?utm_medium=referral&utm_source=ccswitch",
+    ...PRESET_BRAND_IDENTITIES.modelflare,
     // 官方 OpenCode 文档（docs.modelflare.dev/guides/clients/opencode，
     // 2026-10-15 核对）：openai-compatible + /v1、默认 gpt-5.6-sol
     settingsConfig: {
@@ -2166,7 +1926,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -2174,14 +1933,9 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         editorValue: "",
       },
     },
-    isPartner: true,
-    partnerPromotionKey: "modelflare",
-    icon: "modelflare",
   },
   {
-    name: "AllTokens",
-    websiteUrl: "https://alltokens.cc",
-    apiKeyUrl: "https://alltokens.cc/register",
+    ...PRESET_BRAND_IDENTITIES.alltokens,
     // Sub2API 网关：Key 绑定单个分组，须用 GPT 分组的 Key；GPT 账号池原生走
     // Responses（分组与模型见 alltokens.cc/api/v1/model-plaza，2026-10-17 核对）
     settingsConfig: {
@@ -2213,7 +1967,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -2221,15 +1974,10 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         editorValue: "",
       },
     },
-    isPartner: true,
-    partnerPromotionKey: "alltokens",
-    icon: "alltokens",
   },
   {
-    name: "AllTokens SI",
-    websiteUrl: "https://alltokens.si",
+    ...PRESET_BRAND_IDENTITIES["alltokens-si"],
     // 站点关闭了个人注册（/api/status 的 register_enabled=false），只能企业注册
-    apiKeyUrl: "https://alltokens.si/enterprise-register",
     // new-api 网关，目录见 alltokens.si/api/pricing（2026-10-19 核对）：GPT 分组
     // 只声明 Chat Completions，窗口按中转口径封顶 272K
     settingsConfig: {
@@ -2255,7 +2003,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -2263,16 +2010,10 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         editorValue: "",
       },
     },
-    isPartner: true,
-    partnerPromotionKey: "alltokens_si",
-    icon: "alltokens-si",
   },
   // ===== 非赞助商预设：应用内展示按显示名排序，此处文件顺序不影响展示 =====
   {
-    name: "Tu-zi",
-    nameKey: "providerForm.presets.tuzi",
-    websiteUrl: "https://api.tu-zi.com",
-    apiKeyUrl: "https://api.tu-zi.com/token",
+    ...PRESET_BRAND_IDENTITIES["tu-zi"],
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
       name: "Tu-zi",
@@ -2293,8 +2034,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         "claude-haiku-5-5": { name: "Claude Haiku 5.5", reasoning: true },
       },
     },
-    category: "aggregator",
-    icon: "tuzi",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -2304,9 +2043,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "Amux",
-    websiteUrl: "https://amux.ai",
-    apiKeyUrl: "https://amux.ai",
+    ...PRESET_BRAND_IDENTITIES.amux,
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "Amux",
@@ -2325,8 +2062,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
-    icon: "amux",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -2336,9 +2071,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "AtlasCloud",
-    websiteUrl: "https://www.atlascloud.ai/console/coding-plan",
-    apiKeyUrl: "https://www.atlascloud.ai/console/coding-plan",
+    ...PRESET_BRAND_IDENTITIES.atlascloud,
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "AtlasCloud",
@@ -2353,8 +2086,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         "moonshotai/kimi-k3": { name: "Kimi K3", reasoning: true },
       },
     },
-    category: "aggregator",
-    icon: "atlascloud",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -2364,9 +2095,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "Soshow",
-    websiteUrl: "https://aimarket.so-show.com",
-    apiKeyUrl: "https://aimarket.so-show.com/workbench/access-key",
+    ...PRESET_BRAND_IDENTITIES.soshow,
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
       name: "Soshow",
@@ -2380,8 +2109,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         "claude-opus-5": { name: "Claude Opus 5", reasoning: true },
       },
     },
-    category: "aggregator",
-    icon: "soshow",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -2428,11 +2155,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "Zhipu GLM",
-    family: "zhipu",
-    regionKey: "cn",
-    websiteUrl: "https://open.bigmodel.cn",
-    apiKeyUrl: "https://www.bigmodel.cn/claude-code",
+    ...PRESET_BRAND_IDENTITIES["zhipu-glm"],
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "Zhipu GLM",
@@ -2451,9 +2174,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "cn_official",
-    icon: "zhipu",
-    iconColor: "#0F62FE",
     templateValues: {
       baseURL: {
         label: "Base URL",
@@ -2469,11 +2189,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "Zhipu GLM en",
-    family: "zhipu",
-    regionKey: "intl",
-    websiteUrl: "https://z.ai",
-    apiKeyUrl: "https://z.ai/subscribe",
+    ...PRESET_BRAND_IDENTITIES["zhipu-glm-en"],
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "Zhipu GLM en",
@@ -2492,9 +2208,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "cn_official",
-    icon: "zhipu",
-    iconColor: "#0F62FE",
     templateValues: {
       baseURL: {
         label: "Base URL",
@@ -2856,12 +2569,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "千问AI平台",
-    family: "qianwen",
-    planKey: "payg",
-    websiteUrl: "https://platform.qianwenai.com/?utm_content=g_20000002971",
-    apiKeyUrl:
-      "https://platform.qianwenai.com/home/api-keys?utm_content=g_20000002972",
+    ...PRESET_BRAND_IDENTITIES["千问ai平台"],
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "千问AI平台",
@@ -2885,9 +2593,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "cn_official",
-    icon: "qianwenai",
-    iconColor: "#624AFF",
     templateValues: {
       baseURL: {
         label: "Base URL",
@@ -2903,13 +2608,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "千问AI平台 Token Plan",
-    family: "qianwen",
-    planKey: "tokenPlan",
-    websiteUrl:
-      "https://platform.qianwenai.com/pricing/token-plan?utm_content=g_20000002977",
-    apiKeyUrl:
-      "https://platform.qianwenai.com/home/api-keys?utm_content=g_20000002978",
+    ...PRESET_BRAND_IDENTITIES["千问ai平台-token-plan"],
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
       name: "千问AI平台 Token Plan",
@@ -2934,9 +2633,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "cn_official",
-    icon: "qianwenai",
-    iconColor: "#624AFF",
     templateValues: {
       baseURL: {
         label: "Base URL",
@@ -2958,11 +2654,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
   // 按量付费走 OpenAI 兼容层（/compatible-mode/v1）；Token Plan 官方给的是
   // Anthropic 协议地址，且比 Claude Code 的多一段 /v1（AI SDK anthropic 惯例）。
   {
-    name: "QwenCloud",
-    family: "qwencloud",
-    planKey: "payg",
-    websiteUrl: "https://home.qwencloud.com/?utm_content=g_20000002974",
-    apiKeyUrl: "https://home.qwencloud.com/api-keys?utm_content=g_20000002975",
+    ...PRESET_BRAND_IDENTITIES.qwencloud,
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "QwenCloud",
@@ -2987,9 +2679,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         "qwen3.7-max": { name: "Qwen3.7 Max", reasoning: true },
       },
     },
-    category: "cn_official",
-    icon: "qwencloud",
-    iconColor: "#6336E7",
     templateValues: {
       baseURL: {
         label: "Base URL",
@@ -3005,11 +2694,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "QwenCloud For Coding",
-    family: "qwencloud",
-    planKey: "coding",
-    websiteUrl: "https://www.qwencloud.com",
-    apiKeyUrl: "https://home.qwencloud.com/api-keys",
+    ...PRESET_BRAND_IDENTITIES["qwencloud-for-coding"],
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
       name: "QwenCloud For Coding",
@@ -3024,9 +2709,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         "qwen3-coder-plus": { name: "Qwen3 Coder Plus" },
       },
     },
-    category: "cn_official",
-    icon: "qwencloud",
-    iconColor: "#6336E7",
     templateValues: {
       baseURL: {
         label: "Base URL",
@@ -3044,12 +2726,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "QwenCloud Token Plan",
-    family: "qwencloud",
-    planKey: "tokenPlan",
-    websiteUrl:
-      "https://www.qwencloud.com/pricing/token-plan?utm_content=g_20000002980",
-    apiKeyUrl: "https://home.qwencloud.com/api-keys?utm_content=g_20000002981",
+    ...PRESET_BRAND_IDENTITIES["qwencloud-token-plan"],
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
       name: "QwenCloud Token Plan",
@@ -3075,9 +2752,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         "qwen3.7-max": { name: "Qwen3.7 Max", reasoning: true },
       },
     },
-    category: "cn_official",
-    icon: "qwencloud",
-    iconColor: "#6336E7",
     templateValues: {
       baseURL: {
         label: "Base URL",
@@ -3190,9 +2864,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "StepFun Step Plan",
-    websiteUrl: "https://platform.stepfun.com/docs/zh/step-plan/overview",
-    apiKeyUrl: "https://platform.stepfun.com/interface-key",
+    ...PRESET_BRAND_IDENTITIES["stepfun-step-plan"],
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "StepFun Step Plan",
@@ -3217,9 +2889,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "cn_official",
-    icon: "stepfun",
-    iconColor: "#005AFF",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -3262,11 +2931,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "StreamLake",
-    family: "streamlake",
-    regionKey: "cn",
-    websiteUrl: "https://www.streamlake.com",
-    apiKeyUrl: "https://console.streamlake.com/console/wanqing/api-key",
+    ...PRESET_BRAND_IDENTITIES.streamlake,
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "StreamLake",
@@ -3282,7 +2947,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "cn_official",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -3290,14 +2954,9 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         editorValue: "",
       },
     },
-    icon: "streamlake",
   },
   {
-    name: "StreamLake en",
-    family: "streamlake",
-    regionKey: "intl",
-    websiteUrl: "https://console.streamlake.ai",
-    apiKeyUrl: "https://console.streamlake.ai/console/api-key",
+    ...PRESET_BRAND_IDENTITIES["streamlake-en"],
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "StreamLake en",
@@ -3313,7 +2972,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "cn_official",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -3321,12 +2979,9 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         editorValue: "",
       },
     },
-    icon: "streamlake",
   },
   {
-    name: "Longcat",
-    websiteUrl: "https://longcat.chat/platform",
-    apiKeyUrl: "https://longcat.chat/platform/api_keys",
+    ...PRESET_BRAND_IDENTITIES.longcat,
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "Longcat",
@@ -3342,9 +2997,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "cn_official",
-    icon: "longcat",
-    iconColor: "#29E154",
     templateValues: {
       baseURL: {
         label: "Base URL",
@@ -3360,11 +3012,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "MiniMax",
-    family: "minimax",
-    regionKey: "cn",
-    websiteUrl: "https://platform.minimax.cn",
-    apiKeyUrl: "https://platform.minimax.cn/subscribe/token-plan",
+    ...PRESET_BRAND_IDENTITIES.minimax,
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "MiniMax",
@@ -3389,13 +3037,10 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "cn_official",
     theme: {
       backgroundColor: "#f64551",
       textColor: "#FFFFFF",
     },
-    icon: "minimax",
-    iconColor: "#FF6B6B",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -3405,11 +3050,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "MiniMax en",
-    family: "minimax",
-    regionKey: "intl",
-    websiteUrl: "https://platform.minimax.io",
-    apiKeyUrl: "https://platform.minimax.io/subscribe/coding-plan",
+    ...PRESET_BRAND_IDENTITIES["minimax-en"],
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "MiniMax en",
@@ -3434,13 +3075,10 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "cn_official",
     theme: {
       backgroundColor: "#f64551",
       textColor: "#FFFFFF",
     },
-    icon: "minimax",
-    iconColor: "#FF6B6B",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -3450,9 +3088,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "BaiLing",
-    websiteUrl: "https://developer.ant-ling.com/zh-CN/docs/",
-    apiKeyUrl: "https://chat.ant-ling.com/open",
+    ...PRESET_BRAND_IDENTITIES.bailing,
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "BaiLing",
@@ -3465,7 +3101,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         "Ling-2.6-1T": { name: "Ling 2.6-1T" },
       },
     },
-    category: "cn_official",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -3473,14 +3108,9 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         editorValue: "",
       },
     },
-    icon: "bailing",
   },
   {
-    name: "Xiaomi MiMo",
-    family: "xiaomi-mimo",
-    planKey: "payg",
-    websiteUrl: "https://platform.xiaomimimo.com",
-    apiKeyUrl: "https://platform.xiaomimimo.com/#/console/api-keys",
+    ...PRESET_BRAND_IDENTITIES["xiaomi-mimo"],
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "Xiaomi MiMo",
@@ -3510,9 +3140,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "cn_official",
-    icon: "xiaomimimo",
-    iconColor: "#000000",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -3522,11 +3149,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "Xiaomi MiMo Token Plan (China)",
-    family: "xiaomi-mimo",
-    planKey: "tokenPlan",
-    websiteUrl: "https://platform.xiaomimimo.com/#/token-plan",
-    apiKeyUrl: "https://platform.xiaomimimo.com/#/console/plan-manage",
+    ...PRESET_BRAND_IDENTITIES["xiaomi-mimo-token-plan-china"],
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "Xiaomi MiMo Token Plan (China)",
@@ -3550,9 +3173,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "cn_official",
-    icon: "xiaomimimo",
-    iconColor: "#000000",
     templateValues: {
       apiKey: {
         label: "Token Plan API Key",
@@ -3596,11 +3216,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "SiliconFlow",
-    family: "siliconflow",
-    regionKey: "cn",
-    websiteUrl: "https://siliconflow.cn",
-    apiKeyUrl: "https://cloud.siliconflow.cn/i/YflgU2Ve",
+    ...PRESET_BRAND_IDENTITIES.siliconflow,
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "SiliconFlow",
@@ -3617,11 +3233,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
-    isPartner: true,
-    partnerPromotionKey: "siliconflow",
-    icon: "siliconflow",
-    iconColor: "#6E29F6",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -3631,11 +3242,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "SiliconFlow en",
-    family: "siliconflow",
-    regionKey: "intl",
-    websiteUrl: "https://siliconflow.com",
-    apiKeyUrl: "https://cloud.siliconflow.cn/i/YflgU2Ve",
+    ...PRESET_BRAND_IDENTITIES["siliconflow-en"],
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "SiliconFlow en",
@@ -3677,11 +3284,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
-    isPartner: true,
-    partnerPromotionKey: "siliconflow",
-    icon: "siliconflow",
-    iconColor: "#000000",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -3741,9 +3343,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "CherryIN",
-    websiteUrl: "https://open.cherryin.ai",
-    apiKeyUrl: "https://open.cherryin.ai/console/token",
+    ...PRESET_BRAND_IDENTITIES.cherryin,
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
       name: "CherryIN",
@@ -3769,8 +3369,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
-    icon: "cherryin",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -3830,9 +3428,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "TheRouter",
-    websiteUrl: "https://therouter.ai",
-    apiKeyUrl: "https://dashboard.therouter.ai",
+    ...PRESET_BRAND_IDENTITIES.therouter,
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "TheRouter",
@@ -3860,7 +3456,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         "qwen/qwen3.8-max": { name: "Qwen3.8 Max", reasoning: true },
       },
     },
-    category: "aggregator",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -3868,12 +3463,9 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         editorValue: "",
       },
     },
-    icon: "therouter",
   },
   {
-    name: "Novita AI",
-    websiteUrl: "https://novita.ai",
-    apiKeyUrl: "https://novita.ai",
+    ...PRESET_BRAND_IDENTITIES["novita-ai"],
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "Novita AI",
@@ -3903,9 +3495,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
-    icon: "novita",
-    iconColor: "#000000",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -3915,9 +3504,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "Nvidia",
-    websiteUrl: "https://build.nvidia.com",
-    apiKeyUrl: "https://build.nvidia.com/settings/api-keys",
+    ...PRESET_BRAND_IDENTITIES.nvidia,
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "Nvidia",
@@ -3947,9 +3534,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
-    icon: "nvidia",
-    iconColor: "#000000",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -3959,9 +3543,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "PIPELLM",
-    websiteUrl: "https://code.pipellm.ai",
-    apiKeyUrl: "https://code.pipellm.ai/login?ref=uvw650za",
+    ...PRESET_BRAND_IDENTITIES.pipellm,
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
       name: "PIPELLM",
@@ -3976,8 +3558,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         "claude-haiku-5-5": { name: "claude-haiku-5-5", reasoning: true },
       },
     },
-    category: "aggregator",
-    icon: "pipellm",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -3987,9 +3567,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "E-FlowCode",
-    websiteUrl: "https://e-flowcode.cc",
-    apiKeyUrl: "https://e-flowcode.cc",
+    ...PRESET_BRAND_IDENTITIES["e-flowcode"],
     settingsConfig: {
       npm: "@ai-sdk/openai",
       options: {
@@ -4017,9 +3595,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "third_party",
-    icon: "eflowcode",
-    iconColor: "#000000",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -4029,8 +3604,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "AWS Bedrock",
-    websiteUrl: "https://aws.amazon.com/bedrock/",
+    ...PRESET_BRAND_IDENTITIES["aws-bedrock"],
     settingsConfig: {
       npm: "@ai-sdk/amazon-bedrock",
       name: "AWS Bedrock",
@@ -4060,9 +3634,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         "us.deepseek.r1-v1:0": { name: "DeepSeek R1", reasoning: true },
       },
     },
-    category: "cloud_provider",
-    icon: "aws",
-    iconColor: "#FF9900",
     templateValues: {
       region: {
         label: "AWS Region",
@@ -4083,8 +3654,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "Ollama",
-    websiteUrl: "https://ollama.com",
+    ...PRESET_BRAND_IDENTITIES.ollama,
     // 本机 OpenAI 兼容端点（docs.ollama.com/integrations/opencode、
     // opencode.ai/docs/providers，2026-10-14 核对）；models.dev 只有
     // ollama-cloud 没有本机 ollama，OpenCode 文档也要求手动配置，不算内置。
@@ -4114,8 +3684,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "local",
-    icon: "ollama",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -4125,8 +3693,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "llama.cpp",
-    websiteUrl: "https://github.com/ggml-org/llama.cpp",
+    ...PRESET_BRAND_IDENTITIES.llamacpp,
     // 本机 llama-server 的 OpenAI Chat 端点（github.com/ggml-org/llama.cpp/blob/
     // master/tools/server/README.md、opencode.ai/docs/providers，2026-10-14
     // 核对）；models.dev 没有 llama.cpp，OpenCode 文档也要求手动配置，不算内置。
@@ -4151,8 +3718,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "local",
-    icon: "llamacpp",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -4162,8 +3727,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "vLLM",
-    websiteUrl: "https://vllm.ai",
+    ...PRESET_BRAND_IDENTITIES.vllm,
     // 本机 vllm serve 的 OpenAI Chat 端点（docs.vllm.ai/en/latest/serving/
     // online_serving/openai_compatible_server、opencode.ai/docs/providers，
     // 2026-10-14 核对）；models.dev 没有 vllm，OpenCode 文档也没有 vLLM 段落，
@@ -4191,8 +3755,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "local",
-    icon: "vllm",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -4228,9 +3790,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     isCustomTemplate: true,
   },
   {
-    name: "JieKou AI",
-    websiteUrl: "https://jiekou.ai/#model-library",
-    apiKeyUrl: "https://jiekou.ai/settings/key-management",
+    ...PRESET_BRAND_IDENTITIES["jiekou-ai"],
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "JieKou AI",
@@ -4266,9 +3826,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
-    icon: "jiekou",
-    iconColor: "#000000",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -4278,9 +3835,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "AICodeWith",
-    websiteUrl: "https://aicodewith.ai",
-    apiKeyUrl: "https://aicodewith.ai/login?tab=register",
+    ...PRESET_BRAND_IDENTITIES.aicodewith,
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
       name: "AICodeWith",
@@ -4305,9 +3860,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
-    icon: "aicodewith",
-    iconColor: "#3A3B40",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -4317,9 +3869,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "模力方舟",
-    websiteUrl: "https://moark.com",
-    apiKeyUrl: "https://moark.com/dashboard/tokens",
+    ...PRESET_BRAND_IDENTITIES["模力方舟"],
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
       name: "模力方舟",
@@ -4363,8 +3913,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
-    icon: "moark",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -4423,9 +3971,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     icon: "soruxgpt",
   },
   {
-    name: "IKunCode",
-    websiteUrl: "https://api.ikuncode.ai",
-    apiKeyUrl: "https://api.ikuncode.ai/console/token",
+    ...PRESET_BRAND_IDENTITIES.ikuncode,
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
       name: "IKunCode",
@@ -4461,7 +4007,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -4469,12 +4014,9 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         editorValue: "",
       },
     },
-    icon: "ikuncode",
   },
   {
-    name: "RunToken",
-    websiteUrl: "https://www.runtoken.ai",
-    apiKeyUrl: "https://www.runtoken.ai/console/token",
+    ...PRESET_BRAND_IDENTITIES.runtoken,
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
       name: "RunToken",
@@ -4510,7 +4052,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -4518,12 +4059,9 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         editorValue: "",
       },
     },
-    icon: "runtoken",
   },
   {
-    name: "BotCF",
-    websiteUrl: "https://botcf.com",
-    apiKeyUrl: "https://botcf.com/console/token",
+    ...PRESET_BRAND_IDENTITIES.botcf,
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
       name: "BotCF",
@@ -4559,7 +4097,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -4567,13 +4104,9 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         editorValue: "",
       },
     },
-    icon: "botcf",
   },
   {
-    name: "YYLX",
-    nameKey: "providerForm.presets.yylx",
-    websiteUrl: "https://yylx.io",
-    apiKeyUrl: "https://app.yylx.io/keys",
+    ...PRESET_BRAND_IDENTITIES.yylx,
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
       name: "YYLX",
@@ -4609,7 +4142,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -4617,12 +4149,9 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         editorValue: "",
       },
     },
-    icon: "yylx",
   },
   {
-    name: "TokenFlux",
-    websiteUrl: "https://tokenflux.dev",
-    apiKeyUrl: "https://tokenflux.dev/keys",
+    ...PRESET_BRAND_IDENTITIES.tokenflux,
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
       name: "TokenFlux",
@@ -4658,7 +4187,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -4666,12 +4194,9 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         editorValue: "",
       },
     },
-    icon: "tokenflux",
   },
   {
-    name: "NekoCode",
-    websiteUrl: "https://nekoapi.ai",
-    apiKeyUrl: "https://nekoapi.ai/token",
+    ...PRESET_BRAND_IDENTITIES.nekocode,
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
       name: "NekoCode",
@@ -4704,7 +4229,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -4712,12 +4236,9 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         editorValue: "",
       },
     },
-    icon: "nekocode",
   },
   {
-    name: "AIComing",
-    websiteUrl: "https://aicoming.top",
-    apiKeyUrl: "https://aicoming.top/console#keys",
+    ...PRESET_BRAND_IDENTITIES.aicoming,
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
       name: "AIComing",
@@ -4753,7 +4274,6 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         },
       },
     },
-    category: "aggregator",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -4761,6 +4281,5 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
         editorValue: "",
       },
     },
-    icon: "aicoming",
   },
 ];
