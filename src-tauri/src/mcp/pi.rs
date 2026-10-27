@@ -229,10 +229,7 @@ pub fn import(state: &AppState) -> Result<usize, AppError> {
                     pi: enabled,
                     ..Default::default()
                 },
-                description: None,
-                homepage: None,
-                docs: None,
-                tags: vec![],
+                ..Default::default()
             }
         };
         state.db.save_mcp_server(&server)?;

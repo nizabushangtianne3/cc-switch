@@ -533,10 +533,7 @@ mod capability_tests {
                 mcode: true,
                 ..Default::default()
             },
-            description: None,
-            homepage: None,
-            docs: None,
-            tags: vec![],
+            ..Default::default()
         };
         McpService::upsert_server(&state, server.clone()).unwrap();
         assert!(db.get_all_mcp_servers().unwrap()[&server.id].apps.mcode);
