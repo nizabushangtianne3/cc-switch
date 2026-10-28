@@ -8,7 +8,7 @@ use crate::session_manager::{SessionMessage, SessionMeta};
 
 use super::blocks::assign_turn_ids;
 use super::opencode_blocks::{message_from_parts, PartLocator};
-use super::utils::{parse_timestamp_to_ms, path_basename, truncate_summary};
+use super::utils::{merge_sessions_by_id, parse_timestamp_to_ms, path_basename, truncate_summary};
 
 const PROVIDER_ID: &str = "opencode";
 
@@ -81,29 +81,7 @@ fn get_v2_migration_marker_ts(conn: &Connection) -> Option<i64> {
 /// Scan sessions from both the legacy JSON files and the newer SQLite database,
 /// merging results with SQLite taking precedence on ID conflicts.
 pub fn scan_sessions() -> Vec<SessionMeta> {
-    let json_sessions = scan_sessions_json();
-    let sqlite_sessions = scan_sessions_sqlite();
-
-    if sqlite_sessions.is_empty() {
-        return json_sessions;
-    }
-    if json_sessions.is_empty() {
-        return sqlite_sessions;
-    }
-
-    // Deduplicate: keep SQLite version when the same session_id exists in both
-    let sqlite_ids: std::collections::HashSet<String> = sqlite_sessions
-        .iter()
-        .map(|s| s.session_id.clone())
-        .collect();
-
-    let mut merged = sqlite_sessions;
-    for s in json_sessions {
-        if !sqlite_ids.contains(&s.session_id) {
-            merged.push(s);
-        }
-    }
-    merged
+    merge_sessions_by_id(scan_sessions_sqlite(), scan_sessions_json())
 }
 
 fn scan_sessions_json() -> Vec<SessionMeta> {

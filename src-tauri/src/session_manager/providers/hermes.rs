@@ -12,7 +12,8 @@ use crate::session_manager::{SessionMessage, SessionMeta};
 use super::blocks::{assign_turn_ids, openai_tool_calls, thinking_block, tool_result_block};
 use super::utils::for_each_jsonl_value;
 use super::utils::{
-    extract_text, parse_timestamp_to_ms, read_head_tail_lines, truncate_summary, TITLE_MAX_CHARS,
+    extract_text, merge_sessions_by_id, parse_timestamp_to_ms, read_head_tail_lines,
+    truncate_summary, TITLE_MAX_CHARS,
 };
 
 const PROVIDER_ID: &str = "hermes";
@@ -28,28 +29,7 @@ fn get_hermes_sessions_dir() -> PathBuf {
 /// Scan sessions from both SQLite database and JSONL transcript files,
 /// with SQLite taking precedence on ID conflicts.
 pub fn scan_sessions() -> Vec<SessionMeta> {
-    let sqlite_sessions = scan_sessions_sqlite();
-    let jsonl_sessions = scan_sessions_jsonl();
-
-    if sqlite_sessions.is_empty() {
-        return jsonl_sessions;
-    }
-    if jsonl_sessions.is_empty() {
-        return sqlite_sessions;
-    }
-
-    let sqlite_ids: std::collections::HashSet<String> = sqlite_sessions
-        .iter()
-        .map(|s| s.session_id.clone())
-        .collect();
-
-    let mut merged = sqlite_sessions;
-    for s in jsonl_sessions {
-        if !sqlite_ids.contains(&s.session_id) {
-            merged.push(s);
-        }
-    }
-    merged
+    merge_sessions_by_id(scan_sessions_sqlite(), scan_sessions_jsonl())
 }
 
 // ── SQLite scanning ─────────────────────────────────────────────────

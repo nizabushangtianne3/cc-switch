@@ -342,6 +342,36 @@ pub fn path_basename(value: &str) -> Option<String> {
     Some(last.to_string())
 }
 
+/// 合并两个来源的会话列表：同一个 `session_id` 只保留 `primary` 里那条。
+///
+/// 各家的来源组合不同（SQLite + JSONL、SQLite + JSON），但规则一致：新的存储
+/// 引入后旧文件不会立刻消失，两边会同时存在一阵子，所以按 ID 去重、新库优先。
+/// 任一为空时直接交出另一份，省掉一次 HashSet 构造。
+pub fn merge_sessions_by_id(
+    primary: Vec<SessionMeta>,
+    fallback: Vec<SessionMeta>,
+) -> Vec<SessionMeta> {
+    if primary.is_empty() {
+        return fallback;
+    }
+    if fallback.is_empty() {
+        return primary;
+    }
+
+    let primary_ids: std::collections::HashSet<String> = primary
+        .iter()
+        .map(|session| session.session_id.clone())
+        .collect();
+
+    let mut merged = primary;
+    for session in fallback {
+        if !primary_ids.contains(&session.session_id) {
+            merged.push(session);
+        }
+    }
+    merged
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -517,5 +547,43 @@ mod tests {
             extract_text(&json!([{ "type": "toolCall", "name": "read" }])),
             "[Tool: read]"
         );
+    }
+
+    #[test]
+    fn merge_sessions_by_id_keeps_primary_when_ids_collide() {
+        let primary = vec![session("shared", "from-sqlite")];
+        let fallback = vec![
+            session("shared", "from-jsonl"),
+            session("only-jsonl", "newcomer"),
+        ];
+
+        let merged = merge_sessions_by_id(primary, fallback);
+
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[0].title.as_deref(), Some("from-sqlite"));
+        assert!(merged.iter().any(|s| s.session_id == "only-jsonl"));
+    }
+
+    #[test]
+    fn merge_sessions_by_id_returns_the_other_side_when_one_is_empty() {
+        let sqlite = vec![session("a", "a")];
+        let jsonl = vec![session("b", "b")];
+
+        assert_eq!(merge_sessions_by_id(Vec::new(), jsonl).len(), 1);
+        assert_eq!(merge_sessions_by_id(sqlite, Vec::new()).len(), 1);
+    }
+
+    fn session(id: &str, title: &str) -> SessionMeta {
+        SessionMeta {
+            provider_id: "test".to_string(),
+            session_id: id.to_string(),
+            title: Some(title.to_string()),
+            summary: None,
+            project_dir: None,
+            created_at: None,
+            last_active_at: None,
+            source_path: None,
+            resume_command: None,
+        }
     }
 }
