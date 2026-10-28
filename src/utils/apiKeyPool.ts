@@ -2,12 +2,6 @@ import type { ApiKeyEntry, ApiKeyStrategy } from "@/types";
 
 export const DEFAULT_API_KEY_STRATEGY: ApiKeyStrategy = "round_robin";
 
-export const API_KEY_STRATEGIES: ApiKeyStrategy[] = [
-  "random",
-  "round_robin",
-  "weighted",
-];
-
 export const normalizeApiKeyWeight = (value: unknown): number => {
   const parsed = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(parsed) || parsed < 1) return 1;
