@@ -61,3 +61,24 @@ pub fn auth_header_value(s: &str) -> Result<http::HeaderValue, ProxyError> {
     http::HeaderValue::from_str(s)
         .map_err(|e| ProxyError::AuthError(format!("invalid auth header value: {e}")))
 }
+
+/// Gemini CLI OAuth 的请求头：Bearer token 加上客户端标识。
+///
+/// Claude 适配器的 `gemini_native` 格式与 Gemini 适配器共用这一套，两份逐字相同。
+/// `token` 取 `access_token`，缺省时退回 `api_key`（上游把 OAuth token 放在
+/// `api_key` 字段的配置）。每个请求都会构造一次。
+pub fn google_oauth_headers(
+    auth: &AuthInfo,
+) -> Result<Vec<(http::HeaderName, http::HeaderValue)>, ProxyError> {
+    let token = auth.access_token.as_ref().unwrap_or(&auth.api_key);
+    Ok(vec![
+        (
+            http::HeaderName::from_static("authorization"),
+            auth_header_value(&format!("Bearer {token}"))?,
+        ),
+        (
+            http::HeaderName::from_static("x-goog-api-client"),
+            http::HeaderValue::from_static("GeminiCLI/1.0"),
+        ),
+    ])
+}

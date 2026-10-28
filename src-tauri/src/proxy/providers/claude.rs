@@ -900,19 +900,7 @@ impl ProviderAdapter for ClaudeAdapter {
                 HeaderName::from_static("x-goog-api-key"),
                 hv(&auth.api_key)?,
             )],
-            AuthStrategy::GoogleOAuth => {
-                let token = auth.access_token.as_ref().unwrap_or(&auth.api_key);
-                vec![
-                    (
-                        HeaderName::from_static("authorization"),
-                        hv(&format!("Bearer {token}"))?,
-                    ),
-                    (
-                        HeaderName::from_static("x-goog-api-client"),
-                        HeaderValue::from_static("GeminiCLI/1.0"),
-                    ),
-                ]
-            }
+            AuthStrategy::GoogleOAuth => super::adapter::google_oauth_headers(auth)?,
             AuthStrategy::CodexOAuth => {
                 // 注意：bearer token 由 forwarder 动态注入到 auth.api_key
                 // ChatGPT-Account-Id 由 forwarder 注入额外 header
