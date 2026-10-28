@@ -5464,7 +5464,7 @@ fn launch_macos_terminal_app(script_file: &std::path::Path) -> Result<(), String
 fn launch_macos_otty(script_file: &std::path::Path) -> Result<(), String> {
     use std::process::Command;
 
-    let otty_cli = find_macos_otty_cli().ok_or_else(|| {
+    let otty_cli = crate::session_manager::terminal::find_otty_cli().ok_or_else(|| {
         "未找到 Otty CLI。请将 Otty 安装到 /Applications 或 ~/Applications。".to_string()
     })?;
 
@@ -5497,38 +5497,6 @@ fn launch_macos_otty(script_file: &std::path::Path) -> Result<(), String> {
             decode_command_output(&window_result.stderr)
         ))
     }
-}
-
-#[cfg(target_os = "macos")]
-fn find_macos_otty_cli() -> Option<std::path::PathBuf> {
-    macos_otty_cli_candidates()
-        .into_iter()
-        .find(|path| path.is_file() && is_executable_file(path))
-}
-
-#[cfg(target_os = "macos")]
-fn macos_otty_cli_candidates() -> Vec<std::path::PathBuf> {
-    let mut candidates = vec![std::path::PathBuf::from(
-        "/Applications/Otty.app/Contents/MacOS/otty-cli",
-    )];
-
-    if let Some(home) = std::env::var_os("HOME") {
-        candidates.push(
-            std::path::PathBuf::from(home).join("Applications/Otty.app/Contents/MacOS/otty-cli"),
-        );
-    }
-
-    candidates.push(std::path::PathBuf::from("/usr/local/bin/otty"));
-    candidates.push(std::path::PathBuf::from("/opt/homebrew/bin/otty"));
-
-    if let Some(path) = std::env::var_os("PATH") {
-        for directory in std::env::split_paths(&path) {
-            candidates.push(directory.join("otty"));
-            candidates.push(directory.join("otty-cli"));
-        }
-    }
-
-    candidates
 }
 
 /// macOS: iTerm2
@@ -10499,18 +10467,6 @@ mod tests {
             build_macos_dash_c_command(Path::new("/tmp/cc_switch_launcher.sh")),
             "exec sh '/tmp/cc_switch_launcher.sh'"
         );
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn otty_cli_candidates_include_bundle_and_installed_cli_locations() {
-        let candidates = macos_otty_cli_candidates();
-
-        assert!(candidates.contains(&PathBuf::from(
-            "/Applications/Otty.app/Contents/MacOS/otty-cli"
-        )));
-        assert!(candidates.contains(&PathBuf::from("/usr/local/bin/otty")));
-        assert!(candidates.contains(&PathBuf::from("/opt/homebrew/bin/otty")));
     }
 
     /// Restored windows should not receive the launcher command.

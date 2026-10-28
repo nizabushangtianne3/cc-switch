@@ -113,14 +113,14 @@ fn launch_otty(command: &str, cwd: Option<&str>) -> Result<(), String> {
 }
 
 #[cfg(target_os = "macos")]
-fn find_otty_cli() -> Option<std::path::PathBuf> {
+pub(crate) fn find_otty_cli() -> Option<std::path::PathBuf> {
     otty_cli_candidates()
         .into_iter()
         .find(|path| path.is_file() && is_executable_file(path))
 }
 
 #[cfg(target_os = "macos")]
-fn otty_cli_candidates() -> Vec<std::path::PathBuf> {
+pub(crate) fn otty_cli_candidates() -> Vec<std::path::PathBuf> {
     let mut candidates = vec![std::path::PathBuf::from(
         "/Applications/Otty.app/Contents/MacOS/otty-cli",
     )];
