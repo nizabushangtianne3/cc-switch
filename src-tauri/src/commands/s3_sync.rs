@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 use tauri::State;
 
 use crate::commands::sync_support::{
-    attach_warning, post_sync_warning_from_result, run_post_import_sync,
+    attach_warning, map_sync_result, post_sync_warning_from_result, run_post_import_sync,
 };
 use crate::error::AppError;
 use crate::services::s3_sync as s3_sync_service;
@@ -81,19 +81,6 @@ where
         project(result).await
     })
     .await
-}
-
-fn map_sync_result<T, F>(result: Result<T, AppError>, on_error: F) -> Result<T, String>
-where
-    F: FnOnce(&AppError),
-{
-    match result {
-        Ok(value) => Ok(value),
-        Err(err) => {
-            on_error(&err);
-            Err(err.to_string())
-        }
-    }
 }
 
 #[tauri::command]
@@ -192,9 +179,10 @@ pub async fn s3_sync_fetch_remote_info() -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        map_sync_result, persist_sync_error, require_enabled_s3_settings,
-        resolve_secret_for_request, run_download_with_s3_lock, run_with_s3_lock, s3_sync_mutex,
+        persist_sync_error, require_enabled_s3_settings, resolve_secret_for_request,
+        run_download_with_s3_lock, run_with_s3_lock, s3_sync_mutex,
     };
+    use crate::commands::sync_support::map_sync_result;
     use crate::error::AppError;
     use crate::settings::{AppSettings, S3SyncSettings};
     use serial_test::serial;

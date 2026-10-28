@@ -79,9 +79,26 @@ pub(crate) fn success_payload_with_warning(backup_id: String, warning: Option<St
     )
 }
 
+/// 把同步结果翻译成命令返回值：失败时先让调用方把错误落到 settings.status，
+/// 再把错误文本交回前端（Tauri 命令层只用 `String` 承载错误）。
+///
+/// S3 与 WebDAV 的手动同步命令逐字共用这一份。
+pub(crate) fn map_sync_result<T, F>(result: Result<T, AppError>, on_error: F) -> Result<T, String>
+where
+    F: FnOnce(&AppError),
+{
+    match result {
+        Ok(value) => Ok(value),
+        Err(err) => {
+            on_error(&err);
+            Err(err.to_string())
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{attach_warning, post_sync_warning_from_result};
+    use super::{attach_warning, map_sync_result, post_sync_warning_from_result};
     use serde_json::json;
 
     #[test]
@@ -119,5 +136,30 @@ mod tests {
             updated.get("warning").and_then(|v| v.as_str()),
             Some("post sync warning")
         );
+    }
+
+    #[test]
+    fn map_sync_result_reports_the_error_and_calls_the_persist_hook() {
+        let result: Result<(), crate::error::AppError> =
+            Err(crate::error::AppError::Config("boom".to_string()));
+        let persisted = std::cell::Cell::new(false);
+
+        let mapped = map_sync_result(result, |_| persisted.set(true));
+
+        // 只锁"底层错误文本到了前端"这条契约，不焊 AppError 的 Display 措辞。
+        let reported = mapped.expect_err("a failed sync must surface to the frontend");
+        assert!(reported.contains("boom"), "got: {reported}");
+        assert!(persisted.get());
+    }
+
+    #[test]
+    fn map_sync_result_passes_success_through_without_touching_the_persist_hook() {
+        let result: Result<&str, crate::error::AppError> = Ok("ignored");
+        let persisted = std::cell::Cell::new(false);
+
+        let mapped = map_sync_result(result, |_| persisted.set(true));
+
+        assert_eq!(mapped, Ok("ignored"));
+        assert!(!persisted.get());
     }
 }
