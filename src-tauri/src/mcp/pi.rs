@@ -8,13 +8,11 @@
 //!
 //! 项目级 `.pi/mcp.json` 不在这里管。
 
-use crate::app_config::{McpApps, McpServer};
 use crate::config::atomic_write_private;
 use crate::error::AppError;
 use crate::store::AppState;
 use serde_json::{json, Value};
 use std::{
-    fs,
     path::{Path, PathBuf},
     sync::Mutex,
 };
@@ -55,17 +53,7 @@ pub(crate) fn config_path() -> Result<PathBuf, AppError> {
 }
 
 fn read(path: &Path) -> Result<Value, AppError> {
-    let text = match fs::read_to_string(path) {
-        Ok(text) => text,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(json!({"mcpServers": {}})),
-        Err(e) => return Err(AppError::io(path, e)),
-    };
-    let value: Value =
-        serde_json::from_str(&text).map_err(|_| AppError::Config("Invalid Pi MCP JSON".into()))?;
-    if !value.is_object() || value.get("mcpServers").is_some_and(|v| !v.is_object()) {
-        return Err(AppError::Config("Invalid Pi mcpServers object".into()));
-    }
-    Ok(value)
+    super::native::read_native(path, "Pi", false)
 }
 
 /// Pi 的服务器名规则：只能用字母、数字、`_`、`-`
@@ -197,51 +185,19 @@ fn sync_file(path: &Path, id: &str, change: PiChange<'_>) -> Result<(), AppError
 /// 从 Pi 的 `mcp.json` 导入。Pi 自己的字段（`timeout`、`exposure` 等）留在连接定义里原样保存；
 /// `enabled: false` 的条目导入后不勾选 Pi。和已有服务器连接方式不同的同名条目跳过并报告。
 pub fn import(state: &AppState) -> Result<usize, AppError> {
-    let document = read(&config_path()?)?;
-    let mut existing = state.db.get_all_mcp_servers()?;
-    let mut count = 0;
-    let mut skipped = Vec::new();
-    for (id, native) in document["mcpServers"].as_object().into_iter().flatten() {
-        let mut spec = unified_spec(native);
-        if super::validation::validate_server_spec(&spec).is_err() {
-            skipped.push(format!("'{id}': invalid transport configuration"));
-            continue;
-        }
-        let enabled = native
-            .get("enabled")
-            .and_then(Value::as_bool)
-            .unwrap_or(true);
-        spec.as_object_mut().unwrap().remove("enabled");
-        let server = if let Some(mut server) = existing.shift_remove(id) {
-            if transport_spec(&server.server) != transport_spec(&spec) {
-                skipped.push(format!("'{id}': conflicts with an existing server"));
-                continue;
-            }
-            server.apps.pi = enabled;
-            server
-        } else {
-            count += 1;
-            McpServer {
-                id: id.clone(),
-                name: id.clone(),
-                server: spec,
-                apps: McpApps {
-                    pi: enabled,
-                    ..Default::default()
-                },
-                ..Default::default()
-            }
-        };
-        state.db.save_mcp_server(&server)?;
-    }
-    if skipped.is_empty() {
-        Ok(count)
-    } else {
-        Err(AppError::InvalidInput(format!(
-            "Imported {count} Pi MCP servers; skipped {}. Native configurations were preserved.",
-            skipped.join("; ")
-        )))
-    }
+    super::native::import(
+        state,
+        &super::native::NativeSource {
+            path: config_path()?,
+            label: "Pi",
+            tolerate_empty: false,
+            enabled_field: "enabled",
+            inverted: false,
+            set_app: |apps, enabled| apps.pi = enabled,
+            unify: unified_spec,
+            transport_fields: &TRANSPORT_FIELDS,
+        },
+    )
 }
 
 pub(crate) fn transport_spec(spec: &Value) -> Value {
@@ -281,6 +237,7 @@ pub(crate) fn unified_spec(native: &Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     fn keeps_pi_fields_and_other_servers_when_replacing_the_transport() {

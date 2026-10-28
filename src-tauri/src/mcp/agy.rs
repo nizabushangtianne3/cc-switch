@@ -1,31 +1,15 @@
-use crate::app_config::{McpApps, McpServer};
 use crate::config::atomic_write_private;
 use crate::error::AppError;
 use crate::store::AppState;
 use serde_json::{json, Value};
-use std::{fs, path::Path, sync::Mutex};
+use std::{path::Path, sync::Mutex};
 
 static WRITE_LOCK: Mutex<()> = Mutex::new(());
 const TRANSPORT_FIELDS: [&str; 6] = ["command", "args", "env", "url", "headers", "type"];
 
 fn read(path: &Path) -> Result<Value, AppError> {
-    let text = match fs::read_to_string(path) {
-        Ok(text) => text,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(json!({"mcpServers": {}})),
-        Err(e) => return Err(AppError::io(path, e)),
-    };
     // agy 首次启动会建一个 0 字节的 mcp_config.json，当成没有配置
-    if text.trim().is_empty() {
-        return Ok(json!({"mcpServers": {}}));
-    }
-    let value: Value = serde_json::from_str(&text)
-        .map_err(|_| AppError::Config("Invalid Antigravity MCP JSON".into()))?;
-    if !value.is_object() || value.get("mcpServers").is_some_and(|v| !v.is_object()) {
-        return Err(AppError::Config(
-            "Invalid Antigravity mcpServers object".into(),
-        ));
-    }
-    Ok(value)
+    super::native::read_native(path, "Antigravity", true)
 }
 
 #[derive(Clone, Copy)]
@@ -109,60 +93,19 @@ fn sync_file(path: &Path, id: &str, change: AgyChange<'_>) -> Result<(), AppErro
 }
 
 pub fn import(state: &AppState) -> Result<usize, AppError> {
-    let document = read(&crate::agy_config::customizations_dir().join("mcp_config.json"))?;
-    let mut existing = state.db.get_all_mcp_servers()?;
-    let mut count = 0;
-    let mut skipped = Vec::new();
-    for (id, native) in document["mcpServers"].as_object().into_iter().flatten() {
-        let mut spec = unified_spec(native);
-        if super::validation::validate_server_spec(&spec).is_err() {
-            skipped.push(format!("'{id}': invalid transport configuration"));
-            continue;
-        }
-        let enabled = native
-            .get("disabled")
-            .and_then(Value::as_bool)
-            .map(|disabled| !disabled)
-            .unwrap_or(true);
-        spec.as_object_mut().unwrap().remove("disabled");
-        let server = if let Some(mut server) = existing.shift_remove(id) {
-            if transport_spec(&server.server) != transport_spec(&spec) {
-                skipped.push(format!("'{id}': conflicts with an existing server"));
-                continue;
-            }
-            server.apps.agy = enabled;
-            server
-        } else {
-            count += 1;
-            McpServer {
-                id: id.clone(),
-                name: id.clone(),
-                server: spec,
-                apps: McpApps {
-                    agy: enabled,
-                    ..Default::default()
-                },
-                ..Default::default()
-            }
-        };
-        state.db.save_mcp_server(&server)?;
-    }
-    if skipped.is_empty() {
-        Ok(count)
-    } else {
-        Err(AppError::InvalidInput(format!(
-            "Imported {count} Antigravity MCP servers; skipped {}. Native configurations were preserved.",
-            skipped.join("; ")
-        )))
-    }
-}
-
-fn transport_spec(spec: &Value) -> Value {
-    let mut spec = unified_spec(spec);
-    if let Some(object) = spec.as_object_mut() {
-        object.retain(|key, _| TRANSPORT_FIELDS.contains(&key.as_str()));
-    }
-    spec
+    super::native::import(
+        state,
+        &super::native::NativeSource {
+            path: crate::agy_config::customizations_dir().join("mcp_config.json"),
+            label: "Antigravity",
+            tolerate_empty: true,
+            enabled_field: "disabled",
+            inverted: true,
+            set_app: |apps, enabled| apps.agy = enabled,
+            unify: unified_spec,
+            transport_fields: &TRANSPORT_FIELDS,
+        },
+    )
 }
 
 fn unified_spec(native: &Value) -> Value {
@@ -186,6 +129,7 @@ fn unified_spec(native: &Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     #[test]
     fn agy_mcp_preserves_options_and_distinguishes_disable_from_remove() {
         let dir = tempfile::tempdir().unwrap();

@@ -49,6 +49,7 @@ pub use opencode::{
 
 pub(crate) mod kimi;
 pub(crate) mod mcode;
+pub(crate) mod native;
 pub(crate) mod pi;
 
 /// 从数据库配置里挑出启用了的 MCP 服务条目。
