@@ -214,21 +214,7 @@ fn sign_request(
 
 /// Redact a URL for safe inclusion in error messages (strips query parameters).
 fn redact_url(raw: &str) -> String {
-    match Url::parse(raw) {
-        Ok(parsed) => {
-            let mut out = format!("{}://", parsed.scheme());
-            if let Some(host) = parsed.host_str() {
-                out.push_str(host);
-            }
-            if let Some(port) = parsed.port() {
-                out.push(':');
-                out.push_str(&port.to_string());
-            }
-            out.push_str(parsed.path());
-            out
-        }
-        Err(_) => raw.split('?').next().unwrap_or(raw).to_string(),
-    }
+    crate::redact_url_for_log(raw)
 }
 
 fn s3_transport_error(
