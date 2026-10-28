@@ -48,7 +48,8 @@ import {
 import { isValidPiPromptTemplateSlug } from "@/lib/piPromptSlug";
 import { cn } from "@/lib/utils";
 import { extractErrorMessage } from "@/utils/errorUtils";
-import { FieldError, promptFieldClass } from "./PromptFormPanel";
+import { FieldError } from "@/components/mcp/formBits";
+import { promptFieldClass } from "./PromptFormPanel";
 import { promptMenuContentClass, promptMenuItemClass } from "./PromptPageFrame";
 import {
   charCount,

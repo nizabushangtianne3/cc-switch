@@ -1,6 +1,5 @@
 import React, { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { CircleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -10,7 +9,10 @@ import {
 import { APP_DISPLAY_NAME } from "@/components/shell/AppGlyph";
 import type { Prompt, AppId } from "@/lib/api";
 import { fieldClass } from "@/components/ui/input";
+import { FieldError } from "@/components/mcp/formBits";
 import { cn } from "@/lib/utils";
+
+export const promptFieldClass = fieldClass;
 import {
   MCODE_PROMPT_LIMIT,
   charCount,
@@ -28,24 +30,6 @@ interface PromptFormPanelProps {
 }
 
 /** 和 Input / Textarea 同一套外观（ui/input.tsx 的 fieldClass） */
-export const promptFieldClass = fieldClass;
-
-export function FieldError({ id, children }: { id: string; children: string }) {
-  return (
-    <span
-      id={id}
-      className="flex items-start gap-1 text-caption text-danger-text"
-    >
-      <CircleAlert
-        aria-hidden="true"
-        strokeWidth={1.5}
-        className="mt-0.5 h-3.5 w-3.5 shrink-0"
-      />
-      <span>{children}</span>
-    </span>
-  );
-}
-
 /**
  * 添加 / 编辑提示词的抽屉（宽 560，PromptsEdit.dc.html）。
  * 启用中的那条：保存按钮写明会覆盖哪个文件；删除照样画出来但不能点，原因挂在按钮上。

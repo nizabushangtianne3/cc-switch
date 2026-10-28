@@ -11,8 +11,8 @@ import {
 import { AppGlyph, APP_DISPLAY_NAME } from "@/components/shell/AppGlyph";
 import { promptsApi, type AppId, type Prompt } from "@/lib/api";
 import { promptKeys } from "@/lib/query/prompts";
+import { FieldError } from "@/components/mcp/formBits";
 import { cn } from "@/lib/utils";
-import { FieldError } from "./PromptFormPanel";
 
 interface PromptCopyDialogProps {
   prompt: Prompt;
