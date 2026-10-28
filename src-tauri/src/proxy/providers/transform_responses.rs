@@ -2790,16 +2790,8 @@ pub(crate) fn responses_to_anthropic_with_web_search_options(
         });
     }
 
-    let result = json!({
-        "id": body.get("id").and_then(|i| i.as_str()).unwrap_or(""),
-        "type": "message",
-        "role": "assistant",
-        "content": content,
-        "model": body.get("model").and_then(|m| m.as_str()).unwrap_or(""),
-        "stop_reason": stop_reason,
-        "stop_sequence": null,
-        "usage": usage_json
-    });
+    let result =
+        super::transform::anthropic_message_envelope(&body, content, stop_reason, usage_json);
 
     Ok(result)
 }

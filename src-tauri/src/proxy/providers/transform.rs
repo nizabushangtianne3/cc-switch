@@ -788,7 +788,23 @@ pub fn openai_to_anthropic(body: Value) -> Result<Value, ProxyError> {
         usage_json["cache_creation_input_tokens"] = json!(cache_creation);
     }
 
-    let result = json!({
+    let result = anthropic_message_envelope(&body, content, stop_reason, usage_json);
+
+    Ok(result)
+}
+
+/// Anthropic 非流式响应的消息外壳。
+///
+/// Chat Completions 与 Responses 两条转换链的产出只差 `stop_reason` 的来源和
+/// `usage` 的算法，外壳形状必须一致：同一次会话如果经两条链回来出现字段增减，
+/// 前端按 Anthropic 协议解析就会丢字段。构造点收在这里，两边共用。
+pub(crate) fn anthropic_message_envelope(
+    body: &Value,
+    content: Vec<Value>,
+    stop_reason: Option<&str>,
+    usage: Value,
+) -> Value {
+    json!({
         "id": body.get("id").and_then(|i| i.as_str()).unwrap_or(""),
         "type": "message",
         "role": "assistant",
@@ -796,10 +812,8 @@ pub fn openai_to_anthropic(body: Value) -> Result<Value, ProxyError> {
         "model": body.get("model").and_then(|m| m.as_str()).unwrap_or(""),
         "stop_reason": stop_reason,
         "stop_sequence": null,
-        "usage": usage_json
-    });
-
-    Ok(result)
+        "usage": usage
+    })
 }
 
 #[cfg(test)]
