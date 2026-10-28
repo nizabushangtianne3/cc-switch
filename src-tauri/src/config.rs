@@ -1118,6 +1118,54 @@ mod tests {
             "匹配数不超过保留上限时不该删任何文件"
         );
     }
+
+    #[test]
+    #[serial_test::serial]
+    fn create_pruned_backup_writes_isolated_backup_and_prunes_old_files() {
+        let home = tempfile::tempdir().expect("temp home");
+        let previous_test_home = std::env::var_os("CC_SWITCH_TEST_HOME");
+        std::env::set_var("CC_SWITCH_TEST_HOME", home.path());
+
+        let backup_dir = home
+            .path()
+            .join(".cc-switch")
+            .join("backups")
+            .join("hermes");
+        std::fs::create_dir_all(&backup_dir).expect("create backup dir");
+        for name in ["old-1.yaml", "old-2.yaml", "old-3.yaml"] {
+            std::fs::write(backup_dir.join(name), b"old").expect("seed old backup");
+        }
+
+        let previous_retain = crate::settings::get_settings();
+        let mut isolated_retain = previous_retain.clone();
+        isolated_retain.backup_retain_count = Some(1);
+        crate::settings::update_settings(isolated_retain).expect("set backup retention");
+
+        let backup_path =
+            create_pruned_backup("hermes", "yaml", &["yaml", "yml"], "Test", "source");
+        crate::settings::update_settings(previous_retain.clone())
+            .expect("restore backup retention");
+
+        match previous_test_home {
+            Some(value) => std::env::set_var("CC_SWITCH_TEST_HOME", value),
+            None => std::env::remove_var("CC_SWITCH_TEST_HOME"),
+        }
+
+        let backup_path = backup_path.expect("create backup");
+        assert_eq!(backup_path.parent(), Some(backup_dir.as_path()));
+        assert!(backup_path.file_name().is_some_and(|name| {
+            let name = name.to_string_lossy();
+            name.starts_with("hermes_") && name.ends_with(".yaml")
+        }));
+        assert_eq!(std::fs::read(&backup_path).unwrap(), b"source");
+
+        let yaml_count = std::fs::read_dir(&backup_dir)
+            .expect("read backup dir")
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "yaml"))
+            .count();
+        assert_eq!(yaml_count, 1, "新备份创建后只应保留一份匹配备份");
+    }
 }
 
 /// 复制文件
@@ -1157,6 +1205,48 @@ pub fn get_claude_config_status() -> ConfigStatus {
 ///
 /// Hermes 与 OpenClaw 各有一份逐字相同的私有实现（只差扩展名集合与日志前缀），
 /// 已收成这一份。
+pub(crate) fn create_backup_file(
+    subdir: &str,
+    extension: &str,
+    source: &str,
+) -> Result<PathBuf, AppError> {
+    let backup_dir = get_app_config_dir().join("backups").join(subdir);
+    fs::create_dir_all(&backup_dir).map_err(|e| AppError::io(&backup_dir, e))?;
+
+    let base_id = format!("{subdir}_{}", chrono::Local::now().format("%Y%m%d_%H%M%S"));
+    let mut filename = format!("{base_id}.{extension}");
+    let mut backup_path = backup_dir.join(&filename);
+    let mut counter = 1;
+
+    while backup_path.exists() {
+        filename = format!("{base_id}_{counter}.{extension}");
+        backup_path = backup_dir.join(&filename);
+        counter += 1;
+    }
+
+    atomic_write(&backup_path, source.as_bytes())?;
+    Ok(backup_path)
+}
+
+/// 写一份带时间戳的备份，再按保留策略清理旧备份。
+///
+/// Hermes 与 OpenClaw 的备份创建逻辑逐字相同（只差子目录、扩展名、清理认哪些扩展名、
+/// 日志前缀），与 [`prune_backups_by_extension`] 一同收在这里。
+pub(crate) fn create_pruned_backup(
+    subdir: &str,
+    extension: &str,
+    prune_extensions: &[&str],
+    label: &str,
+    source: &str,
+) -> Result<PathBuf, AppError> {
+    let backup_path = create_backup_file(subdir, extension, source)?;
+    let backup_dir = backup_path
+        .parent()
+        .ok_or_else(|| AppError::Config("无效的备份目录".to_string()))?;
+    prune_backups_by_extension(backup_dir, prune_extensions, label)?;
+    Ok(backup_path)
+}
+
 pub(crate) fn prune_backups_by_extension(
     dir: &Path,
     extensions: &[&str],

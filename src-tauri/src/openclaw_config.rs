@@ -3,10 +3,9 @@
 //! 处理 `~/.openclaw/openclaw.json` 配置文件的读写操作（JSON5 格式）。
 //! OpenClaw 使用累加式供应商管理，所有供应商配置共存于同一配置文件中。
 
-use crate::config::{atomic_write, get_app_config_dir};
+use crate::config::atomic_write;
 use crate::error::AppError;
 use crate::settings::get_openclaw_override_dir;
-use chrono::Local;
 use indexmap::IndexMap;
 use json_five::rt::parser::{
     from_str as rt_from_str, JSONKeyValuePair as RtJSONKeyValuePair,
@@ -17,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
 const OPENCLAW_DEFAULT_SOURCE: &str =
@@ -373,27 +372,7 @@ fn write_root_section(section: &str, value: &Value) -> Result<OpenClawWriteOutco
 }
 
 fn create_openclaw_backup(source: &str) -> Result<PathBuf, AppError> {
-    let backup_dir = get_app_config_dir().join("backups").join("openclaw");
-    fs::create_dir_all(&backup_dir).map_err(|e| AppError::io(&backup_dir, e))?;
-
-    let base_id = format!("openclaw_{}", Local::now().format("%Y%m%d_%H%M%S"));
-    let mut filename = format!("{base_id}.json5");
-    let mut backup_path = backup_dir.join(&filename);
-    let mut counter = 1;
-
-    while backup_path.exists() {
-        filename = format!("{base_id}_{counter}.json5");
-        backup_path = backup_dir.join(&filename);
-        counter += 1;
-    }
-
-    atomic_write(&backup_path, source.as_bytes())?;
-    cleanup_openclaw_backups(&backup_dir)?;
-    Ok(backup_path)
-}
-
-fn cleanup_openclaw_backups(dir: &Path) -> Result<(), AppError> {
-    crate::config::prune_backups_by_extension(dir, &["json5", "json"], "OpenClaw")
+    crate::config::create_pruned_backup("openclaw", "json5", &["json5", "json"], "OpenClaw", source)
 }
 
 fn ensure_object(value: &mut Value) -> &mut Map<String, Value> {
@@ -876,7 +855,9 @@ pub fn set_tools_config(tools: &OpenClawToolsConfig) -> Result<OpenClawWriteOutc
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::get_app_config_dir;
     use serial_test::serial;
+    use std::path::Path;
     use std::sync::{Mutex, OnceLock};
 
     fn test_guard() -> std::sync::MutexGuard<'static, ()> {

@@ -30,10 +30,9 @@
 //!     args: ["-y", "@modelcontextprotocol/server-filesystem"]
 //! ```
 
-use crate::config::{atomic_write, get_app_config_dir};
+use crate::config::atomic_write;
 use crate::error::AppError;
 use crate::settings::get_hermes_override_dir;
-use chrono::Local;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -361,27 +360,7 @@ fn replace_yaml_section(
 // ============================================================================
 
 fn create_hermes_backup(source: &str) -> Result<PathBuf, AppError> {
-    let backup_dir = get_app_config_dir().join("backups").join("hermes");
-    fs::create_dir_all(&backup_dir).map_err(|e| AppError::io(&backup_dir, e))?;
-
-    let base_id = format!("hermes_{}", Local::now().format("%Y%m%d_%H%M%S"));
-    let mut filename = format!("{base_id}.yaml");
-    let mut backup_path = backup_dir.join(&filename);
-    let mut counter = 1;
-
-    while backup_path.exists() {
-        filename = format!("{base_id}_{counter}.yaml");
-        backup_path = backup_dir.join(&filename);
-        counter += 1;
-    }
-
-    atomic_write(&backup_path, source.as_bytes())?;
-    cleanup_hermes_backups(&backup_dir)?;
-    Ok(backup_path)
-}
-
-fn cleanup_hermes_backups(dir: &Path) -> Result<(), AppError> {
-    crate::config::prune_backups_by_extension(dir, &["yaml", "yml"], "Hermes")
+    crate::config::create_pruned_backup("hermes", "yaml", &["yaml", "yml"], "Hermes", source)
 }
 
 // ============================================================================
