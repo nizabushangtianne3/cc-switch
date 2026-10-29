@@ -36,7 +36,9 @@ use crate::settings::get_hermes_override_dir;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+#[cfg(any(target_os = "windows", test))]
+use std::path::Path;
+use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
 // ============================================================================
