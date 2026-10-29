@@ -355,6 +355,100 @@ struct StreamedTextState {
     unkeyed_follows_keyed: bool,
 }
 
+enum UnkeyedStateUpdate {
+    Keep,
+    Clear,
+    RemainFrom(usize),
+    ClearFrom(usize),
+}
+
+fn strip_ordered_prefix<'a>(text: &'a str, first: &str, second: &str) -> Option<&'a str> {
+    if text.len() < first.len() + second.len() {
+        return None;
+    }
+    if !text.as_bytes().starts_with(first.as_bytes()) {
+        return None;
+    }
+    text[first.len()..].strip_prefix(second)
+}
+
+fn ordered_starts_with_text(first: &str, second: &str, text: &str) -> bool {
+    let overlap = text.len().min(first.len());
+    if text.as_bytes()[..overlap] != first.as_bytes()[..overlap] {
+        return false;
+    }
+    if text.len() <= first.len() {
+        return true;
+    }
+    second
+        .as_bytes()
+        .starts_with(&text.as_bytes()[first.len()..])
+}
+
+fn reconcile_unkeyed_missing(
+    full_text: &str,
+    keyed: Option<&str>,
+    unkeyed: &str,
+    unkeyed_follows_keyed: bool,
+) -> (String, UnkeyedStateUpdate) {
+    let ordered = keyed.map(|keyed| {
+        if unkeyed_follows_keyed {
+            (keyed, unkeyed)
+        } else {
+            (unkeyed, keyed)
+        }
+    });
+
+    if let Some((first, second)) = ordered {
+        if let Some(suffix) = strip_ordered_prefix(full_text, first, second) {
+            return (suffix.to_string(), UnkeyedStateUpdate::Clear);
+        }
+    }
+    if unkeyed_follows_keyed
+        && keyed.is_some_and(|keyed| keyed.starts_with(full_text) || full_text.starts_with(keyed))
+    {
+        let suffix = keyed
+            .and_then(|keyed| full_text.strip_prefix(keyed))
+            .unwrap_or_default();
+        return (suffix.to_string(), UnkeyedStateUpdate::Keep);
+    }
+    if let Some((first, second)) = ordered {
+        if ordered_starts_with_text(first, second, full_text) {
+            let update = if unkeyed.strip_prefix(full_text).is_some() {
+                UnkeyedStateUpdate::ClearFrom(full_text.len())
+            } else {
+                UnkeyedStateUpdate::Clear
+            };
+            return (String::new(), update);
+        }
+    }
+    if unkeyed.strip_prefix(full_text).is_some() {
+        return (
+            String::new(),
+            UnkeyedStateUpdate::RemainFrom(full_text.len()),
+        );
+    }
+    if let Some(suffix) = full_text.strip_prefix(unkeyed) {
+        if keyed.is_some_and(|keyed| suffix == keyed) {
+            return (String::new(), UnkeyedStateUpdate::Clear);
+        }
+        return (suffix.to_string(), UnkeyedStateUpdate::Clear);
+    }
+    if let Some(keyed) = keyed {
+        if let Some(suffix) = full_text.strip_prefix(keyed) {
+            return (suffix.to_string(), UnkeyedStateUpdate::Keep);
+        }
+        if keyed.starts_with(full_text) {
+            return (String::new(), UnkeyedStateUpdate::Keep);
+        }
+    }
+
+    log::warn!(
+        "[Claude/Responses] Could not correlate terminal text with an unkeyed streamed delta; avoiding duplicate replay"
+    );
+    (String::new(), UnkeyedStateUpdate::Keep)
+}
+
 impl StreamedTextState {
     fn output_part_index(&self, key: (u64, u64)) -> Option<usize> {
         self.by_output_part
@@ -577,87 +671,38 @@ impl StreamedTextState {
             return String::new();
         }
         let keyed_index = self.existing_keyed_part_index(output_key, item_key.as_ref());
-        let emitted = keyed_index.map(|index| self.parts[index].text.clone());
+        let keyed_text = keyed_index.map(|index| self.parts[index].text.as_str());
 
-        let missing = if !self.unkeyed.is_empty() {
-            let unkeyed = self.unkeyed.clone();
-            let combined = emitted.as_deref().map(|keyed| {
-                if self.unkeyed_follows_keyed {
-                    format!("{keyed}{unkeyed}")
-                } else {
-                    format!("{unkeyed}{keyed}")
-                }
-            });
-            if let Some(suffix) = combined
-                .as_deref()
-                .and_then(|candidate| full_text.strip_prefix(candidate))
-            {
-                self.unkeyed.clear();
-                self.unkeyed_follows_keyed = false;
-                suffix.to_string()
-            } else if self.unkeyed_follows_keyed
-                && emitted.as_deref().is_some_and(|keyed| {
-                    keyed.starts_with(full_text) || full_text.starts_with(keyed)
-                })
-            {
-                emitted
-                    .as_deref()
-                    .and_then(|keyed| full_text.strip_prefix(keyed))
-                    .unwrap_or_default()
-                    .to_string()
-            } else if combined
-                .as_deref()
-                .is_some_and(|candidate| candidate.starts_with(full_text))
-            {
-                if let Some(remaining) = unkeyed.strip_prefix(full_text) {
-                    self.unkeyed = remaining.to_string();
-                } else {
-                    self.unkeyed.clear();
-                    self.unkeyed_follows_keyed = false;
-                }
-                String::new()
-            } else if let Some(remaining) = unkeyed.strip_prefix(full_text) {
-                self.unkeyed = remaining.to_string();
-                String::new()
-            } else if let Some(suffix) = full_text.strip_prefix(&unkeyed) {
-                self.unkeyed.clear();
-                self.unkeyed_follows_keyed = false;
-                if emitted.as_deref().is_some_and(|keyed| suffix == keyed) {
-                    String::new()
-                } else {
-                    suffix.to_string()
-                }
-            } else if let Some(emitted) = emitted.as_deref() {
-                if let Some(suffix) = full_text.strip_prefix(emitted) {
-                    suffix.to_string()
-                } else if emitted.starts_with(full_text) {
-                    String::new()
-                } else {
-                    log::warn!(
-                        "[Claude/Responses] Terminal text did not extend the streamed text; avoiding duplicate replay"
-                    );
-                    String::new()
-                }
+        let (missing, unkeyed_update) = if !self.unkeyed.is_empty() {
+            reconcile_unkeyed_missing(
+                full_text,
+                keyed_text,
+                &self.unkeyed,
+                self.unkeyed_follows_keyed,
+            )
+        } else if let Some(keyed) = keyed_text {
+            if let Some(suffix) = full_text.strip_prefix(keyed) {
+                (suffix.to_string(), UnkeyedStateUpdate::Keep)
             } else {
-                log::warn!(
-                    "[Claude/Responses] Could not correlate terminal text with an unkeyed streamed delta; avoiding duplicate replay"
-                );
-                String::new()
-            }
-        } else if let Some(emitted) = emitted.as_deref() {
-            if let Some(suffix) = full_text.strip_prefix(emitted) {
-                suffix.to_string()
-            } else if emitted.starts_with(full_text) {
-                String::new()
-            } else {
-                log::warn!(
-                    "[Claude/Responses] Terminal text did not extend the streamed text; avoiding duplicate replay"
-                );
-                String::new()
+                (String::new(), UnkeyedStateUpdate::Keep)
             }
         } else {
-            full_text.to_string()
+            (full_text.to_string(), UnkeyedStateUpdate::Keep)
         };
+
+        match unkeyed_update {
+            UnkeyedStateUpdate::Keep => {}
+            UnkeyedStateUpdate::Clear => {
+                self.unkeyed.clear();
+                self.unkeyed_follows_keyed = false;
+            }
+            UnkeyedStateUpdate::RemainFrom(offset) | UnkeyedStateUpdate::ClearFrom(offset) => {
+                self.unkeyed.drain(..offset);
+                if matches!(unkeyed_update, UnkeyedStateUpdate::ClearFrom(_)) {
+                    self.unkeyed_follows_keyed = false;
+                }
+            }
+        }
 
         if output_key.is_some() || item_key.is_some() {
             let index = keyed_index.unwrap_or_else(|| self.push_part(output_key, item_key.clone()));
