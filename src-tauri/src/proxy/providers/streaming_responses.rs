@@ -820,14 +820,14 @@ impl BufferedCitationTextState {
         if self.parts.get(index).is_none_or(|part| part.discarded) {
             return;
         }
-        let output_keys = self.parts[index].output_keys.clone();
-        let item_keys = self.parts[index].item_keys.clone();
         self.parts[index].emitted_bytes = self.parts[index].text.len();
         for annotation in &mut self.parts[index].annotations {
             annotation.emitted = true;
         }
-        self.emitted_output_parts.extend(output_keys);
-        self.emitted_item_parts.extend(item_keys);
+        self.emitted_output_parts
+            .extend(self.parts[index].output_keys.iter().copied());
+        self.emitted_item_parts
+            .extend(self.parts[index].item_keys.iter().cloned());
         if self.open_part == Some(index) {
             self.open_part = None;
             if self.parts[index].originated_unkeyed {
