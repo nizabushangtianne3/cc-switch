@@ -1,8 +1,16 @@
-import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import {
+  Suspense,
+  lazy,
+  useEffect,
+  useMemo,
+  useState,
+  useCallback,
+  useRef,
+} from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Form, FormField, FormItem, FormMessage } from "@/components/ui/form";
@@ -93,18 +101,14 @@ import {
 } from "./ClaudeStackModelsField";
 import { setClaudeOneMMarker } from "./hooks/useModelState";
 import { useAppMode } from "@/lib/query/proxy";
-import { ClaudeDesktopProviderForm } from "./ClaudeDesktopProviderForm";
-import { GrokBuildProviderForm } from "./GrokBuildProviderForm";
 import { CodexFormFields } from "./CodexFormFields";
 import { GeminiFormFields } from "./GeminiFormFields";
-import { KimiProviderForm } from "./KimiProviderForm";
+import { OmoFormFields } from "./OmoFormFields";
 import { AgyAccountSelect } from "./AgyOAuthSection";
 import { isMac } from "@/lib/platform";
-import { McodeProviderForm } from "./McodeProviderForm";
-import { PiProviderForm } from "./PiProviderForm";
-import { OmoFormFields } from "./OmoFormFields";
 import { parseOmoOtherFieldsObject } from "@/types/omo";
 import type { AppMode } from "@/types/proxy";
+import { usePresetStep } from "./presetStep";
 import {
   useProviderCategory,
   useDraftEditorProjection,
@@ -148,6 +152,32 @@ import { resolveManagedAccountId } from "@/lib/authBinding";
 import { useOpenClawLiveProviderIds } from "@/hooks/useOpenClaw";
 import { useHermesLiveProviderIds } from "@/hooks/useHermes";
 import { resolveCodexOfficialIdentity } from "@/utils/providerCapabilities";
+
+const ClaudeDesktopProviderForm = lazy(() =>
+  import("./ClaudeDesktopProviderForm").then((module) => ({
+    default: module.ClaudeDesktopProviderForm,
+  })),
+);
+const GrokBuildProviderForm = lazy(() =>
+  import("./GrokBuildProviderForm").then((module) => ({
+    default: module.GrokBuildProviderForm,
+  })),
+);
+const KimiProviderForm = lazy(() =>
+  import("./KimiProviderForm").then((module) => ({
+    default: module.KimiProviderForm,
+  })),
+);
+const McodeProviderForm = lazy(() =>
+  import("./McodeProviderForm").then((module) => ({
+    default: module.McodeProviderForm,
+  })),
+);
+const PiProviderForm = lazy(() =>
+  import("./PiProviderForm").then((module) => ({
+    default: module.PiProviderForm,
+  })),
+);
 
 type PresetEntry = {
   id: string;
@@ -334,16 +364,44 @@ export interface ProviderFormProps {
 }
 
 export function ProviderForm(props: ProviderFormProps) {
-  if (props.appId === "kimi") return <KimiProviderForm {...props} />;
-  if (props.appId === "mcode") return <McodeProviderForm {...props} />;
-  if (props.appId === "pi" || props.appId === "omp") {
-    return <PiProviderForm {...props} />;
-  }
-  if (props.appId === "claude-desktop") {
-    return <ClaudeDesktopProviderForm {...props} />;
-  }
-  if (props.appId === "grokbuild") {
-    return <GrokBuildProviderForm {...props} />;
+  const { t } = useTranslation();
+  const { registerSelector } = usePresetStep() ?? {};
+  const standaloneForm = (() => {
+    if (props.appId === "kimi") return <KimiProviderForm {...props} />;
+    if (props.appId === "mcode") return <McodeProviderForm {...props} />;
+    if (props.appId === "pi" || props.appId === "omp") {
+      return <PiProviderForm {...props} />;
+    }
+    if (props.appId === "claude-desktop") {
+      return <ClaudeDesktopProviderForm {...props} />;
+    }
+    if (props.appId === "grokbuild") {
+      return <GrokBuildProviderForm {...props} />;
+    }
+    return null;
+  })();
+  const hasStandaloneForm = Boolean(standaloneForm);
+
+  useEffect(() => {
+    if (!hasStandaloneForm) return;
+    return registerSelector?.();
+  }, [hasStandaloneForm, props.appId, registerSelector]);
+
+  if (standaloneForm) {
+    return (
+      <Suspense
+        fallback={
+          <div
+            aria-busy="true"
+            className="flex h-full min-h-40 items-center justify-center text-body text-fg-2"
+          >
+            {t("common.loading")}
+          </div>
+        }
+      >
+        {standaloneForm}
+      </Suspense>
+    );
   }
 
   return <ProviderFormFull {...props} />;
