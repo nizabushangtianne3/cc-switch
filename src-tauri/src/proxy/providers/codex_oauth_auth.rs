@@ -2100,7 +2100,7 @@ fn extract_account_metadata_from_tokens(
                     .as_ref()
                     .and_then(|a| a.chatgpt_account_id.clone())
             });
-            email = claims.email.clone();
+            email = claims.email;
         }
     }
 
@@ -2113,7 +2113,7 @@ fn extract_account_metadata_from_tokens(
                     .and_then(|a| a.chatgpt_account_id.clone())
             });
             if email.is_none() {
-                email = claims.email.clone();
+                email = claims.email;
             }
         }
     }

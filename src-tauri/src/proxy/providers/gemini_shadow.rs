@@ -159,7 +159,7 @@ impl GeminiShadowStore {
 
         let session = inner
             .sessions
-            .entry(key.clone())
+            .entry(key)
             .or_insert_with(GeminiShadowSession::new);
         session.turns.push_back(turn);
         while session.turns.len() > self.max_turns_per_session {

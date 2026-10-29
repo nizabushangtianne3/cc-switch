@@ -892,7 +892,7 @@ impl BufferedCitationTextState {
         let merged_text = if additive_histories {
             format!("{kept_text}{discarded_text}")
         } else if kept_text.is_empty() || discarded_text.contains(kept_text.as_str()) {
-            discarded_text.clone()
+            discarded_text
         } else if discarded_text.is_empty() || kept_text.contains(discarded_text.as_str()) {
             kept_text.clone()
         } else {

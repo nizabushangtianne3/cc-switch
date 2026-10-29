@@ -1104,7 +1104,7 @@ fn merge_codex_config(
         if let Some(api_key) =
             crate::codex_config::extract_codex_api_key(config.get("auth"), config_text.as_deref())
         {
-            request.api_key = Some(api_key.to_string());
+            request.api_key = Some(api_key);
         }
     }
     // 只给了 env_key：Key 在本机环境变量里，不能从不可信的链接导入（同 Grok Build）

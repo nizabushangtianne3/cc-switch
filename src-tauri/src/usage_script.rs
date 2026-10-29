@@ -301,7 +301,7 @@ async fn send_http_request(config: &RequestConfig, timeout_secs: u64) -> Result<
             }
             format!("{}...", &text[..safe_cut])
         } else {
-            text.clone()
+            text
         };
         return Err(AppError::localized(
             "usage_script.http_error",

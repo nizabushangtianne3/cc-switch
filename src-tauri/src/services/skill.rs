@@ -2889,7 +2889,7 @@ impl SkillService {
         let resolved = path
             .parent()
             .map(|parent| parent.join(&target))
-            .unwrap_or(target.clone());
+            .unwrap_or(target);
 
         let canonical_ssot = ssot_dir
             .canonicalize()

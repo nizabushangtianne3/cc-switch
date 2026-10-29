@@ -151,7 +151,7 @@ pub fn gemini_to_anthropic_with_shadow_and_hints(
         .cloned()
         .unwrap_or_default();
 
-    let mut rectified_parts = parts.clone();
+    let mut rectified_parts = parts;
     rectify_tool_call_parts(&mut rectified_parts, tool_schema_hints);
 
     // Pre-pass: for every `functionCall` that lacks an id (or carries an

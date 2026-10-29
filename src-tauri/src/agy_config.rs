@@ -215,7 +215,7 @@ pub(crate) fn prepare_launch(provider_id: &str, settings: &Value) -> Result<AgyL
         model: None,
         env: vec![
             ("GEMINI_API_KEY", projection.api_key.clone()),
-            ("GOOGLE_GEMINI_BASE_URL", projection.base_url.clone()),
+            ("GOOGLE_GEMINI_BASE_URL", projection.base_url),
         ],
     })
 }

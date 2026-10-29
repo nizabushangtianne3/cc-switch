@@ -52,7 +52,7 @@ fn create_backup(conflicts: &[EnvConflict]) -> Result<BackupInfo, String> {
     // Create backup data
     let backup_info = BackupInfo {
         backup_path: backup_file.to_string_lossy().to_string(),
-        timestamp: timestamp.clone(),
+        timestamp,
         conflicts: conflicts.to_vec(),
     };
 

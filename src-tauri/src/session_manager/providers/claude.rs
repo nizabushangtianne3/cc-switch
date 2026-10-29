@@ -254,12 +254,7 @@ fn parse_session_lines(
     let title = custom_title
         .map(|t| truncate_summary(&t, TITLE_MAX_CHARS))
         .or_else(|| first_user_message.map(|t| truncate_summary(&t, TITLE_MAX_CHARS)))
-        .or_else(|| {
-            project_dir
-                .as_deref()
-                .and_then(path_basename)
-                .map(|v| v.to_string())
-        });
+        .or_else(|| project_dir.as_deref().and_then(path_basename));
 
     let summary = summary.map(|text| truncate_summary(&text, 160));
 

@@ -126,10 +126,7 @@ impl Repair {
         let mut out = Vec::new();
 
         if let Some((item_id, delta)) = block.arguments_delta() {
-            self.arguments
-                .entry(item_id.clone())
-                .or_default()
-                .push_str(delta);
+            self.arguments.entry(item_id).or_default().push_str(delta);
             // 增量一律照发，不触发放行：并行调用时几个条目的结束事件可能都先到，各自的增量
             // （乃至别的调用的增量）随后交错着来，见到任何增量就放行会让还没等到参数的条目空着发出。
             out.push(block.into_bytes());

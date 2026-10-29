@@ -960,7 +960,7 @@ impl CodexAdapter {
         // 2. 尝试从 auth 中获取 (Codex CLI 格式)
         if let Some(auth) = provider.settings_config.get("auth") {
             if let Some(key) = crate::codex_config::extract_codex_auth_api_key(auth) {
-                return Some(key.to_string());
+                return Some(key);
             }
         }
 

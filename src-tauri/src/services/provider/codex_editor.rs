@@ -143,7 +143,7 @@ pub fn view(
         .as_object()
         .cloned()
         .unwrap_or_else(Map::new);
-    settings.insert("config".to_string(), Value::String(display.clone()));
+    settings.insert("config".to_string(), Value::String(display));
     // 没绑托管账号的官方卡：auth.json 框和 TOML 一样显示切过去之后盘上的样子。行里存的
     // 登录是旧版回填的快照，Codex 轮换 token 后就对不上了；切换也不拿它覆盖同一个人的
     // 登录（见 `codex_login::official`）。用户没改就不存回行，见 [`plan_save`]。

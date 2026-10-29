@@ -242,7 +242,7 @@ fn sqlite_row_to_session_meta(row: &Value, db_source: &str) -> Option<SessionMet
         .get("title")
         .and_then(Value::as_str)
         .filter(|s| !s.is_empty())
-        .map(|s| truncate_summary(s, TITLE_MAX_CHARS).to_string());
+        .map(|s| truncate_summary(s, TITLE_MAX_CHARS));
 
     let cwd = obj
         .get("cwd")

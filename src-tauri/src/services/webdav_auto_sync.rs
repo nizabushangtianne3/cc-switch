@@ -37,7 +37,7 @@ impl AutoSyncKind for WebDavAutoSync {
         };
         sync.status.last_error = Some(error.to_string());
         sync.status.last_error_source = Some("auto".to_string());
-        let _ = settings::update_webdav_sync_status(sync.status.clone());
+        let _ = settings::update_webdav_sync_status(sync.status);
     }
 
     fn upload(

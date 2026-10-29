@@ -90,7 +90,7 @@ pub async fn upsert_mcp_server_in_config(
     // 构建新的统一服务器结构
     let mut new_server = if let Some(mut existing) = existing_server {
         // 更新现有服务器
-        existing.server = spec.clone();
+        existing.server = spec;
         existing.apps.set_enabled_for(&app_ty, true);
         existing
     } else {
@@ -106,7 +106,7 @@ pub async fn upsert_mcp_server_in_config(
             .to_string();
 
         McpServer {
-            id: id.clone(),
+            id,
             name,
             server: spec,
             apps,

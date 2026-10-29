@@ -691,12 +691,7 @@ fn parse_session(storage: &Path, path: &Path) -> Option<SessionMeta> {
 
     // Derive title from directory basename if no explicit title
     let has_title = title.is_some();
-    let display_title = title.or_else(|| {
-        directory
-            .as_deref()
-            .and_then(path_basename)
-            .map(|s| s.to_string())
-    });
+    let display_title = title.or_else(|| directory.as_deref().and_then(path_basename));
 
     // Build source_path = message directory for this session
     let msg_dir = storage.join("message").join(&session_id);

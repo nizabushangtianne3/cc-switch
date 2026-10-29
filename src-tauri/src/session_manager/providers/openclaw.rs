@@ -241,17 +241,13 @@ fn parse_session(
         .filter(|s| !s.is_empty())
         .map(|t| truncate_summary(t, TITLE_MAX_CHARS))
         .or_else(|| first_user_message.map(|t| truncate_summary(&t, TITLE_MAX_CHARS)))
-        .or_else(|| {
-            cwd.as_deref()
-                .and_then(path_basename)
-                .map(|s| s.to_string())
-        });
+        .or_else(|| cwd.as_deref().and_then(path_basename));
 
     let summary = summary.map(|text| truncate_summary(&text, 160));
 
     Some(SessionMeta {
         provider_id: PROVIDER_ID.to_string(),
-        session_id: session_id.clone(),
+        session_id,
         title,
         summary,
         project_dir: cwd,

@@ -169,7 +169,7 @@ impl PromptService {
                         .map(|(id, p)| (id.clone(), p))
                     {
                         let timestamp = get_unix_timestamp()?;
-                        enabled_prompt.content = live_content.clone();
+                        enabled_prompt.content = live_content;
                         enabled_prompt.updated_at = Some(timestamp);
                         log::info!("回填 live 提示词内容到已启用项: {enabled_id}");
                         state.db.save_prompt(app.as_str(), enabled_prompt)?;
@@ -379,7 +379,7 @@ impl PromptService {
         let timestamp = get_unix_timestamp()?;
         let id = format!("auto-imported-{timestamp}");
         let prompt = Prompt {
-            id: id.clone(),
+            id,
             name: format!(
                 "Auto-imported Prompt {}",
                 chrono::Local::now().format("%Y-%m-%d %H:%M")

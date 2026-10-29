@@ -289,11 +289,11 @@ impl OpenClawConfigDocument {
         let new_pair = if let Some(last_pair) = key_value_pairs.last_mut() {
             let last_ctx = ensure_kvp_context(last_pair);
             let closing_ws = if let Some(after_comma) = last_ctx.wsc.3.clone() {
-                last_ctx.wsc.3 = Some(entry_separator_ws.clone());
+                last_ctx.wsc.3 = Some(entry_separator_ws);
                 after_comma
             } else {
                 let closing_ws = std::mem::take(&mut last_ctx.wsc.2);
-                last_ctx.wsc.3 = Some(entry_separator_ws.clone());
+                last_ctx.wsc.3 = Some(entry_separator_ws);
                 closing_ws
             };
 

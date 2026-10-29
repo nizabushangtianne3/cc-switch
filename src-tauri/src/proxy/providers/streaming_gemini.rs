@@ -465,7 +465,7 @@ pub fn create_anthropic_sse_stream_from_gemini<E: std::error::Error + Send + 'st
                     provider_id,
                     session_id,
                     json!({ "parts": shadow_parts }),
-                    tool_calls.clone(),
+                    tool_calls,
                 );
             }
         }
