@@ -1,7 +1,13 @@
+import { Suspense, lazy } from "react";
 import { useTranslation } from "react-i18next";
 import { FullScreenPanel } from "@/components/common/FullScreenPanel";
-import { AuthCenterPanel } from "@/components/settings/AuthCenterPanel";
 import type { AuthCenterTarget } from "@/lib/api";
+
+const AuthCenterPanel = lazy(() =>
+  import("@/components/settings/AuthCenterPanel").then((module) => ({
+    default: module.AuthCenterPanel,
+  })),
+);
 
 interface AuthSettingsPanelProps {
   target: AuthCenterTarget | null;
@@ -19,7 +25,20 @@ export function AuthSettingsPanel({ target, onClose }: AuthSettingsPanelProps) {
       onClose={onClose}
       motionPreset="slide-from-right"
     >
-      {target ? <AuthCenterPanel authScrollTarget={target} /> : null}
+      {target ? (
+        <Suspense
+          fallback={
+            <div
+              aria-busy="true"
+              className="py-12 text-center text-body text-fg-2"
+            >
+              {t("common.loading")}
+            </div>
+          }
+        >
+          <AuthCenterPanel authScrollTarget={target} />
+        </Suspense>
+      ) : null}
     </FullScreenPanel>
   );
 }
