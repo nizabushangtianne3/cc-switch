@@ -876,11 +876,15 @@ impl BufferedCitationTextState {
         } else {
             (second, first)
         };
-        let discarded = self.parts[discard].clone();
-        let kept_text = self.parts[keep].text.clone();
-        let discarded_text = discarded.text.clone();
-        let kept_emitted =
-            kept_text[..self.parts[keep].emitted_bytes.min(kept_text.len())].to_string();
+        // The discarded slot is not observable after `discarded = true`; move its
+        // payload instead of cloning the whole part before merging.
+        let mut discarded = std::mem::take(&mut self.parts[discard]);
+        let discarded_text_len = discarded.text.len();
+        let kept_emitted_len = self.parts[keep].emitted_bytes;
+        let kept_text = std::mem::take(&mut self.parts[keep].text);
+        let kept_text_len = kept_text.len();
+        let discarded_text = std::mem::take(&mut discarded.text);
+        let kept_emitted = kept_text[..kept_emitted_len.min(kept_text_len)].to_string();
         let discarded_emitted =
             discarded_text[..discarded.emitted_bytes.min(discarded_text.len())].to_string();
         let additive_histories = self.parts[keep].received_delta && discarded.received_delta;
@@ -889,22 +893,27 @@ impl BufferedCitationTextState {
             && (additive_histories
                 || (!discarded_text.contains(kept_text.as_str())
                     && !kept_text.contains(discarded_text.as_str())));
-        let merged_text = if additive_histories {
-            format!("{kept_text}{discarded_text}")
+        let mut merged_text = String::with_capacity(kept_text_len + discarded_text.len());
+        if additive_histories
+            || !(kept_text.is_empty()
+                || discarded_text.contains(kept_text.as_str())
+                || discarded_text.is_empty()
+                || kept_text.contains(discarded_text.as_str()))
+        {
+            merged_text.push_str(&kept_text);
+            merged_text.push_str(&discarded_text);
         } else if kept_text.is_empty() || discarded_text.contains(kept_text.as_str()) {
-            discarded_text
-        } else if discarded_text.is_empty() || kept_text.contains(discarded_text.as_str()) {
-            kept_text.clone()
+            merged_text.push_str(&discarded_text);
         } else {
-            format!("{kept_text}{discarded_text}")
-        };
+            merged_text.push_str(&kept_text);
+        }
         let mut emitted_bytes = [kept_emitted.as_str(), discarded_emitted.as_str()]
             .into_iter()
             .filter(|prefix| merged_text.starts_with(prefix))
             .map(str::len)
             .max()
             .unwrap_or_default();
-        if concatenated && self.parts[keep].emitted_bytes == kept_text.len() {
+        if concatenated && kept_emitted_len == kept_text_len {
             let concatenated_emitted = format!("{kept_text}{discarded_emitted}");
             if merged_text.starts_with(&concatenated_emitted) {
                 emitted_bytes = emitted_bytes.max(concatenated_emitted.len());
@@ -945,7 +954,7 @@ impl BufferedCitationTextState {
             kept.received_delta |= discarded.received_delta;
         }
         self.parts[discard].discarded = true;
-        self.parts[discard].emitted_bytes = self.parts[discard].text.len();
+        self.parts[discard].emitted_bytes = discarded_text_len;
         if self.open_part == Some(discard) {
             self.open_part = Some(keep);
         }
