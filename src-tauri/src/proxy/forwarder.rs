@@ -918,7 +918,7 @@ impl RequestForwarder {
         {
             let mut s = self.status.write().await;
             s.total_requests = s.total_requests.saturating_add(1);
-            s.last_request_at = Some(chrono::Utc::now().to_rfc3339());
+            s.last_request_at = Some(chrono::Utc::now());
         }
         let result = self
             .forward_with_retry_inner(

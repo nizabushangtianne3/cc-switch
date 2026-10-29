@@ -63,6 +63,9 @@ impl ProxyState {
     pub async fn status_snapshot(&self) -> ProxyStatus {
         let mut status = self.status.read().await.clone();
         status.active_connections = self.active_connections.load(Ordering::Relaxed);
+        status.last_request_at_display = status
+            .last_request_at
+            .map(|last_request_at| last_request_at.to_rfc3339());
 
         if let Some(start) = *self.start_time.read().await {
             status.uptime_seconds = start.elapsed().as_secs();
@@ -2804,5 +2807,21 @@ mod tests {
         assert_eq!(target.provider_name, "Provider One");
 
         proxy.stop().await.expect("stop test proxy");
+    }
+
+    #[tokio::test]
+    async fn status_snapshot_serializes_last_request_time_once() {
+        let db = Arc::new(Database::memory().expect("memory database"));
+        let proxy = ProxyServer::new(ProxyConfig::default(), db, None);
+        let last_request_at = chrono::Utc::now();
+        proxy.state.status.write().await.last_request_at = Some(last_request_at);
+
+        let status = proxy.state.status_snapshot().await;
+
+        assert_eq!(status.last_request_at, Some(last_request_at));
+        assert_eq!(
+            status.last_request_at_display.as_deref(),
+            Some(last_request_at.to_rfc3339().as_str())
+        );
     }
 }

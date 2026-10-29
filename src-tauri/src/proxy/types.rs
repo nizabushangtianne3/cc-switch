@@ -81,8 +81,12 @@ pub struct ProxyStatus {
     pub current_provider: Option<String>,
     /// 当前Provider的ID
     pub current_provider_id: Option<String>,
-    /// 最后一次请求时间
-    pub last_request_at: Option<String>,
+    /// 最后一次请求时间。热路径只写入时间点；RFC3339 字符串在状态快照时生成。
+    #[serde(skip)]
+    pub last_request_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// 前端契约里的 `last_request_at` 序列化形状。
+    #[serde(rename = "last_request_at", default)]
+    pub last_request_at_display: Option<String>,
     /// 最后一次错误信息
     pub last_error: Option<String>,
     /// Provider故障转移次数
