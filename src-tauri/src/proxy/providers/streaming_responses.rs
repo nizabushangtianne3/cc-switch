@@ -880,13 +880,12 @@ impl BufferedCitationTextState {
         // payload instead of cloning the whole part before merging.
         let mut discarded = std::mem::take(&mut self.parts[discard]);
         let discarded_text_len = discarded.text.len();
-        let kept_emitted_len = self.parts[keep].emitted_bytes;
+        let kept_emitted_bytes = self.parts[keep].emitted_bytes;
         let kept_text = std::mem::take(&mut self.parts[keep].text);
         let kept_text_len = kept_text.len();
         let discarded_text = std::mem::take(&mut discarded.text);
-        let kept_emitted = kept_text[..kept_emitted_len.min(kept_text_len)].to_string();
-        let discarded_emitted =
-            discarded_text[..discarded.emitted_bytes.min(discarded_text.len())].to_string();
+        let kept_emitted_len = kept_emitted_bytes.min(kept_text_len);
+        let discarded_emitted_len = discarded.emitted_bytes.min(discarded_text.len());
         let additive_histories = self.parts[keep].received_delta && discarded.received_delta;
         let concatenated = !kept_text.is_empty()
             && !discarded_text.is_empty()
@@ -907,17 +906,23 @@ impl BufferedCitationTextState {
         } else {
             merged_text.push_str(&kept_text);
         }
-        let mut emitted_bytes = [kept_emitted.as_str(), discarded_emitted.as_str()]
-            .into_iter()
-            .filter(|prefix| merged_text.starts_with(prefix))
-            .map(str::len)
-            .max()
-            .unwrap_or_default();
-        if concatenated && kept_emitted_len == kept_text_len {
-            let concatenated_emitted = format!("{kept_text}{discarded_emitted}");
-            if merged_text.starts_with(&concatenated_emitted) {
-                emitted_bytes = emitted_bytes.max(concatenated_emitted.len());
-            }
+        let mut emitted_bytes = [
+            &kept_text[..kept_emitted_len],
+            &discarded_text[..discarded_emitted_len],
+        ]
+        .into_iter()
+        .filter(|prefix| merged_text.starts_with(prefix))
+        .map(str::len)
+        .max()
+        .unwrap_or_default();
+        let concatenated_emitted_len = kept_text_len + discarded_emitted_len;
+        if concatenated
+            && kept_emitted_bytes == kept_text_len
+            && merged_text.len() >= concatenated_emitted_len
+            && merged_text.starts_with(kept_text.as_str())
+            && merged_text[kept_text_len..].starts_with(&discarded_text[..discarded_emitted_len])
+        {
+            emitted_bytes = emitted_bytes.max(concatenated_emitted_len);
         }
         let merged_text_end = merged_text.chars().count();
 
@@ -5518,6 +5523,30 @@ mod tests {
         let unmatched = state.reconcile_emitted_unkeyed_terminal_text("Goodbye");
         assert!(matches!(unmatched, EmittedUnkeyedTerminalMatch::NoMatch));
         assert_eq!(state.emitted_unkeyed_history, "Hello");
+    }
+
+    #[test]
+    fn merge_part_indices_preserves_the_longest_emitted_prefix() {
+        let mut state = BufferedCitationTextState::default();
+        state.parts.push(BufferedCitationPart {
+            text: "abc".to_string(),
+            emitted_bytes: 3,
+            received_delta: true,
+            ..Default::default()
+        });
+        state.parts.push(BufferedCitationPart {
+            text: "cde".to_string(),
+            emitted_bytes: 2,
+            received_delta: true,
+            ..Default::default()
+        });
+
+        let kept = state.merge_part_indices(0, 1);
+
+        assert_eq!(kept, 0);
+        assert_eq!(state.parts[kept].text, "abccde");
+        assert_eq!(state.parts[kept].emitted_bytes, 5);
+        assert!(state.parts[1].discarded);
     }
 
     #[test]
