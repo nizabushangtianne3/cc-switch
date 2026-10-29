@@ -1491,34 +1491,75 @@ impl BufferedCitationTextState {
         &mut self,
         terminal_text: &str,
     ) -> EmittedUnkeyedTerminalMatch {
+        // Resolve against the history by reference, not by cloning it: the match only
+        // needs the byte prefix length or the shorter suffix.
+        enum ReconciliationPlan {
+            ConsumedPrefix {
+                consumed_chars: usize,
+                consume_all: bool,
+                prefix_bytes: usize,
+            },
+            Complete {
+                consumed_chars: usize,
+                suffix: String,
+            },
+        }
+
         if self.emitted_unkeyed_history.is_empty() {
             return EmittedUnkeyedTerminalMatch::NoMatch;
         }
 
-        let emitted = self.emitted_unkeyed_history.clone();
-        if let Some(remaining) = emitted.strip_prefix(terminal_text) {
-            let consumed_chars = terminal_text.chars().count();
-            let consume_all = remaining.is_empty();
-            let emitted_annotations =
-                self.consume_emitted_unkeyed_annotations(consumed_chars, consume_all);
-            self.emitted_unkeyed_history = remaining.to_string();
-            return EmittedUnkeyedTerminalMatch::FullyEmitted(emitted_annotations);
-        }
-        if let Some(suffix) = terminal_text.strip_prefix(&emitted) {
-            let emitted_annotations =
-                self.consume_emitted_unkeyed_annotations(emitted.chars().count(), true);
-            self.emitted_unkeyed_history.clear();
-            return if suffix.is_empty() {
-                EmittedUnkeyedTerminalMatch::FullyEmitted(emitted_annotations)
+        let plan = {
+            let emitted = &self.emitted_unkeyed_history;
+            if let Some(remaining) = emitted.strip_prefix(terminal_text) {
+                Some(ReconciliationPlan::ConsumedPrefix {
+                    consumed_chars: terminal_text.chars().count(),
+                    consume_all: remaining.is_empty(),
+                    prefix_bytes: terminal_text.len(),
+                })
             } else {
-                EmittedUnkeyedTerminalMatch::MissingSuffix {
-                    suffix: suffix.to_string(),
-                    emitted_annotations,
-                }
-            };
-        }
+                terminal_text.strip_prefix(emitted.as_str()).map(|suffix| {
+                    ReconciliationPlan::Complete {
+                        consumed_chars: emitted.chars().count(),
+                        suffix: suffix.to_string(),
+                    }
+                })
+            }
+        };
 
-        EmittedUnkeyedTerminalMatch::NoMatch
+        match plan {
+            Some(ReconciliationPlan::ConsumedPrefix {
+                consumed_chars,
+                consume_all,
+                prefix_bytes,
+            }) => {
+                let emitted_annotations =
+                    self.consume_emitted_unkeyed_annotations(consumed_chars, consume_all);
+                if consume_all {
+                    self.emitted_unkeyed_history.clear();
+                } else {
+                    self.emitted_unkeyed_history.drain(..prefix_bytes);
+                }
+                EmittedUnkeyedTerminalMatch::FullyEmitted(emitted_annotations)
+            }
+            Some(ReconciliationPlan::Complete {
+                consumed_chars,
+                suffix,
+            }) => {
+                let emitted_annotations =
+                    self.consume_emitted_unkeyed_annotations(consumed_chars, true);
+                self.emitted_unkeyed_history.clear();
+                if suffix.is_empty() {
+                    EmittedUnkeyedTerminalMatch::FullyEmitted(emitted_annotations)
+                } else {
+                    EmittedUnkeyedTerminalMatch::MissingSuffix {
+                        suffix,
+                        emitted_annotations,
+                    }
+                }
+            }
+            None => EmittedUnkeyedTerminalMatch::NoMatch,
+        }
     }
 
     fn record_done_event(&mut self, data: &Value) {
@@ -5433,6 +5474,41 @@ mod tests {
             Some("Second.".to_string())
         );
         assert!(state.render_pending_parts().is_empty());
+    }
+
+    #[test]
+    fn reconcile_emitted_unkeyed_terminal_text_reuses_the_unmatched_history() {
+        let mut state = BufferedCitationTextState {
+            emitted_unkeyed_history: "Hello".to_string(),
+            ..Default::default()
+        };
+
+        let partial = state.reconcile_emitted_unkeyed_terminal_text("He");
+        assert!(matches!(
+            partial,
+            EmittedUnkeyedTerminalMatch::FullyEmitted(ref annotations) if annotations.is_empty()
+        ));
+        assert_eq!(state.emitted_unkeyed_history, "llo");
+
+        let rest = state.reconcile_emitted_unkeyed_terminal_text("llo");
+        assert!(matches!(
+            rest,
+            EmittedUnkeyedTerminalMatch::FullyEmitted(ref annotations) if annotations.is_empty()
+        ));
+        assert!(state.emitted_unkeyed_history.is_empty());
+
+        state.emitted_unkeyed_history = "Hello".to_string();
+        let extended = state.reconcile_emitted_unkeyed_terminal_text("Hello world");
+        assert!(matches!(
+            extended,
+            EmittedUnkeyedTerminalMatch::MissingSuffix { ref suffix, .. } if suffix == " world"
+        ));
+        assert!(state.emitted_unkeyed_history.is_empty());
+
+        state.emitted_unkeyed_history = "Hello".to_string();
+        let unmatched = state.reconcile_emitted_unkeyed_terminal_text("Goodbye");
+        assert!(matches!(unmatched, EmittedUnkeyedTerminalMatch::NoMatch));
+        assert_eq!(state.emitted_unkeyed_history, "Hello");
     }
 
     #[test]
