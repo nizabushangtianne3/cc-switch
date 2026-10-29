@@ -7251,7 +7251,7 @@ impl ProviderService {
         app_type: AppType,
     ) -> Result<String, AppError> {
         // Get current provider
-        let current_id = Self::current(state, app_type.clone())?;
+        let current_id = Self::current(state, app_type)?;
         if current_id.is_empty() {
             return Err(AppError::Message("No current provider".to_string()));
         }
@@ -8578,7 +8578,7 @@ impl ProviderService {
             return;
         }
 
-        if let Err(err) = Self::sync_current_provider_for_app(state, app_type.clone()) {
+        if let Err(err) = Self::sync_current_provider_for_app(state, app_type) {
             log::warn!(
                 "统一供应商同步后重写 {} live 配置失败: {err}",
                 app_type.as_str()

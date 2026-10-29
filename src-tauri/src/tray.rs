@@ -1299,7 +1299,7 @@ fn collect_app_snapshot(
         .transpose()?;
 
     let mut snapshot = AppSnapshot {
-        app: app.clone(),
+        app: *app,
         mode,
         providers,
         current_id,
@@ -1378,10 +1378,7 @@ pub fn tray_app_page_seen(app: tauri::AppHandle, app_type: String) {
 fn record_switch_failure(app: &AppType, reason: String) {
     let mut failures = lock(&SWITCH_FAILURES);
     failures.retain(|failure| failure.app != *app);
-    failures.push(SwitchFailure {
-        app: app.clone(),
-        reason,
-    });
+    failures.push(SwitchFailure { app: *app, reason });
 }
 
 fn service_running(app_state: &AppState) -> Option<bool> {
@@ -1412,7 +1409,7 @@ fn collect_problems(
         for (app, stack) in failures.iter() {
             if visible.iter().any(|(visible_app, _)| visible_app == app) {
                 problems.push(TrayProblem::AttachFailed {
-                    app: app.clone(),
+                    app: *app,
                     stack: *stack,
                 });
             }
@@ -1423,7 +1420,7 @@ fn collect_problems(
         for failure in failures.iter() {
             if visible.iter().any(|(app, _)| *app == failure.app) {
                 problems.push(TrayProblem::SwitchFailed {
-                    app: failure.app.clone(),
+                    app: failure.app,
                     reason: failure.reason.clone(),
                 });
             }
@@ -1474,23 +1471,14 @@ static FEEDBACK: Lazy<Mutex<Option<FeedbackRecord>>> = Lazy::new(|| Mutex::new(N
 fn switch_feedback(app: &AppType, mode: TrayMode, name: String) -> Option<TrayFeedback> {
     match mode {
         TrayMode::Direct | TrayMode::Route | TrayMode::Stack if *app == AppType::ClaudeDesktop => {
-            Some(TrayFeedback::Switched {
-                app: app.clone(),
-                name,
-            })
+            Some(TrayFeedback::Switched { app: *app, name })
         }
         TrayMode::Direct
             if matches!(app, AppType::Codex | AppType::Gemini | AppType::GrokBuild) =>
         {
-            Some(TrayFeedback::Switched {
-                app: app.clone(),
-                name,
-            })
+            Some(TrayFeedback::Switched { app: *app, name })
         }
-        TrayMode::Stack => Some(TrayFeedback::StackDefault {
-            app: app.clone(),
-            name,
-        }),
+        TrayMode::Stack => Some(TrayFeedback::StackDefault { app: *app, name }),
         _ => None,
     }
 }
@@ -1886,7 +1874,7 @@ fn app_entry(
     TrayEntry::Submenu {
         id: format!("submenu_{app}"),
         text: app_row_title(texts, snapshot),
-        app: Some(snapshot.app.clone()),
+        app: Some(snapshot.app),
         children: app_children(texts, snapshot, now),
     }
 }
@@ -1991,7 +1979,7 @@ fn collect_snapshots(
         .then(|| app_state.db.get_proxy_client_endpoint_sync().1);
     let visible: Vec<(AppType, bool)> = snapshots
         .iter()
-        .map(|snapshot| (snapshot.app.clone(), snapshot.mode == TrayMode::Direct))
+        .map(|snapshot| (snapshot.app, snapshot.mode == TrayMode::Direct))
         .collect();
     let problems = collect_problems(port, &visible);
     mark_attention(&mut snapshots, &problems);
@@ -2369,7 +2357,7 @@ fn attach_entry(
             }
             let submenu = builder.build().map_err(menu_error)?;
             if let Some(app_type) = app_type {
-                handles.insert(app_type.clone(), submenu.clone());
+                handles.insert(*app_type, submenu.clone());
             }
             MenuItemKind::Submenu(submenu)
         }
@@ -2864,7 +2852,7 @@ pub fn handle_profile_tray_event(app: &tauri::AppHandle, event_id: &str) -> bool
                     record_feedback(
                         &app_handle,
                         TrayFeedback::ProfileApplied {
-                            app: app_type.clone(),
+                            app: *app_type,
                             name,
                         },
                     );
@@ -2980,7 +2968,7 @@ fn handle_provider_click(
     if mode == TrayMode::Direct && provider_needs_routing(app_type, &provider) {
         return Ok(ClickOutcome::NeedsRoute);
     }
-    crate::services::ProviderService::switch(state, app_type.clone(), provider_id)?;
+    crate::services::ProviderService::switch(state, *app_type, provider_id)?;
     Ok(ClickOutcome::Switched {
         mode,
         name: provider.name,
@@ -3249,7 +3237,7 @@ pub(crate) async fn refresh_panel_provider_usage(app: &tauri::AppHandle) {
                 .usage_cache
                 .with_script(app_type, id, |_| ())
                 .is_some();
-            let key = (app_type.clone(), id.clone());
+            let key = (*app_type, id.clone());
             let mut queried = lock(&PANEL_SCRIPT_QUERIES);
             let is_due = match queried.get(&key) {
                 Some(at) => at.elapsed() >= interval,
@@ -3260,7 +3248,7 @@ pub(crate) async fn refresh_panel_provider_usage(app: &tauri::AppHandle) {
                 queried.insert(key, std::time::Instant::now());
             }
             if is_due {
-                due.push((app_type.clone(), id.clone()));
+                due.push((*app_type, id.clone()));
             }
         }
     }
@@ -4607,10 +4595,7 @@ mod tests {
         for app in [AppType::Codex, AppType::Gemini, AppType::GrokBuild] {
             assert_eq!(
                 switch_feedback(&app, TrayMode::Direct, name()),
-                Some(TrayFeedback::Switched {
-                    app: app.clone(),
-                    name: name()
-                })
+                Some(TrayFeedback::Switched { app, name: name() })
             );
             // 路由 / 故障转移换一家立即生效。
             assert_eq!(switch_feedback(&app, TrayMode::Route, name()), None);

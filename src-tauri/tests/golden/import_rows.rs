@@ -140,7 +140,7 @@ fn deeplink_grokbuild_config_rows() {
 /// `settings_sort` 见 [`crate::util::sort_objects`]：Gemini 的 `.env` 解析顺序不稳定。
 fn first_run_import(app: AppType, snapshot: &str, settings_sort: &[&str]) {
     let state = create_test_state().expect("create test state");
-    import_default_config_test_hook(&state, app.clone()).expect("import live config");
+    import_default_config_test_hook(&state, app).expect("import live config");
     state
         .db
         .init_default_official_providers()

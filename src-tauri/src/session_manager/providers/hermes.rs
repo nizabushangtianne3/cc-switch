@@ -119,8 +119,10 @@ fn scan_sessions_sqlite_at(db_path: &Path) -> Vec<SessionMeta> {
 
 #[cfg(windows)]
 fn scan_sessions_wsl(db_path: &Path) -> Result<Vec<SessionMeta>, String> {
-    let data =
-        crate::session_manager::hermes_wsl::read(db_path, serde_json::json!({"operation":"scan"}))?;
+    let data = crate::session_manager::hermes_wsl::read(
+        db_path,
+        &serde_json::json!({"operation":"scan"}),
+    )?;
     let edges = |name: &str| -> HashMap<String, String> {
         data[name]
             .as_array()
@@ -324,7 +326,7 @@ pub fn load_messages_sqlite(source: &str) -> Result<Vec<SessionMessage>, String>
     if crate::session_manager::hermes_wsl::is_wsl(&db_path) {
         let data = crate::session_manager::hermes_wsl::read(
             &db_path,
-            serde_json::json!({"operation":"messages","session_id":session_id}),
+            &serde_json::json!({"operation":"messages","session_id":session_id}),
         )?;
         let rows: Vec<MessageRow> = data
             .as_array()
@@ -1189,7 +1191,7 @@ print(json.dumps([row[0] for row in rows]))
             assert_eq!(sessions[0].summary.as_deref(), expected.last().copied());
             // Content validation canonicalizes paths to the extended UNC form.
             let canonical = unc.canonicalize().expect("canonical WSL UNC path");
-            let value = crate::session_manager::hermes_wsl::read(&canonical, serde_json::json!({
+            let value = crate::session_manager::hermes_wsl::read(&canonical, &serde_json::json!({
                 "operation":"cell", "session_id":"s1", "id":"1", "column":"content", "max_bytes":1024,
             })).expect("production canonical content route");
             assert_eq!(value, "first");
@@ -1222,10 +1224,10 @@ print(json.dumps([row[0] for row in rows]))
                 crate::session_manager::content::resolve_content_ref(&validated, &forbidden)
                     .is_err()
             );
-            assert!(crate::session_manager::hermes_wsl::read(&canonical, serde_json::json!({
+            assert!(crate::session_manager::hermes_wsl::read(&canonical, &serde_json::json!({
                 "operation":"cell", "session_id":"wrong-session", "id":"1", "column":"content", "max_bytes":1024,
             })).is_err());
-            assert!(crate::session_manager::hermes_wsl::read(&canonical, serde_json::json!({
+            assert!(crate::session_manager::hermes_wsl::read(&canonical, &serde_json::json!({
                 "operation":"cell", "session_id":"s1", "id":"1", "column":"content", "max_bytes":1,
             })).is_err());
         };

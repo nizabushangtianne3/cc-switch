@@ -1647,7 +1647,7 @@ mod tests {
             let app = AppType::ClaudeDesktop;
             let kimi = encode(&app, "kimi", "kimi-k3", false);
             assert_eq!(
-                hit(resolve_in(&fx, app.clone(), &format!("{kimi}[1m]"))),
+                hit(resolve_in(&fx, app, &format!("{kimi}[1m]"))),
                 (
                     "kimi".to_string(),
                     "kimi-k3".to_string(),
@@ -1656,28 +1656,25 @@ mod tests {
             );
             // 路由那家自己的数字 id 也认（它做默认前客户端可能选过）
             let zhipu = encode(&app, "zhipu", "glm-5.2", false);
-            assert_eq!(hit(resolve_in(&fx, app.clone(), &zhipu)).1, "glm-5.2");
+            assert_eq!(hit(resolve_in(&fx, app, &zhipu)).1, "glm-5.2");
 
             let gone = encode(&app, "gone", "g-1", false);
-            assert_eq!(
-                miss(resolve_in(&fx, app.clone(), &gone)),
-                StackMiss::Removed
-            );
+            assert_eq!(miss(resolve_in(&fx, app, &gone)), StackMiss::Removed);
             assert_eq!(
                 miss(resolve_in(
                     &fx,
-                    app.clone(),
+                    app,
                     &encode(&app, "kimi", "kimi-k9", false)
                 )),
                 StackMiss::Unknown
             );
             assert_eq!(
-                miss(resolve_in(&fx, app.clone(), "claude-fable-ccs-12")),
+                miss(resolve_in(&fx, app, "claude-fable-ccs-12")),
                 StackMiss::Unknown
             );
             // 路由那家的映射表 id 不经过这里
             assert!(matches!(
-                resolve_in(&fx, app.clone(), "claude-sonnet-5"),
+                resolve_in(&fx, app, "claude-sonnet-5"),
                 Resolved::Plain
             ));
 

@@ -142,7 +142,7 @@ impl RequestContext {
                 // 模式状态和当前供应商读取涉及文件/SQLite IO，移到阻塞线程池，
                 // 避免请求高峰占用 tokio worker。
                 let routing_db = state.db.clone();
-                let routing_app_type = app_type.clone();
+                let routing_app_type = app_type;
                 let (current_provider, stack_mode) = tokio::task::spawn_blocking(move || {
                     crate::mode::current::provider_in_use_and_stack_mode(
                         &routing_db,

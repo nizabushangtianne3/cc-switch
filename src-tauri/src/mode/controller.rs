@@ -1784,10 +1784,7 @@ fn adopt_legacy_desktop_card(
     commit_state(state, &app, &PendingTarget::mode(mode.clone()))?;
     state
         .db
-        .ensure_official_seed_by_id(
-            crate::database::CLAUDE_DESKTOP_OFFICIAL_PROVIDER_ID,
-            app.clone(),
-        )
+        .ensure_official_seed_by_id(crate::database::CLAUDE_DESKTOP_OFFICIAL_PROVIDER_ID, app)
         .map_err(err)?;
     crate::settings::set_current_provider(
         &app,
@@ -6173,7 +6170,7 @@ model_provider = "c"
         assert_eq!(profile["inferenceModels"], json!(["claude-sonnet-5"]));
         assert_eq!(profile["inferenceGatewayAuthScheme"], json!("bearer"));
 
-        let result = ProviderService::switch(&state, desktop.clone(), "map").expect("same profile");
+        let result = ProviderService::switch(&state, desktop, "map").expect("same profile");
         assert_eq!(
             result.route,
             Some(RouteSwitchResult {
@@ -6196,8 +6193,7 @@ model_provider = "c"
             route.label_override = Some("Updated model".to_string());
         }
         state.db.save_provider(desktop.as_str(), &changed).unwrap();
-        let result =
-            ProviderService::switch(&state, desktop.clone(), "map").expect("changed profile");
+        let result = ProviderService::switch(&state, desktop, "map").expect("changed profile");
         assert_eq!(
             result.route,
             Some(RouteSwitchResult {
@@ -6244,7 +6240,7 @@ model_provider = "c"
         let mut native = desktop_card("native", false);
         // This is the provider state that gets stuck: a native direct card with no saved catalog.
         native.meta = None;
-        let state = state_with(desktop.clone(), &[native.clone()], &native.id).await;
+        let state = state_with(desktop, &[native.clone()], &native.id).await;
         let before = state
             .db
             .get_provider_by_id(&native.id, desktop.as_str())
@@ -6311,7 +6307,7 @@ model_provider = "c"
         .collect();
 
         let update_state = state.clone();
-        let update_app = desktop.clone();
+        let update_app = desktop;
         tokio::task::spawn_blocking(move || {
             crate::services::provider::ProviderService::update(
                 &update_state,
@@ -6508,7 +6504,7 @@ model_provider = "c"
             .expect("route to other");
 
         // 映射卡已经不是直连指针、也不在路由上，界面上可删，后端也要放行（#8506）。
-        crate::services::ProviderService::delete(&state, desktop.clone(), "map")
+        crate::services::ProviderService::delete(&state, desktop, "map")
             .expect("delete old mapping card");
         assert!(state
             .db
@@ -6521,7 +6517,7 @@ model_provider = "c"
             "other",
         ] {
             assert!(
-                crate::services::ProviderService::delete(&state, desktop.clone(), id).is_err(),
+                crate::services::ProviderService::delete(&state, desktop, id).is_err(),
                 "{id} should stay protected"
             );
         }

@@ -134,9 +134,9 @@ pub fn import_provider_from_deeplink(
     };
 
     if activate || additive {
-        ProviderService::add(state, app_type.clone(), provider, activate)?;
+        ProviderService::add(state, app_type, provider, activate)?;
     } else {
-        ProviderService::add_without_switching(state, app_type.clone(), provider)?;
+        ProviderService::add_without_switching(state, app_type, provider)?;
     }
 
     // Add extra endpoints as custom endpoints (skip first one as it's the primary)
@@ -145,7 +145,7 @@ pub fn import_provider_from_deeplink(
         if !normalized.is_empty() {
             if let Err(e) = ProviderService::add_custom_endpoint(
                 state,
-                app_type.clone(),
+                app_type,
                 &provider_id,
                 normalized.clone(),
             ) {
@@ -159,7 +159,7 @@ pub fn import_provider_from_deeplink(
 
     // If enabled=true, set as current provider. Antigravity 没有「启用」，只导入。
     if !additive && activate && app_type != AppType::Agy {
-        ProviderService::switch(state, app_type.clone(), &provider_id)?;
+        ProviderService::switch(state, app_type, &provider_id)?;
         log::info!("Provider '{provider_id}' set as current for {app_type:?}");
     }
 

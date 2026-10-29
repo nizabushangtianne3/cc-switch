@@ -30,12 +30,12 @@ fn prompt_list_refreshes_external_edits_without_changing_inactive_templates() {
             ..active.clone()
         };
         state.db.save_prompt(app.as_str(), &inactive).unwrap();
-        PromptService::upsert_prompt(&state, app.clone(), &active.id, active.clone()).unwrap();
+        PromptService::upsert_prompt(&state, app, &active.id, active.clone()).unwrap();
         let path = home.join(relative_path);
 
         for content in ["externally edited\n", "another edit\n"] {
             fs::write(&path, content).unwrap();
-            let prompts = PromptService::get_prompts(&state, app.clone()).unwrap();
+            let prompts = PromptService::get_prompts(&state, app).unwrap();
             assert_eq!(prompts["active"].content, content);
             assert_eq!(prompts["active"].name, active.name);
             assert_eq!(prompts["active"].description, active.description);
@@ -55,13 +55,13 @@ fn prompt_list_refreshes_external_edits_without_changing_inactive_templates() {
         saved.updated_at = Some(42);
         state.db.save_prompt(app.as_str(), &saved).unwrap();
         assert_eq!(
-            PromptService::get_prompts(&state, app.clone()).unwrap()["active"].updated_at,
+            PromptService::get_prompts(&state, app).unwrap()["active"].updated_at,
             Some(42)
         );
 
         for content in ["", " \t\r\n"] {
             fs::write(&path, content).unwrap();
-            let prompts = PromptService::get_prompts(&state, app.clone()).unwrap();
+            let prompts = PromptService::get_prompts(&state, app).unwrap();
             assert_eq!(prompts["active"].content, saved.content);
             assert_eq!(prompts["active"].updated_at, Some(42));
             assert_eq!(prompts["inactive"].content, "original");
@@ -76,7 +76,7 @@ fn prompt_list_refreshes_external_edits_without_changing_inactive_templates() {
         // must remain available so the user can repair the file from the UI.
         let utf16 = [0xff, 0xfe, b'A', 0];
         fs::write(&path, utf16).unwrap();
-        let prompts = PromptService::get_prompts(&state, app.clone()).unwrap();
+        let prompts = PromptService::get_prompts(&state, app).unwrap();
         assert_eq!(prompts["active"].content, saved.content);
         assert_eq!(prompts["active"].updated_at, Some(42));
         assert_eq!(prompts["inactive"].content, "original");
@@ -89,11 +89,11 @@ fn prompt_list_refreshes_external_edits_without_changing_inactive_templates() {
             state.db.get_prompts(app.as_str()).unwrap()["active"].content,
             saved.content
         );
-        assert!(PromptService::get_current_file_content(app.clone()).is_err());
+        assert!(PromptService::get_current_file_content(app).is_err());
 
         fs::remove_file(&path).unwrap();
         assert_eq!(
-            PromptService::get_prompts(&state, app.clone()).unwrap()["active"].updated_at,
+            PromptService::get_prompts(&state, app).unwrap()["active"].updated_at,
             Some(42)
         );
         assert!(!path.exists());
@@ -144,7 +144,7 @@ fn saving_inactive_prompts_keeps_a_hand_written_file_until_the_last_enabled_one_
             created_at: Some(1),
             updated_at: Some(1),
         };
-        PromptService::upsert_prompt(&state, app.clone(), &draft.id, draft.clone()).unwrap();
+        PromptService::upsert_prompt(&state, app, &draft.id, draft.clone()).unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), hand_written);
 
         // Re-saving an inactive prompt leaves the file alone as well.
@@ -152,11 +152,11 @@ fn saving_inactive_prompts_keeps_a_hand_written_file_until_the_last_enabled_one_
             content: "edited draft".into(),
             ..draft.clone()
         };
-        PromptService::upsert_prompt(&state, app.clone(), "draft", edited).unwrap();
+        PromptService::upsert_prompt(&state, app, "draft", edited).unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), hand_written);
 
         // Importing copies the file into the database without emptying it.
-        let imported_id = PromptService::import_from_file(&state, app.clone()).unwrap();
+        let imported_id = PromptService::import_from_file(&state, app).unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), hand_written);
         assert_eq!(
             state.db.get_prompts(app.as_str()).unwrap()[&imported_id].content,
@@ -171,8 +171,8 @@ fn saving_inactive_prompts_keeps_a_hand_written_file_until_the_last_enabled_one_
             content: "linked content".into(),
             ..draft.clone()
         };
-        PromptService::upsert_prompt(&state, app.clone(), &linked.id, linked.clone()).unwrap();
-        PromptService::enable_prompt(&state, app.clone(), &linked.id).unwrap();
+        PromptService::upsert_prompt(&state, app, &linked.id, linked.clone()).unwrap();
+        PromptService::enable_prompt(&state, app, &linked.id).unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), "linked content");
         assert!(state
             .db
@@ -186,7 +186,7 @@ fn saving_inactive_prompts_keeps_a_hand_written_file_until_the_last_enabled_one_
             enabled: false,
             ..state.db.get_prompts(app.as_str()).unwrap()["linked"].clone()
         };
-        PromptService::upsert_prompt(&state, app.clone(), "linked", disabled).unwrap();
+        PromptService::upsert_prompt(&state, app, "linked", disabled).unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), "");
     }
 

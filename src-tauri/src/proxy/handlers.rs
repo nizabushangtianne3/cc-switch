@@ -335,16 +335,8 @@ async fn handle_messages_for_app(
         extensions.insert(super::forwarder::RawRequestBody { bytes: body_bytes });
     }
 
-    let mut ctx = RequestContext::new(
-        &state,
-        &body,
-        &headers,
-        app_type.clone(),
-        tag,
-        app_type_str,
-        stack,
-    )
-    .await?;
+    let mut ctx =
+        RequestContext::new(&state, &body, &headers, app_type, tag, app_type_str, stack).await?;
 
     let raw_endpoint = uri
         .path_and_query()
@@ -1060,16 +1052,8 @@ async fn handle_responses_for_app(
         extensions.insert(super::forwarder::RawRequestBody { bytes: body_bytes });
     }
 
-    let mut ctx = RequestContext::new(
-        &state,
-        &body,
-        &headers,
-        app_type.clone(),
-        tag,
-        app_type_str,
-        stack,
-    )
-    .await?;
+    let mut ctx =
+        RequestContext::new(&state, &body, &headers, app_type, tag, app_type_str, stack).await?;
     let endpoint = endpoint_with_query(&uri, "/responses");
 
     let is_stream = body
@@ -1399,16 +1383,8 @@ async fn handle_responses_compact_for_app(
         extensions.insert(super::forwarder::RawRequestBody { bytes: body_bytes });
     }
 
-    let mut ctx = RequestContext::new(
-        &state,
-        &body,
-        &headers,
-        app_type.clone(),
-        tag,
-        app_type_str,
-        stack,
-    )
-    .await?;
+    let mut ctx =
+        RequestContext::new(&state, &body, &headers, app_type, tag, app_type_str, stack).await?;
     let endpoint = endpoint_with_query(&uri, "/responses/compact");
 
     let is_stream = body

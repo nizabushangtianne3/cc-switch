@@ -379,7 +379,7 @@ impl ProfileService {
                         crate::mode::current::Purpose::InUse,
                     )?;
                     if current.as_deref() != Some(target_pid.as_str()) {
-                        match ProviderService::switch(state, app.clone(), target_pid) {
+                        match ProviderService::switch(state, *app, target_pid) {
                             Ok(result) => warnings.extend(result.warnings),
                             Err(e) => warnings.push(format!(
                                 "[{app_str}] switch provider '{target_pid}' failed: {e}"
@@ -401,7 +401,7 @@ impl ProfileService {
                     warnings.push(format!("[{app_str}] MCP '{id}' no longer exists, skipped"));
                 }
                 for (id, enabled) in toggles {
-                    if let Err(e) = McpService::toggle_app(state, &id, app.clone(), enabled) {
+                    if let Err(e) = McpService::toggle_app(state, &id, *app, enabled) {
                         warnings.push(format!(
                             "[{app_str}] toggle MCP '{id}' -> {enabled} failed: {e}"
                         ));
@@ -440,9 +440,7 @@ impl ProfileService {
                     )),
                     Some(p) if p.enabled => {}
                     Some(_) => {
-                        if let Err(e) =
-                            PromptService::enable_prompt(state, app.clone(), target_prompt)
-                        {
+                        if let Err(e) = PromptService::enable_prompt(state, *app, target_prompt) {
                             warnings.push(format!(
                                 "[{app_str}] enable prompt '{target_prompt}' failed: {e}"
                             ));

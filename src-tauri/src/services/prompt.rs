@@ -68,7 +68,7 @@ impl PromptService {
         // External editors change the live file without updating the saved
         // selection. Refresh only that selection; inactive templates are separate.
         if let Some(prompt) = prompts.values_mut().find(|prompt| prompt.enabled) {
-            match Self::get_current_file_content(app.clone()) {
+            match Self::get_current_file_content(app) {
                 Ok(Some(content)) if !content.trim().is_empty() && prompt.content != content => {
                     prompt.content = content;
                     prompt.updated_at = Some(get_unix_timestamp()?);
@@ -135,7 +135,7 @@ impl PromptService {
         } else {
             None
         };
-        let prompts = Self::get_prompts(state, app.clone())?;
+        let prompts = Self::get_prompts(state, app)?;
 
         if let Some(prompt) = prompts.get(id) {
             if prompt.enabled {
@@ -312,7 +312,7 @@ impl PromptService {
             if matches!(app, AppType::ClaudeDesktop) {
                 continue;
             }
-            if let Err(error) = Self::sync_to_live(state, app.clone()) {
+            if let Err(error) = Self::sync_to_live(state, app) {
                 log::warn!("同步 Prompt 到 {app:?} 失败: {error}");
                 failures.push(format!("{}: {error}", app.as_str()));
             }

@@ -833,7 +833,7 @@ pub fn run() {
 
                 match crate::services::provider::import_default_config(
                     &app_state,
-                    app_type.clone(),
+                    app_type,
                 ) {
                     Ok(true) => log::info!(
                         "✓ Imported live config for {} as default provider",
@@ -1112,7 +1112,7 @@ pub fn run() {
                 ] {
                     match crate::services::prompt::PromptService::import_from_file_on_first_launch(
                         &app_state,
-                        app.clone(),
+                        app,
                     ) {
                         Ok(count) if count > 0 => {
                             log::info!("✓ Imported {count} prompt(s) for {}", app.as_str());
@@ -2123,15 +2123,14 @@ fn initialize_common_config_snippets(state: &store::AppState) {
             continue;
         }
 
-        let settings = match crate::services::provider::ProviderService::read_live_settings(
-            app_type.clone(),
-        ) {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
+        let settings =
+            match crate::services::provider::ProviderService::read_live_settings(app_type) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
 
         match crate::services::provider::ProviderService::extract_common_config_snippet_from_settings(
-            app_type.clone(),
+            app_type,
             &settings,
         ) {
             Ok(snippet) if !snippet.is_empty() && snippet != "{}" => {
@@ -2174,7 +2173,7 @@ fn initialize_common_config_snippets(state: &store::AppState) {
         ] {
             if let Err(e) = crate::services::provider::ProviderService::migrate_legacy_common_config_usage_if_needed(
                 state,
-                app_type.clone(),
+                app_type,
             ) {
                 log::warn!(
                     "✗ Failed to migrate legacy common-config usage for {}: {e}",

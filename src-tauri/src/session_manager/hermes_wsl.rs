@@ -85,7 +85,7 @@ pub(super) fn is_wsl(path: &Path) -> bool {
     target(path).is_some()
 }
 
-pub(super) fn read(path: &Path, request: Value) -> Result<Value, String> {
+pub(super) fn read(path: &Path, request: &Value) -> Result<Value, String> {
     let (distro, native) = target(path).ok_or("Invalid Hermes WSL database path")?;
     let mut command = Command::new("wsl.exe");
     command.args([

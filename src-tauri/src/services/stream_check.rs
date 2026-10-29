@@ -235,7 +235,7 @@ impl StreamCheckService {
 
         match req.send().await {
             Ok(resp) => Ok(resp.status().as_u16()),
-            Err(e) => Err(Self::map_request_error(e)),
+            Err(e) => Err(Self::map_request_error(&e)),
         }
     }
 
@@ -281,7 +281,7 @@ impl StreamCheckService {
         lower.contains("timeout") || lower.contains("abort") || lower.contains("timed out")
     }
 
-    fn map_request_error(e: reqwest::Error) -> AppError {
+    fn map_request_error(e: &reqwest::Error) -> AppError {
         if e.is_timeout() {
             AppError::Message("Request timeout".to_string())
         } else if e.is_connect() {

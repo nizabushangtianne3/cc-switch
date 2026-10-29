@@ -89,7 +89,7 @@ pub async fn get_provider_state(
             .try_state::<AppState>()
             .ok_or_else(|| "应用状态不可用".to_string())?;
         let providers =
-            ProviderService::list(state.inner(), app_type.clone()).map_err(|e| e.to_string())?;
+            ProviderService::list(state.inner(), app_type).map_err(|e| e.to_string())?;
         let current_provider_id =
             ProviderService::current(state.inner(), app_type).map_err(|e| e.to_string())?;
         Ok(ProviderState {
@@ -299,7 +299,7 @@ fn import_default_config_internal(state: &AppState, app_type: AppType) -> Result
         }
     }
 
-    let imported = ProviderService::import_default_config(state, app_type.clone())?;
+    let imported = ProviderService::import_default_config(state, app_type)?;
 
     if imported {
         // Extract common config snippet (mirrors old startup logic in lib.rs)
@@ -307,7 +307,7 @@ fn import_default_config_internal(state: &AppState, app_type: AppType) -> Result
             .db
             .should_auto_extract_config_snippet(app_type.as_str())?
         {
-            match ProviderService::extract_common_config_snippet(state, app_type.clone()) {
+            match ProviderService::extract_common_config_snippet(state, app_type) {
                 Ok(snippet) if !snippet.is_empty() && snippet != "{}" => {
                     let _ = state
                         .db
@@ -597,14 +597,8 @@ pub async fn queryProviderUsage(
     //      不写失败快照、不 emit：保留上一份托盘快照，与前端 react-query reject
     //      保留上次 data 的语义一致；否则失败快照会经 useUsageCacheBridge 盲写
     //      回 query 缓存，抹掉 reject 本该保留的旧值。
-    let inner = query_provider_usage_inner(
-        &state,
-        &copilot_state,
-        &xai_state,
-        app_type.clone(),
-        &providerId,
-    )
-    .await;
+    let inner =
+        query_provider_usage_inner(&state, &copilot_state, &xai_state, app_type, &providerId).await;
     if let Ok(snapshot) = &inner {
         let payload = serde_json::json!({
             "kind": "script",

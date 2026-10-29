@@ -6238,7 +6238,7 @@ mod tests {
         assert!(imported[0].apps.codex && imported[0].apps.gemini);
         for app in [AppType::Codex, AppType::Gemini] {
             assert!(
-                fs::read_to_string(app_copy(app.clone()).join("SKILL.md"))
+                fs::read_to_string(app_copy(app).join("SKILL.md"))
                     .unwrap()
                     .contains("found-in-claude"),
                 "{app:?} must have the skill right after import"

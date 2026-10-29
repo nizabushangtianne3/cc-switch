@@ -458,7 +458,7 @@ fn read_sqlite_cell(
     if provider_id == "hermes" && crate::session_manager::hermes_wsl::is_wsl(db) {
         let value = crate::session_manager::hermes_wsl::read(
             db,
-            serde_json::json!({
+            &serde_json::json!({
                 "operation":"cell", "session_id":session_id, "id":id,
                 "column":column, "max_bytes":MAX_TEXT_BYTES,
             }),
