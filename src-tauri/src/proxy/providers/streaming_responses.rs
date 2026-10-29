@@ -320,19 +320,37 @@ emitting api_error for the unprocessed upstream rejection instead of max_tokens"
     events
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum ContentPartKey {
+    Item {
+        item_id: String,
+        content_index: u64,
+    },
+    Output {
+        output_index: u64,
+        content_index: u64,
+    },
+}
+
 #[inline]
-fn content_part_key(data: &Value) -> Option<String> {
+fn content_part_key(data: &Value) -> Option<ContentPartKey> {
     if let (Some(item_id), Some(content_index)) = (
         data.get("item_id").and_then(|v| v.as_str()),
         data.get("content_index").and_then(|v| v.as_u64()),
     ) {
-        return Some(format!("part:{item_id}:{content_index}"));
+        return Some(ContentPartKey::Item {
+            item_id: item_id.to_string(),
+            content_index,
+        });
     }
     if let (Some(output_index), Some(content_index)) = (
         data.get("output_index").and_then(|v| v.as_u64()),
         data.get("content_index").and_then(|v| v.as_u64()),
     ) {
-        return Some(format!("part:out:{output_index}:{content_index}"));
+        return Some(ContentPartKey::Output {
+            output_index,
+            content_index,
+        });
     }
     None
 }
@@ -2028,31 +2046,46 @@ fn text_block_events(index: u32, text: &str) -> [Bytes; 3] {
 }
 
 #[inline]
-fn tool_item_key_from_added(data: &Value, item: &Value) -> Option<String> {
+fn tool_item_key_from_added(data: &Value, item: &Value) -> Option<ContentPartKey> {
     if let Some(item_id) = item.get("id").and_then(|v| v.as_str()) {
-        return Some(format!("tool:{item_id}"));
+        return Some(ContentPartKey::Item {
+            item_id: item_id.to_string(),
+            content_index: 0,
+        });
     }
     if let Some(item_id) = data.get("item_id").and_then(|v| v.as_str()) {
-        return Some(format!("tool:{item_id}"));
+        return Some(ContentPartKey::Item {
+            item_id: item_id.to_string(),
+            content_index: 0,
+        });
     }
     if let Some(output_index) = data.get("output_index").and_then(|v| v.as_u64()) {
-        return Some(format!("tool:out:{output_index}"));
+        return Some(ContentPartKey::Output {
+            output_index,
+            content_index: 0,
+        });
     }
     None
 }
 
 #[inline]
-fn tool_item_key_from_event(data: &Value) -> Option<String> {
+fn tool_item_key_from_event(data: &Value) -> Option<ContentPartKey> {
     if let Some(item_id) = data.get("item_id").and_then(|v| v.as_str()) {
-        return Some(format!("tool:{item_id}"));
+        return Some(ContentPartKey::Item {
+            item_id: item_id.to_string(),
+            content_index: 0,
+        });
     }
     if let Some(output_index) = data.get("output_index").and_then(|v| v.as_u64()) {
-        return Some(format!("tool:out:{output_index}"));
+        return Some(ContentPartKey::Output {
+            output_index,
+            content_index: 0,
+        });
     }
     None
 }
 
-fn web_search_item_keys(data: &Value, item: Option<&Value>) -> Vec<String> {
+fn web_search_item_keys(data: &Value, item: Option<&Value>) -> Vec<ContentPartKey> {
     let mut keys = Vec::with_capacity(2);
     if let Some(item_id) = item
         .and_then(|value| value.get("id"))
@@ -2060,10 +2093,16 @@ fn web_search_item_keys(data: &Value, item: Option<&Value>) -> Vec<String> {
         .or_else(|| data.get("item_id").and_then(Value::as_str))
         .filter(|item_id| !item_id.is_empty())
     {
-        keys.push(format!("web-search:{item_id}"));
+        keys.push(ContentPartKey::Item {
+            item_id: item_id.to_string(),
+            content_index: 0,
+        });
     }
     if let Some(output_index) = data.get("output_index").and_then(Value::as_u64) {
-        keys.push(format!("web-search:out:{output_index}"));
+        keys.push(ContentPartKey::Output {
+            output_index,
+            content_index: 0,
+        });
     }
     keys
 }
@@ -2252,17 +2291,23 @@ fn record_web_search_call(
 }
 
 #[inline]
-fn reasoning_item_key(data: &Value, item: Option<&Value>) -> Option<String> {
+fn reasoning_item_key(data: &Value, item: Option<&Value>) -> Option<ContentPartKey> {
     if let Some(item_id) = item
         .and_then(|value| value.get("id"))
         .and_then(Value::as_str)
         .or_else(|| data.get("item_id").and_then(Value::as_str))
     {
-        return Some(format!("reasoning:{item_id}"));
+        return Some(ContentPartKey::Item {
+            item_id: item_id.to_string(),
+            content_index: 0,
+        });
     }
     data.get("output_index")
         .and_then(Value::as_u64)
-        .map(|index| format!("reasoning:out:{index}"))
+        .map(|output_index| ContentPartKey::Output {
+            output_index,
+            content_index: 0,
+        })
 }
 
 /// Resolve content index for a text/refusal content part event.
@@ -2273,7 +2318,7 @@ fn reasoning_item_key(data: &Value, item: Option<&Value>) -> Option<String> {
 fn resolve_content_index(
     data: &Value,
     next_content_index: &mut u32,
-    index_by_key: &mut HashMap<String, u32>,
+    index_by_key: &mut HashMap<ContentPartKey, u32>,
     fallback_open_index: &mut Option<u32>,
 ) -> u32 {
     if let Some(k) = content_part_key(data) {
@@ -2510,7 +2555,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
         let mut has_sent_message_start = false;
         let mut has_tool_use = false;
         let mut next_content_index: u32 = 0;
-        let mut index_by_key: HashMap<String, u32> = HashMap::new();
+        let mut index_by_key: HashMap<ContentPartKey, u32> = HashMap::new();
         let mut open_indices: HashSet<u32> = HashSet::new();
         let mut fallback_open_index: Option<u32> = None;
         let mut current_text_index: Option<u32> = None;
@@ -3674,9 +3719,10 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                         {
                                             has_substantive_output = true;
                                             let provisional_index = index_by_key
-                                                .get(&format!(
-                                                    "web-search:out:{output_index}"
-                                                ))
+                                                .get(&ContentPartKey::Output {
+                                                    output_index: output_index as u64,
+                                                    content_index: 0,
+                                                })
                                                 .copied();
                                             let search_id = provisional_index
                                                 .and_then(|index| {
