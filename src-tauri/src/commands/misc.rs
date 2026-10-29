@@ -943,13 +943,9 @@ fn bare_official_update_command(tool: &str) -> Option<String> {
     official_update_args(tool).map(|args| format!("{tool} {args}"))
 }
 
-fn chain_update_commands(
-    primary: String,
-    fallback: String,
-    shell: LifecycleCommandShell,
-) -> String {
+fn chain_update_commands(primary: &str, fallback: &str, shell: LifecycleCommandShell) -> String {
     if fallback.trim().is_empty() {
-        return primary;
+        return primary.to_string();
     }
     match shell {
         LifecycleCommandShell::Posix => format!("{primary} || {fallback}"),
@@ -978,7 +974,8 @@ fn tool_action_shell_command_for_shell(
         return Some(match action {
             ToolLifecycleAction::Install => install,
             ToolLifecycleAction::Update => {
-                chain_update_commands(bare_official_update_command(tool)?, install, shell)
+                let primary = bare_official_update_command(tool)?;
+                chain_update_commands(&primary, &install, shell)
             }
         });
     }
@@ -995,8 +992,8 @@ fn tool_action_shell_command_for_shell(
         };
         if let Some(installer) = installer {
             return Some(chain_update_commands(
-                installer,
-                npm_install_command_for(tool)?.to_string(),
+                &installer,
+                npm_install_command_for(tool)?,
                 shell,
             ));
         }
@@ -1045,7 +1042,7 @@ fn tool_action_shell_command_for_shell(
             .then(|| bare_official_update_command(tool))
             .flatten()
         {
-            Some(update) => Some(chain_update_commands(update, install.to_string(), shell)),
+            Some(update) => Some(chain_update_commands(&update, install, shell)),
             None => Some(install.to_string()),
         },
     }
@@ -3681,12 +3678,8 @@ fn anchored_official_update_command(tool: &str, bin_path: &str) -> Option<String
 /// ⇒ install 端保留 npm fallback 是安全的（它是 x.ai 不可达时的唯一退路，防火墙场景需要），
 /// 其副作用由本链自愈；**把这里换成 npm fallback 会同时废掉降级冗余和这条自愈路径**。
 #[cfg(not(target_os = "windows"))]
-fn grok_native_update_command(update: String) -> String {
-    chain_update_commands(
-        update,
-        GROK_INSTALL_UNIX.to_string(),
-        LifecycleCommandShell::Posix,
-    )
+fn grok_native_update_command(update: &str) -> String {
+    chain_update_commands(update, GROK_INSTALL_UNIX, LifecycleCommandShell::Posix)
 }
 
 /// Windows 版同上，fallback 换成官方 PowerShell installer。
@@ -3694,7 +3687,7 @@ fn grok_native_update_command(update: String) -> String {
 /// `powershell.exe`（不是 `.cmd`/`.bat`），不需要 `call`——与 `hermes_update_windows_command`
 /// 同一理由。
 #[cfg(target_os = "windows")]
-fn grok_native_update_command(update: String) -> String {
+fn grok_native_update_command(update: &str) -> String {
     format!("{update} || {}", grok_install_windows_command())
 }
 
@@ -3877,9 +3870,8 @@ fn anchored_command_from_paths(tool: &str, bin_path: &str, real_target: &str) ->
         return anchored_official_update_command(tool, bin_path);
     }
     if tool == "grok" && is_grok_native_install(bin_path, real_target) {
-        return Some(grok_native_update_command(
-            anchored_official_update_command(tool, bin_path)?,
-        ));
+        let update = anchored_official_update_command(tool, bin_path)?;
+        return Some(grok_native_update_command(&update));
     }
     if tool == "mcode" {
         if let Some(root) = mcode_script_install_root(bin_path, real_target, McodeLayout::Posix) {
@@ -3915,7 +3907,9 @@ fn anchored_command_from_paths(tool: &str, bin_path: &str, real_target: &str) ->
             );
         }
         return Some(match package_command {
-            Some(fallback) => chain_update_commands(update, fallback, LifecycleCommandShell::Posix),
+            Some(fallback) => {
+                chain_update_commands(&update, &fallback, LifecycleCommandShell::Posix)
+            }
             None => update,
         });
     }
@@ -3993,9 +3987,8 @@ fn anchored_command_from_paths(tool: &str, bin_path: &str, real_target: &str) ->
         return anchored_official_update_command(tool, bin_path);
     }
     if tool == "grok" && is_grok_native_install(bin_path, real_target) {
-        return Some(grok_native_update_command(
-            anchored_official_update_command(tool, bin_path)?,
-        ));
+        let update = anchored_official_update_command(tool, bin_path)?;
+        return Some(grok_native_update_command(&update));
     }
     if tool == "mcode" {
         if let Some(root) = mcode_script_install_root(bin_path, real_target, McodeLayout::Windows) {
@@ -4012,7 +4005,7 @@ fn anchored_command_from_paths(tool: &str, bin_path: &str, real_target: &str) ->
         let update = anchored_official_update_command(tool, bin_path)?;
         return Some(match package_command {
             Some(fallback) => {
-                chain_update_commands(update, fallback, LifecycleCommandShell::WindowsBatch)
+                chain_update_commands(&update, &fallback, LifecycleCommandShell::WindowsBatch)
             }
             None => update,
         });
@@ -4634,11 +4627,7 @@ fn unmanaged_update_error(tool: &str, installs: &[ToolInstallation]) -> String {
 ///   复用这套 POSIX 安装优先级。
 fn installer_with_npm_fallback(installer: &str, tool: &str) -> String {
     match npm_install_command_for(tool) {
-        Some(npm) => chain_update_commands(
-            installer.to_string(),
-            npm.to_string(),
-            LifecycleCommandShell::Posix,
-        ),
+        Some(npm) => chain_update_commands(installer, npm, LifecycleCommandShell::Posix),
         None => installer.to_string(),
     }
 }

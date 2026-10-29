@@ -1550,13 +1550,17 @@ fn is_flatpak() -> bool {
 
 #[cfg(target_os = "linux")]
 fn linux_paths_from_config_dir(config_dir: &Path) -> ClaudeDesktopPaths {
-    paths_from_dirs(config_dir.join("Claude"), config_dir.join("Claude-3p"))
+    let normal_dir = config_dir.join("Claude");
+    let threep_dir = config_dir.join("Claude-3p");
+    paths_from_dirs(&normal_dir, &threep_dir)
 }
 
 #[cfg(target_os = "macos")]
 fn macos_paths_from_home(home: &Path) -> ClaudeDesktopPaths {
     let app_support = home.join("Library").join("Application Support");
-    paths_from_dirs(app_support.join("Claude"), app_support.join("Claude-3p"))
+    let normal_dir = app_support.join("Claude");
+    let threep_dir = app_support.join("Claude-3p");
+    paths_from_dirs(&normal_dir, &threep_dir)
 }
 
 #[cfg(windows)]
@@ -1572,7 +1576,7 @@ fn windows_paths_from_local_app_data(local_app_data: &Path) -> ClaudeDesktopPath
         .unwrap_or_else(|| local_app_data.join("Claude"));
     let threep_dir = pick_windows_claude_dir(local_app_data, true)
         .unwrap_or_else(|| local_app_data.join("Claude-3p"));
-    paths_from_dirs(normal_dir, threep_dir)
+    paths_from_dirs(&normal_dir, &threep_dir)
 }
 
 #[cfg(windows)]
@@ -1602,7 +1606,7 @@ fn pick_windows_claude_dir(local_app_data: &Path, threep: bool) -> Option<PathBu
 }
 
 #[cfg(any(target_os = "macos", windows, target_os = "linux", test))]
-fn paths_from_dirs(normal_dir: PathBuf, threep_dir: PathBuf) -> ClaudeDesktopPaths {
+fn paths_from_dirs(normal_dir: &Path, threep_dir: &Path) -> ClaudeDesktopPaths {
     let config_library_path = threep_dir.join(CONFIG_LIBRARY_DIR);
     let profile_path = config_library_path.join(format!("{PROFILE_ID}.json"));
     let meta_path = config_library_path.join("_meta.json");
@@ -1638,10 +1642,12 @@ mod tests {
 
     fn test_paths(home: &Path) -> ClaudeDesktopPaths {
         let mut paths = paths_from_dirs(
-            home.join("Library")
+            &home
+                .join("Library")
                 .join("Application Support")
                 .join("Claude"),
-            home.join("Library")
+            &home
+                .join("Library")
                 .join("Application Support")
                 .join("Claude-3p"),
         );

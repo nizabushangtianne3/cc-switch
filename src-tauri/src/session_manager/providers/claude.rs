@@ -127,14 +127,19 @@ fn scan_session_file(path: &Path) -> std::io::Result<Option<SessionMeta>> {
     }
     let (head, tail) = read_head_tail_lines(path, 10, 30)?;
     let relocated_cwd = last_relocated_cwd(path);
-    Ok(parse_session_lines(path, head, tail, relocated_cwd))
+    Ok(parse_session_lines(
+        path,
+        &head,
+        &tail,
+        relocated_cwd.as_deref(),
+    ))
 }
 
 fn parse_session_lines(
     path: &Path,
-    head: Vec<String>,
-    tail: Vec<String>,
-    relocated_cwd: Option<String>,
+    head: &[String],
+    tail: &[String],
+    relocated_cwd: Option<&str>,
 ) -> Option<SessionMeta> {
     let mut session_id: Option<String> = None;
     let mut project_dir: Option<String> = None;
@@ -142,7 +147,7 @@ fn parse_session_lines(
     let mut first_user_message: Option<String> = None;
 
     // Extract metadata and first user message from head lines
-    for line in &head {
+    for line in head {
         let value: Value = match serde_json::from_str(line) {
             Ok(parsed) => parsed,
             Err(_) => continue,
@@ -243,8 +248,8 @@ fn parse_session_lines(
     // Ordinary records are deliberately ignored: their `cwd` is the Bash tool's
     // tracked working directory and drifts into subdirectories as commands run,
     // which must not move the session.
-    if relocated_cwd.is_some() {
-        project_dir = relocated_cwd;
+    if let Some(relocated_cwd) = relocated_cwd {
+        project_dir = Some(relocated_cwd.to_string());
     }
 
     let session_id = session_id.or_else(|| infer_session_id_from_filename(path));
@@ -505,7 +510,7 @@ impl TranscriptBuilder {
                 if let Some(content) = record.content.as_str() {
                     let uuid = record.uuid.as_str().map(str::to_string);
                     self.push_user_texts(
-                        vec![(Cow::Borrowed(content), line.content_ref("/content"))],
+                        &[(Cow::Borrowed(content), line.content_ref("/content"))],
                         Vec::new(),
                         Vec::new(),
                         uuid,
@@ -705,14 +710,14 @@ impl TranscriptBuilder {
             }
             RawContent::None => {}
         }
-        self.push_user_texts(texts, results, images, uuid, ts);
+        self.push_user_texts(&texts, results, images, uuid, ts);
     }
 
     /// 按 §4.1 给用户文本归类：中断 / 斜杠命令 / `!` 命令 / 注入内容 / 普通提问。
     /// `texts` 每项带上它在源记录里的引用，超长注入文本只放预览 + 引用。
     fn push_user_texts(
         &mut self,
-        texts: Vec<(Cow<'_, str>, ContentRef)>,
+        texts: &[(Cow<'_, str>, ContentRef)],
         mut blocks: Vec<SessionBlock>,
         images: Vec<SessionBlock>,
         uuid: Option<String>,
@@ -746,7 +751,7 @@ impl TranscriptBuilder {
                 // 与工具结果同记录的注入文本直接丢弃；单独成条时整条标 injected、保留原文
                 if !has_results {
                     injected = true;
-                    blocks.extend(injected_blocks(&texts));
+                    blocks.extend(injected_blocks(texts));
                 }
             } else {
                 let stripped: Vec<String> = texts
@@ -759,7 +764,7 @@ impl TranscriptBuilder {
                 } else if !has_results && images.is_empty() {
                     // 全是 <system-reminder>：整条注入，保留原文
                     injected = true;
-                    blocks.extend(injected_blocks(&texts));
+                    blocks.extend(injected_blocks(texts));
                 }
             }
         }
