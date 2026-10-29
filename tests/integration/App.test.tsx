@@ -254,10 +254,12 @@ describe("App integration with MSW", () => {
     const { default: App } = await import("@/App");
     renderApp(App);
 
-    await waitFor(() =>
-      expect(screen.getByTestId("provider-list").textContent).toContain(
-        "claude-1",
-      ),
+    await waitFor(
+      () =>
+        expect(screen.getByTestId("provider-list").textContent).toContain(
+          "claude-1",
+        ),
+      { timeout: 10000 },
     );
 
     fireEvent.click(sidebarApp("Codex"));
@@ -845,28 +847,31 @@ describe("App integration with MSW", () => {
     let kimiCurrent = "kimi-sub";
     let currentRequests = 0;
     server.use(
-      http.post("http://tauri.local/get_provider_state", async ({ request }) => {
-        const { app } = (await request.json()) as { app: string };
-        if (app !== "kimi") return;
-        currentRequests += 1;
-        return HttpResponse.json({
-          providers: {
-            go: {
-              id: "go",
-              name: "OpenCode Go",
-              settingsConfig: {},
-              meta: { liveConfigManaged: true },
+      http.post(
+        "http://tauri.local/get_provider_state",
+        async ({ request }) => {
+          const { app } = (await request.json()) as { app: string };
+          if (app !== "kimi") return;
+          currentRequests += 1;
+          return HttpResponse.json({
+            providers: {
+              go: {
+                id: "go",
+                name: "OpenCode Go",
+                settingsConfig: {},
+                meta: { liveConfigManaged: true },
+              },
+              "kimi-sub": {
+                id: "kimi-sub",
+                name: "Kimi subscription",
+                settingsConfig: {},
+                meta: { liveConfigManaged: true },
+              },
             },
-            "kimi-sub": {
-              id: "kimi-sub",
-              name: "Kimi subscription",
-              settingsConfig: {},
-              meta: { liveConfigManaged: true },
-            },
-          },
-          currentProviderId: kimiCurrent,
-        });
-      }),
+            currentProviderId: kimiCurrent,
+          });
+        },
+      ),
       http.post("http://tauri.local/remove_provider_from_live_config", () =>
         HttpResponse.json(
           "无效输入: Select another default model in Kimi Code before removing this model or provider",
@@ -892,7 +897,9 @@ describe("App integration with MSW", () => {
     await waitFor(() =>
       expect(toastErrorMock).toHaveBeenCalledWith(
         "notifications.removeFromConfigFailed",
-        expect.objectContaining({ description: "kimi.error.defaultModelInUse" }),
+        expect.objectContaining({
+          description: "kimi.error.defaultModelInUse",
+        }),
       ),
     );
     await waitFor(() =>

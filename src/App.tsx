@@ -72,7 +72,6 @@ import {
 } from "@/lib/navigation";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { useUpdate } from "@/contexts/UpdateContext";
-import { NewLayoutDialog } from "@/components/shell/NewLayoutDialog";
 import {
   AppPageHeader,
   WindowControlsContext,
@@ -84,7 +83,6 @@ import {
   isNativeOpencodeConfig,
 } from "@/components/providers/forms/helpers/opencodeFormUtils";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { OpenTerminalDialog } from "@/components/providers/OpenTerminalDialog";
 import { discardUnsavedChanges, hasUnsavedChanges } from "@/lib/unsavedChanges";
 import {
   checkToolUpdatesInBackground,
@@ -92,7 +90,6 @@ import {
 } from "@/components/apps/useToolManagement";
 import { proxyApi } from "@/lib/api/proxy";
 import type { AppMode, StartupAttachFailure } from "@/types/proxy";
-import { SwitchModePanel } from "@/components/providers/mode/SwitchModePanel";
 import { PROMPT_APP_IDS } from "@/lib/query/prompts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -215,6 +212,21 @@ const LazyEnvWarningBanner = lazy(() =>
 );
 const LazyOpenClawHealthBanner = lazy(
   () => import("@/components/openclaw/OpenClawHealthBanner"),
+);
+const LazyNewLayoutDialog = lazy(() =>
+  import("@/components/shell/NewLayoutDialog").then((module) => ({
+    default: module.NewLayoutDialog,
+  })),
+);
+const LazyOpenTerminalDialog = lazy(() =>
+  import("@/components/providers/OpenTerminalDialog").then((module) => ({
+    default: module.OpenTerminalDialog,
+  })),
+);
+const LazySwitchModePanel = lazy(() =>
+  import("@/components/providers/mode/SwitchModePanel").then((module) => ({
+    default: module.SwitchModePanel,
+  })),
 );
 
 function PageLoader() {
@@ -1661,7 +1673,7 @@ function App() {
         (failure) => failure.appType === modeAppId,
       );
       return (
-        <SwitchModePanel
+        <LazySwitchModePanel
           key={modeAppId}
           app={modeAppId}
           statusSlot={connectionStatusSlot}
@@ -2042,11 +2054,13 @@ function App() {
           }}
           onCancel={() => setPendingLeave(null)}
         />
-        <OpenTerminalDialog
-          provider={terminalProvider}
-          appId={activeApp}
-          onClose={() => setTerminalProvider(null)}
-        />
+        {terminalProvider && (
+          <LazyOpenTerminalDialog
+            provider={terminalProvider}
+            appId={activeApp}
+            onClose={() => setTerminalProvider(null)}
+          />
+        )}
 
         <ConfirmDialog
           isOpen={launchDashboardOpen}
@@ -2072,7 +2086,7 @@ function App() {
 
         <LazyDeepLinkImportDialog />
         <LazyFirstRunNoticeDialog />
-        <NewLayoutDialog />
+        <LazyNewLayoutDialog />
         <LazyWhatsNewNotice />
       </Suspense>
     </WindowControlsContext.Provider>
