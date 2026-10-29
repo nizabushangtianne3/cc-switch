@@ -17,9 +17,6 @@ import {
 } from "@/utils/providerConfigUtils";
 import { parseGrokBuildConfig } from "@/utils/grokBuildConfig";
 import JsonEditor from "./JsonEditor";
-import * as prettier from "prettier/standalone";
-import * as parserBabel from "prettier/parser-babel";
-import * as pluginEstree from "prettier/plugins/estree";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -757,7 +754,12 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
 
   const handleFormat = async () => {
     try {
-      const formatted = await prettier.format(script.code, {
+      const [{ format }, parserBabel, pluginEstree] = await Promise.all([
+        import("prettier/standalone"),
+        import("prettier/parser-babel"),
+        import("prettier/plugins/estree"),
+      ]);
+      const formatted = await format(script.code, {
         parser: "babel",
         plugins: [parserBabel as any, pluginEstree as any],
         semi: true,

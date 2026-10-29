@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -73,6 +73,29 @@ function renderModal(
 }
 
 describe("UsageScriptModal Sub2API template", () => {
+  it("loads the formatter only after formatting a custom script", async () => {
+    const onSave = vi.fn();
+    renderModal(onSave, {
+      enabled: true,
+      language: "javascript",
+      code: "const value={a:1}",
+    });
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "usageScript.format" }),
+    );
+
+    await waitFor(
+      () => {
+        expect(screen.getByTestId("usage-script-code")).toHaveValue(
+          "const value = { a: 1 };",
+        );
+      },
+      { timeout: 5000 },
+    );
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
   it("fills the /v1/usage script and saves it as the sub2api template", async () => {
     const onSave = vi.fn();
     renderModal(onSave);
