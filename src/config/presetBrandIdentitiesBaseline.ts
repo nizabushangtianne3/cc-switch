@@ -428,6 +428,16 @@ export const PRESET_BRAND_IDENTITY_KEYS: Record<string, readonly string[]> = {
     "partnerPromotionKey",
   ],
   pipellm: ["name", "websiteUrl", "apiKeyUrl", "category", "icon"],
+  clinepass: ["name", "websiteUrl", "apiKeyUrl", "category", "icon"],
+  teamorouterClaude: [
+    "name",
+    "websiteUrl",
+    "apiKeyUrl",
+    "category",
+    "isPartner",
+    "partnerPromotionKey",
+    "icon",
+  ],
   ppio: [
     "name",
     "websiteUrl",

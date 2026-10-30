@@ -41,7 +41,6 @@ function CodexOauthQuotaFooterComponent(props: CodexOauthQuotaFooterProps) {
       quota={quota}
       loading={loading}
       refetch={refetch}
-      appIdForExpiredHint="codex_oauth"
       inline={inline}
       display={display}
     />

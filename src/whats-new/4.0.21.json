@@ -2,32 +2,32 @@
   "version": "4.0.21",
   "items": [
     {
-      "type": "improve",
-      "zh": "同步上游：Oh My Pi、应用页分组排序、Kimi 官方卡片可移除",
-      "zh-TW": "同步上游：Oh My Pi、應用頁分組排序、Kimi 官方卡片可移除",
-      "en": "Synced upstream: Oh My Pi, Apps page grouping, editable Kimi cards",
-      "ja": "上流を統合：Oh My Pi、アプリページのグループ化、Kimi 公式カード対応"
+      "type": "new",
+      "zh": "Claude Code 可以在多个官方订阅账号之间切换，切卡即切号",
+      "zh-TW": "Claude Code 可以在多個官方訂閱帳號之間切換，切卡即切號",
+      "en": "Switch Claude Code between several official subscription accounts by switching cards",
+      "ja": "Claude Code で複数の公式サブスクアカウントを切り替え。カードの切り替えで切り替わります"
     },
     {
       "type": "improve",
-      "zh": "代理重构：请求/响应/SSE 改走移动与池化，不再逐字节拷贝",
-      "zh-TW": "代理重構：請求/響應/SSE 改走移動與池化，不再逐位元組拷貝",
-      "en": "Proxy core overhaul: bodies and SSE events move and pool, no byte copies",
-      "ja": "プロキシコアを再構築：本体と SSE を移動・再利用しコピーを排除"
+      "zh": "绑了账号的 Claude 官方卡显示套餐和剩余额度",
+      "zh-TW": "綁了帳號的 Claude 官方卡顯示方案和剩餘額度",
+      "en": "Claude official cards with an account show its plan and remaining quota",
+      "ja": "アカウント付きの Claude 公式カードにプランと残りクォータを表示"
     },
     {
       "type": "improve",
-      "zh": "连接复用、供应商状态一次读回、数据库开 WAL",
-      "zh-TW": "連線復用、供應商狀態一次讀回、資料庫開啟 WAL",
-      "en": "Keep-alive reuse, one-call provider state, database in WAL mode",
-      "ja": "keep-alive 再接続、プロバイダー状態を 1 回で取得、DB は WAL"
+      "zh": "「打开终端」挪到卡片上，Codex 模型列表可以拖动排序",
+      "zh-TW": "「開啟終端機」移到卡片上，Codex 模型清單可以拖動排序",
+      "en": "Open Terminal is now on the card; drag to reorder Codex model rows",
+      "ja": "「ターミナルを開く」をカードに移動。Codex のモデル一覧はドラッグで並べ替え"
     },
     {
       "type": "fix",
-      "zh": "Codex/Claude/Gemini 的流式与故障转移补齐端到端测试",
-      "zh-TW": "Codex/Claude/Gemini 的串流與故障轉移補齊端對端測試",
-      "en": "Codex, Claude and Gemini streaming and failover now have end-to-end tests",
-      "ja": "Codex、Claude、Gemini のストリーミングとフェイルオーバーをテスト"
+      "zh": "修复托管 ChatGPT 账号重启后误报登录过期",
+      "zh-TW": "修正託管 ChatGPT 帳號重新啟動後誤報登入過期",
+      "en": "Fixed managed ChatGPT accounts wrongly shown as expired after a restart",
+      "ja": "管理対象の ChatGPT アカウントが再起動後に期限切れと誤表示される問題を修正"
     }
   ]
 }

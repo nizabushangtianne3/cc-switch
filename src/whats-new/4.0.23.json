@@ -1,0 +1,33 @@
+{
+  "version": "4.0.23",
+  "items": [
+    {
+      "type": "new",
+      "zh": "新增 DeepSeek Harness：官方登录、预设和用量导入",
+      "zh-TW": "新增 DeepSeek Harness：官方登入、預設和用量匯入",
+      "en": "Add DeepSeek Harness with official sign-in, presets and usage import",
+      "ja": "DeepSeek Harness を追加：公式ログイン、プリセット、使用量取り込みに対応"
+    },
+    {
+      "type": "new",
+      "zh": "Claude 官方订阅账号可多号切换，并显示套餐额度",
+      "zh-TW": "Claude 官方訂閱帳號可多號切換，並顯示方案額度",
+      "en": "Switch multiple Claude official subscription accounts with plan quota",
+      "ja": "Claude 公式サブスクアカウントを切り替え、プラン枠も表示"
+    },
+    {
+      "type": "improve",
+      "zh": "同步上游代理修复：回环地址、数据包信封、Azure 重试与 Copilot 缓存",
+      "zh-TW": "同步上游代理修復：回環地址、資料包信封、Azure 重試與 Copilot 快取",
+      "en": "Sync proxy fixes for loopback guards, data envelopes, Azure retries and Copilot caching",
+      "ja": "ループバック保護、data 信封、Azure 再試行、Copilot キャッシュの修正を同期"
+    },
+    {
+      "type": "fix",
+      "zh": "WebDAV 清空配置后不再用过期凭据继续自动上传",
+      "zh-TW": "WebDAV 清空配置後不再用過期憑據繼續自動上傳",
+      "en": "WebDAV no longer auto-uploads with stale credentials after clearing config",
+      "ja": "WebDAV 設定削除後に古い認証情報で自動アップロードしない"
+    }
+  ]
+}

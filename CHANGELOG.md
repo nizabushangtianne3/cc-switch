@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [4.0.22] - 2026-10-26
 
+## [4.0.23] - 2026-10-30
+
+Sync upstream `main` through DeepSeek Harness, Claude official subscription accounts, Oh My Pi session-usage import, terminal routing improvements, WebDAV config clearing, and proxy correctness fixes. Preserve the fork's multi-key pools, provider caches, keep-alive pooling, lazy UI routes and performance-oriented provider/database paths.
+
+### Added
+
+- **DeepSeek Harness:** Add the app, provider presets, managed-account login and usage import paths.
+- **Claude accounts:** Add official subscription account switching, account quota display and isolated Open Terminal support.
+- **Usage:** Import Oh My Pi session usage and show bound Claude official-account quota.
+- **Terminals:** Open Codex terminals from provider cards, support extra arguments and optional permission skipping.
+
+### Changed
+
+- **Proxy:** Reuse Anthropic rectifiers for GitHub Copilot native Messages traffic and honor the resolved Claude API format when deciding response transformation.
+- **WebDAV:** Re-read sync settings under the sync lock so clearing credentials or disabling auto sync wins over a queued upload.
+
+### Fixed
+
+- **Proxy:** Reject loopback upstream URLs, read Chat Completions wrapped in a `data` envelope, retry foreign-Azure Codex requests, preserve Copilot Claude-model prompt caching and use a constant-time Claude Desktop gateway-token comparison.
+
 Proxy-core performance pass on top of v4.0.21: per-request fixed costs on the hot path are cut (routing state, failure accounting, breaker creation, usage logging), wasted per-turn work in the Gemini shadow store is gone, and dead code left over from earlier refactors is deleted. The core modules that had no test coverage (switch lock, usage event filters) gained regression tests.
 
 ### Changed
@@ -25,7 +45,7 @@ Proxy-core performance pass on top of v4.0.21: per-request fixed costs on the ho
 
 - **Dead code:** `SystemKeychain::named` on non-macOS targets, the never-called `parse_env_file_strict` and its tests, the two Gemini transform wrappers that only tests used, and stale `#[allow(dead_code)]` annotations on items that are constructed in production.
 
-## [4.0.21] - 2026-10-25
+## [4.0.21-fork] - 2026-10-25
 
 This release merges upstream v4.0.16 through v4.0.20 and lands the fork's proxy core overhaul. Upstream brings Oh My Pi (`omp`) as the thirteenth managed app, the Apps page split into installed and not-installed sections with drag reordering, editable and removable official Kimi cards, browser login for managed ChatGPT accounts, clearer balance and failed-quota wording, Turkish translations and refreshed model presets. The fork side keeps multi-key pools, key-level usage statistics and single-key persistence unchanged, and rewrites the proxy hot path so requests, responses and SSE events are moved, pooled and framed instead of copied.
 
@@ -42,7 +62,52 @@ This release merges upstream v4.0.16 through v4.0.20 and lands the fork's proxy 
 
 ### Fixed
 
-- **Proxy correctness under the rewrite:** Codex, Claude and Gemini response conversion, streaming, error mapping, failover switching and transform fallback paths are covered end to end; repeated headers keep their wire order; non-streaming usage is parsed off the response path; content codings are split without touching the heap.
+
+## [4.0.21] - 2026-10-26
+
+This release lets Claude Code switch between several official Claude subscription accounts: accounts are added in the Auth Center through Claude Code's own `claude auth login`, an official card picks one, switching to that card moves its login into Claude Code's default sign-in, and Open Terminal on the card starts `claude` pinned to that account. Bound cards and the Auth Center show each account's plan and remaining quota. Open Terminal becomes a button on the card, Codex model rows can be dragged into order, and lightweight mode survives a restart. Fixes cover managed ChatGPT accounts shown as expired after a restart, Codex routing to the wrong `base_url`, Codex MCP entries carrying `timeout` / `autoApprove`, OpenCode and Grok Build installs under npm 12, Kimi Code usage times, and `models.yml` values with `&`, `*` or `!` refused for Oh My Pi.
+
+**Stats**: 52 commits | 152 files changed | +12138 insertions | -1379 deletions
+
+### Added
+
+- **Multiple Official Claude Accounts** (4dc05a9aa, 58fee0db2, 1409bad95, e550adcfb, 1ddb14e19; refs #1928): The Auth Center gets a Claude group (provider `claude_official`). Adding an account runs `claude auth login --claudeai` in the account's own `CLAUDE_CONFIG_DIR` under the app config dir, opens the authorize page and accepts a pasted code or callback URL when the browser cannot return to the CLI; cancelling or timing out kills the whole process tree (the Windows `claude.cmd` shim kept the pipe open). Account dirs mirror the shared settings (without credentials and routing keys), MCP servers and `CLAUDE.md` from `~/.claude`, and are re-synced after the provider editor writes `settings.json`. Switching to an official card that has an account moves only the seven account keys between Claude Code's default sign-in and the account slots, holding Claude Code's refresh, storage and config locks, comparing before the commit point and reading back after it; a step journal (Parked / Committed / Done, fingerprints only) finishes or drops an interrupted switch at the next switch or at startup, and the login is rolled back when the card pointer or `settings.json` write fails. When switching to a card with an account, a default login that is not in the Auth Center yet is saved as an account first, and the Auth Center list is refetched after any Claude switch (main window, tray or project). Cards on "Follow Claude Code login" leave the sign-in alone. A Claude config directory override (including WSL) blocks the switch and the UI points to Open Terminal. Tokens are never refreshed, uploaded or logged out by CC Switch; deleting an account only removes its folder.
+- **Claude Account Quota and Plan** (0d6386ed8, b3eb2ad19, e29968f52, 88c878ac9, 3837f460d): Bound official cards show the account (or note) and plan in the subtitle, with a badge when the login needs renewing, and the account's quota (on by default). The live account is read from the default sign-in, others from their folders; when an idle account's access token has expired, `claude -p /usage` runs in its folder (at most every 10 minutes per account) and the quota Claude Code caches in `.claude.json` is read, only when that run wrote it. The Auth Center shows the same quota and plan per account. Plans: Pro, Max 5x, Max 20x, Team, Team Premium, Enterprise; unknown plans are shown as is. The card without an account shows the default login's plan.
+- **Claude Account Picker on Official Cards** (fe08e10ae): Signed-in accounts first, then "Add or manage Claude accounts" (opens the Auth Center) and "Follow Claude Code login"; accounts are added only in the Auth Center, as on Codex.
+- **Drag to Reorder Codex Model Rows** (05034a4e4, refs #8870): Each row in the Codex provider form's model list has a drag handle (hidden with a single row), by pointer or keyboard, in direct and Stack layouts. When the first row stands for the default model, the new first row becomes the default.
+
+### Changed
+
+- **Open Terminal on the Card** (623246868, 45155e9dc): Open Terminal is an icon button left of Edit instead of a ⋯ menu item. Its tooltip reads "Open Terminal with This Provider" and adds "(Isolated)" for cards with their own address and key and for official cards bound to a Claude account, whose terminal starts with the account's `CLAUDE_CONFIG_DIR`; the dialog treats bound official cards as isolated too.
+- **Auth Center Headers** (93a3e8ec8, ee83fd896, 503957424, ea1645f95): Every service card ends its header with "Add account"; the empty state is text only and ChatGPT's login method is a compact select beside the button. The header "Delete all accounts" menu is gone (accounts are removed from their own row). Quota labels, values and countdowns have fixed widths so bars line up across accounts.
+- **Lightweight Mode Kept Across Restarts** (da0c84e4e): The state is stored in `settings.json`; the app starts in lightweight mode when it was quit in it, except for a cold start from a `ccswitch://` link.
+- **Hermes Default Provider** (ee2ef72f3): Hermes cards show "Default" and offer "Set as default" in the ⋯ menu, like OpenClaw, OpenCode and Kimi, instead of a power-icon "Enable" button.
+- **Stable Card Usage Column** (0c07d5095): The primary action slot has a fixed minimum width, so the usage block no longer shifts when a card becomes "In use".
+- **SSE MCP Warning** (c2110ebb0, refs #8882): The MCP drawer warns under "Write to" when an SSE server is enabled for Codex (connected over HTTP) or Pi / Antigravity (refused on save), including hidden apps that stay enabled.
+- **Claude Desktop Copilot Address Detection** (#8838): A `githubcopilot.com` upstream address disables the format selector like the Copilot provider type does; saving a Copilot card clears a leftover `gemini_native` format. The zh/en/ja manuals describe it.
+- **OpenCode OMO Profiles** (#8842): OMO and OMO Slim cards no longer offer the connectivity check.
+- **Turkish Catalog** (#8836): New strings translated and two wordings corrected.
+- **Presets**: DeepSeek presets use the Flash models instead of Pro everywhere (56fa007f4); Kimi K3.1 Pro and K3.1 Pro HighSpeed added to the official Kimi presets with low/high/max effort (d564adc35, refs #8867); MiniMax M3.1 Flash allows `max` effort in OpenClaw (03337b7e8); new ClinePass presets (refs #8885) and TeamoRouter Claude presets for OpenClaw, OpenCode, Pi and Hermes (#8266); the Claude Desktop OpenCode Go preset uses `https://opencode.ai/inference/go/anthropic`, and Go quota detection accepts both addresses (#8720, fixes #8779).
+
+### Fixed
+
+- **Managed ChatGPT Accounts Shown as Expired After a Restart** (0820ff73f, refs #8901): A refresh rejection only counts as an invalid refresh token for 401 or an explicit `refresh_token_expired` / `reused` / `invalidated` code, like Codex CLI; network, transient refresh and IO errors are returned as errors so the quota keeps its last good value and retries; failed per-account quota queries are refetched after a provider switch.
+- **Codex Routed to the Wrong `base_url`** (#8849, fixes #8848): The proxy reads the table `model_provider` selects instead of the first `base_url = "` in the text, which picked another table or a commented-out URL.
+- **Codex Remote-Compaction Usage Dropped Across Sync Passes** (#8879): The compensating event is keyed to its zero-last `token_count` line.
+- **Codex MCP Entries Carrying `timeout` / `autoApprove`** (cfc64971f, refs #8843): Both keys are dropped when writing `config.toml` (Codex warned about them and `--strict-config` refused the file); the stored spec is unchanged and a native `tool_timeout_sec` is still written.
+- **Codex Requests Rejected for a Foreign Azure Resource** (96f01af07, refs #8877): After Azure answers "created under a different Azure OpenAI resource", the single retry also drops the top-level ids of input items (except `item_reference`).
+- **Chat Completions Wrapped in a `data` Envelope** (80640b528, fixes #5658): Responses shaped like `{"data": {"choices": [...]}}` (ClinePass) are read on the Claude and Codex paths and billed; streaming is unaffected.
+- **OpenCode and Grok Build Installs under npm 12** (618af9d97, ff31d8409, refs #8863): npm installs and upgrades pass `--ignore-scripts=false --include=optional --allow-scripts=<package>`, so OpenCode's placeholder `opencode.exe` is replaced and Grok Build upgrades no longer keep running the old binary.
+- **Hermes Counted Twice on Windows** (5f0fc2537, refs #8839): A leftover `hermes.cmd` shadowed by `hermes.exe` in the same directory is no longer listed as a second install.
+- **Kimi Code Usage Times** (644f56642, refs #8899): Each request is dated when its model call finished instead of when the turn was committed; retained rows are re-dated the next time their session file changes.
+- **Oh My Pi Refused `models.yml` Values with `&`, `*` or `!`** (e332cfdb7, refs #8897): Anchors, aliases and tags are only detected where a node starts.
+- **Gemini `export KEY=value` Lines Ignored** (#8862, fixes #8861): Importing kept the key, and switching back to the default provider no longer deleted it from `~/.gemini/.env`.
+- **Applying a Project Without a Prompt Kept the Current Prompt** (882e7a6a4): Snapshots record "no active prompt" and applying one disables the enabled prompt.
+- **Usage Chart Jumped When Toggling the Sidebar** (#8548).
+
+### Repository
+
+- Issue and PR templates ask for a required Human Note (#8905); PRs from outside collaborators that change `SCHEMA_VERSION` are closed automatically (#8903); end-to-end proxy tests for inline `<think>` conversion (#8835).
 
 ## [4.0.20] - 2026-10-24
 
@@ -260,22 +325,6 @@ This release turns the tray into a quick panel and fixes a batch of Codex and ro
 - On macOS and Windows the tray icon opens the panel after upgrading; the native menu can be picked under Settings → General → Tray style. On Windows a left click used to open the main window and now opens the panel too; "Open main window" sits at the bottom of the panel.
 - Existing GPT model rows are not migrated. Codex GPT rows saved before 4.0.13 with an auto-filled 1.05M window take effect since #8385; the form shows a note when opened.
 
-## [4.0.16] - 2026-10-18
-
-### Added
-
-- **Upstream v4.0.13-v4.0.15:** Synced the glass tray panel, usage trend chart styles and display settings, Claude Desktop model fetching for managed OAuth providers, WSL Hermes live WAL reads, hardened settings save/load, payload-scaled WebDAV/S3 transfer timeouts, provider drag sorting, and related proxy, i18n and preset updates. The fork's multi-key pools, key-level usage statistics and single-key persistence are unchanged.
-
-### Changed
-
-- **Tray:** The native tray menu is replaced by a glass panel on macOS and Windows; Linux (AppIndicator) keeps the native menu with an entry that opens the panel. The panel is a separate build entry and is excluded from window-state persistence.
-- **Usage page:** The trend chart can be drawn as bars or an area, display settings live in a Settings tab (currency, sidebar Today items, request log columns), and the app icon on macOS gets a white rounded-square background.
-
-### Fixed
-
-- **Proxy:** Routing recognizes Claude Code JSON session ids again, replays DeepSeek tool history without a 400, keeps the Codex beta marker in aggregation, and preserves Claude Desktop session identity.
-- **Settings:** Windows settings no longer reset to defaults after an update, and a partially readable `settings.json` is backed up instead of silently overwritten.
-
 ## [4.0.15] - 2026-10-17
 
 This release is mainly fixes. On Windows, settings such as hidden apps and config dir overrides no longer reset to defaults after an update, and updating Codex no longer removes a healthy install when `--version` is slow. The macOS app icon gets a white rounded-square background so macOS 26 stops placing it in a grey tile. Requests through the local route keep Claude Code's session identity again, which restores the stable cache key on the Codex OAuth path and the Gemini signature replay for Claude Desktop. Codex through Chat upstreams recovers from a malformed tool call in history, and DeepSeek no longer rejects replayed tool history. Other fixes cover slow WebDAV/S3 transfers cut off at 300 seconds, "'claude' is not recognized" in Windows provider terminals, Hermes sessions in WSL, unconditional restart prompts on routed switches, the routing marker after failover, and drag sorting. New: a bar / area style for the usage trend chart, an image input switch per Hermes model, and model fetching for managed OAuth providers in the Claude Desktop form.
@@ -420,48 +469,124 @@ This release brings Claude Desktop into the same device-level mode as the routin
 This release rounds out the Apps page: coding clients can be installed, updated and uninstalled there, and conflicting installations found by "Diagnose installs" can now be resolved by uninstalling whichever copy you pick. Updates check the Node version the new release requires before they are offered, and the current Grok Build install layout can be uninstalled. A new Local preset group connects to Ollama, LM Studio, llama.cpp and vLLM on this computer, with loopback requests bypassing the configured proxy, and 14 cloud platforms get presets. Session log scanning drops to every 10 minutes in the background and follows the selected interval while the usage page is open. Turkish joins as a community translation, and unsupported system languages now default to English.
 
 **Stats**: 49 commits | 87 files changed | +13812 insertions | -749 deletions
-## [4.0.15] - 2026-10-16
-
-### Changed
-
-- **Performance:** Merged upstream v4.0.10-v4.0.12 features (deep link improvements, My Icons, tool uninstall, local inference presets, Turkish UI), added usage dashboard lazy filter loading, EXISTS-based empty state check, SQL statement caching, shared provider chain, and provider state IPC batching.
-
-## [4.0.14] - 2026-10-15
-
-### Changed
-
-- **Performance and rendering stability:** Reduced repeated database existence checks and provider reads, removed unused failover and legacy runtime queries, and memoized sidebar, app visibility, dialogs and settings surfaces for faster navigation.
-
-## [4.0.13] - 2026-10-14
-
-### Changed
-
-- **Performance and rendering stability:** Reduced provider switching, queue and frontend rendering work by loading only the providers a query needs, batching provider updates and memoizing provider lists, mode tabs and cards.
-
-## [4.0.12] - 2026-10-13
-
-### Fixed
-
-- **Single-key usage attribution:** Provider forms persist one API key into `meta.apiKeys` with its selected strategy, so newly added single-key providers can participate in key-level usage attribution. Existing single-key providers must be saved again or re-added.
-- **Database migration ordering:** The v20 → v21 migration adds `api_key_id` before creating its index, and rebuilds daily rollups with the new key dimension. This prevents startup failures on databases created before schema 21. Old rows keep `api_key_id = ''`; no usage is inferred or backfilled.
-
-## [4.0.11] - 2026-10-12
-
-### Fixed
-
-- **Single-key provider metadata:** Provider forms now persist one API key into `meta.apiKeys` with its selected strategy, so newly added single-key providers can participate in key-level usage attribution without deriving credentials from live configuration.
-
-## [4.0.10] - 2026-10-12
-
-Fork release that syncs upstream v4.0.9 (35 commits: provider form rework, Codex tool-result fixes, local routing connection address, macOS local-network permission, i18n cold-start fix, and new presets) and preserves the fork's multi-key pool and key-level usage statistics. Android support remains removed. Desktop builds cover Windows MSI, Linux AppImage / deb / rpm, and macOS Universal DMG with fork-specific Tauri updater signing.
 
 ### Added
 
-- **Key-level usage statistics (fork, carried from 4.0.9):** Proxy requests store a SHA-256 fingerprint of the selected key; the Usage page adds a Keys tab with app, provider, model and key filters. Database schema 21 adds `api_key_id` to detail logs and 30-day rollups.
+- **Choose Which Installation to Uninstall**: `prepare_tool_uninstall` returns every detected installation with its own plan or the reason it must be removed manually. The dialog lists source, path, version and the default marker; a single plannable install is preselected, two or more are not, and unplannable ones are disabled with their reason. Execution finds the confirmed path in a fresh enumeration and re-derives its plan, rejecting any difference from the preview. Grok 0.2.112+ (`~/.grok/bin/grok-<version>` linked from `grok`) is recognized and its whole installer set is removed (files only; `config.toml` and sessions kept). Native uninstall also removes launcher symlinks in the search directories that resolve to the same binary, and the Grok npm copy is flagged as reinstalled by the updater when a native install exists and `[cli] installer = "npm"` is set.
+- **Node Version Check Before npm Updates**: When a newer version exists, its `engines.node` is read from the registry and compared with the node the update would use (next to the default installation, else the login shell's PATH). An unsatisfied range reports `update_blocked_by_node`: the row explains why, hides the update button and is skipped by "Update All", and the lifecycle command checks again before running. Unknown range syntax, lookup failures and installations that do not run on node (native binaries, Homebrew, Bun, MiniMax Code, WSL) are never blocked. Motivated by OpenClaw 2026.9.3+ requiring Node `>=24.16.0 <25 || >=26.1.0`.
+- **Local Preset Group and Local Inference Presets**: A new `local` category maps to a "Local" group after Cloud providers. Ollama (`localhost:11434`), LM Studio (`localhost:1234`), llama.cpp (`127.0.0.1:9931`, with `:8080` as an endpoint candidate) and vLLM (`localhost:8000`) presets cover Claude Code and Codex (native Anthropic Messages / Responses with the NativeResponses tool profile), Claude Desktop (proxy mode) and, where the client has no built-in provider, OpenCode, OpenClaw, Hermes and Pi; keys use the placeholders the servers document.
+- **Loopback Requests Bypass the Proxy**: reqwest never bypasses loopback on its own (an explicit global proxy applies to every target, and the system-proxy path only honours `NO_PROXY`). `http_client::is_loopback_url` (localhost, `*.localhost`, `127.0.0.0/8`, `::1`) plus a proxy-free client route loopback targets directly in the forwarder (reqwest and hyper paths), endpoint speed test, stream check and model fetching. Request bodies and headers are untouched.
+- **Turkish Interface and Tray** (#8208, fixes #8207): Turkish is a community translation that falls back to English for missing strings; the full-catalog parity check is dropped for `tr`, and the Turkish tray texts start from English and override translated items. The option is shown as plain "Türkçe".
+- **New Provider Presets**: Ollama Cloud, Baseten, Meta Model API, DeepInfra, Vercel AI Gateway, Nebius Token Factory, Groq, SambaNova, DigitalOcean, Hugging Face, Microsoft Foundry, Fireworks AI, Mistral AI (Claude Code, Claude Desktop and Codex presets hidden pending a real-key test) and Cloudflare AI Gateway; SiliconFlow CN and international for OpenCode (#4878, fixes #4500); StreamLake for Codex, with every StreamLake preset moved to the public `kat-coder-pro-v2.5` endpoint. No OpenCode preset is added for providers OpenCode ships built in. Icons added for the new providers.
 
 ### Changed
 
-- **Synced upstream v4.0.9:** Provider forms follow the fill order with a model picker dialog and sub-agent fields; Codex tool results without matching calls no longer fail on strict Chat or xAI native Responses upstreams; local routing gains a "Connection address" for WSL2 and similar clients; macOS requests Local Network permission; UI language applies at cold start; new presets include TokenFlux, SoruxGPT, IKunCode, RunToken, BotCF, YYLX and OpenModel.
+- **Session Log Scanning Follows the Usage Page** (#8301): The background scan drops from every 60 seconds to every 10 minutes as a safety net. While the usage page is visible it scans immediately, again when the window becomes visible, and then at the selected interval (5/10/30/60 s, default 60 s). The setting is renamed "Session log scan interval", the "Off" option is removed (a saved 0 falls back to 60 s), and it is hidden when automatic scanning is off. Statistics no longer poll; imports refresh them through `usage-log-recorded`, and time-relative ranges re-run once a minute.
+- **Provider Search Sits at the End of the First List Row** (#8151, fixes #8100): The search panel no longer floats over the first card's actions or pushes the list down. Claude Code, Codex, Gemini CLI and Grok Build portal a compact field into the mode row; other apps share the first section title row ("Added · N"). The scope and Esc hints move into the input tooltip.
+- **Apps Page Layout**: Uninstall moves into a per-row "..." menu. Header and rows share one grid template (#8293), and the actions column reserves the width of invisible Install and Update buttons so it no longer grows as versions load or updates appear; the check-for-updates button keeps its width while checking. The hide-app help now says hiding only affects display.
+- **Unsupported System Languages Default to English**: On first launch the UI and tray use English instead of Simplified Chinese for system languages the app does not ship. An empty locale still defaults to Simplified Chinese, and a saved language is never overridden.
+- **Uninstall Feedback** (#8262): The dialog shows "Checking the installation…" while planning; native Windows Hermes uninstall warns about Python file locks; a successful uninstall followed by a failed or empty diagnostic is reported as a warning instead of a failure.
+
+### Fixed
+
+- **Skills Restore Failed Permanently After a Leftover `skills.bak`** (#8155, fixes #8153): The incoming tree is copied completely into a unique directory beside the Skills SSOT and swapped in by same-filesystem renames; `skills.bak` and earlier recovery directories are never removed or reused. If installation and rollback both fail, the original tree is kept and both errors are reported with its path.
+- **Stream Error After a Terminal Responses Event** (#8138): The Responses-to-Anthropic streaming converter appended an Anthropic `error` event when the upstream body reported a transport error after `response.completed` or `response.incomplete`; late transport errors are now ignored once terminated.
+- **Unsaved-Changes Guard Cleared by Re-clicking the Current Page** (#7900): On the MCP, Prompts and pricing editors, `openPage` returns early when the target is the current view, so it neither prompts nor clears the unsaved registration.
+- **Empty Upstream Error Bodies** (#6910, refs #6895): An empty or whitespace-only upstream error body is rendered as "上游未返回错误内容" instead of ending with a dangling colon.
+- **Pi Session Speed Estimates** (#8278): Pi session imports estimate request duration from each assistant message's request-start and write timestamps instead of writing latency 0. Earlier rows are not backfilled.
+- **Pi on a WSL Config Directory** (#8249, fixes #8245): `commit_staged` skips `ReplaceFileW` (unsupported on WSL UNC) and goes straight to the rename fallback, and Auto skill sync resolves to Copy on WSL targets; an explicit Symlink choice keeps its error. Non-WSL behavior is unchanged.
+- **Windows CLI PATH After an MSI Restart** (#8262): `run_detected_tool_command_with_timeout` uses the effective PATH, so `opencode models` and the Codex client catalog find their CLI; `%VAR%` references in PATH expand from the process, `HKCU\Environment` and system environment (nested, with cycle protection); the process PATH is read with `var_os` so one invalid UTF-16 unit no longer drops it; captured output reuses the Windows command builder so `\\?\`-prefixed `.cmd` / `.bat` paths run.
+- **Preset IDs Shifted After a Hidden Preset**: Preset ids now keep the original array index and hidden entries are filtered afterwards, since `AddProviderDialog` and `useProviderCategory` resolve presets by that index. Codex and Claude Desktop presets gain the `hidden` flag.
+
+### Internal
+
+- Windows `windows_npm_path_fallback_uses_batch_compatible_path` test timeout widened from 10 s to 30 s (#8295, fixes #8294).
+
+### Upgrade notes
+
+- **No database schema change** (still 20).
+- Background session log scanning is now every 10 minutes; non-routed usage can take up to 10 minutes to appear unless the usage page is open. A saved "Off" interval becomes 60 s.
+- Pi speed estimates only apply to rows imported after upgrading.
+- New and changed presets (including StreamLake's public endpoint) only affect newly added providers.
+- Claude Desktop clears the key when a local preset is selected; type the placeholder by hand (`ollama`, `lmstudio`, `no-key` or `dummy`).
+
+## [4.0.11] - 2026-10-13
+
+This release adds uninstall to the Apps page, so coding clients can now be installed, updated and uninstalled from CC Switch. The Apps page removes a detected client installation after showing the exact path and command, and lists manual uninstall commands for every install method. Coding-plan quota queries are enabled by default for every app, both when adding a provider and when importing a link. Codex usage import no longer rereads deferred fork rollouts every minute and now resolves fork parents across paginated Codex Desktop rollouts. Fixes cover install and update commands losing the user PATH after an MSI auto-restart on Windows, full-screen panels flickering, and bulk Skills and MCP toggles reporting success when writes failed. New presets: StreamLake China, AIComing, SoruxGPT Coding Plan and GrooRoute Pro.
+
+**Stats**: 14 commits | 57 files changed | +5342 insertions | -306 deletions
+
+### Added
+
+- **Tool Uninstall on the Apps Page** (#8165): Each installed client gets an Uninstall button. A read-only `prepare_tool_uninstall` plan is shown first (installation path and the exact command); on confirm the plan is regenerated under the lifecycle lock and every field must match, otherwise nothing runs. Only verified installs are removed: global npm packages (package name read from `package.json`, explicit `--prefix`), Homebrew formulae / casks on a per-tool allowlist (`gemini-cli`, `opencode` formulae; `claude-code`, `codex` casks), native installs of Claude Code, Codex, Grok Build and OpenCode (only the selected executable and its launcher, gated on ELF / Mach-O / PE magic bytes, never a directory), Hermes through `hermes uninstall --yes`, and OpenClaw after `openclaw uninstall --service` succeeds. Configuration and sessions are kept, other installations are left alone, removal is verified with `symlink_metadata` so dangling shims don't count as removed, and anything else fails closed with a pointer to manual commands. On Windows, WSL installs are resolved inside the distro; with no shell preference the probe tries the version check's `-lic` / `-lc` / `-c` order and removal runs with exactly the flag that found the tool, never retrying. A new "Manual uninstall commands" dialog in the Apps page menu lists commands per install method and environment.
+- **New Provider Presets**: StreamLake China (Kuaishou Vanchin) for Claude Code, Hermes, OpenCode, OpenClaw and Pi, merged with the international presets into one row (the former KAT-Coder presets are now "StreamLake en"); AIComing for Claude Code, Claude Desktop, Codex, Gemini CLI, Grok Build, OpenCode, OpenClaw, Hermes and Pi; SoruxGPT Coding Plan for Claude Code and Codex under a new `soruxgpt` family; GrooRoute Pro (sponsor) for Claude Code, Claude Desktop, Codex, Grok Build, OpenCode, OpenClaw, Hermes and Pi.
+
+### Changed
+
+- **Coding-Plan Usage Enabled by Default for Every App**: Adding a provider whose base URL matches a coding plan (Kimi, Zhipu, MiniMax, Volcengine, OpenCode Go, Command Code) turns on the `token_plan` usage query in every app, not only Claude Code; the frontend base URL lookup now also covers Gemini CLI, Grok Build, Hermes, OpenClaw and MiniMax Code. Deep links without a usage script whose primary endpoint is a coding plan import with the query enabled and `codingPlanProvider` set, and the confirmation dialog names the plan. `usageEnabled=false` is honored, ZenMux stays Claude-only, and existing providers are unchanged.
+- **Full-Screen Panels No Longer Fade** (#8201): `FullScreenPanel` defaults to no motion on every platform (the auth settings panel keeps its slide), which removes the flicker on Windows for the pricing, usage script, endpoint speed test, universal provider and workspace panels. The universal provider form initializes in a layout effect so the first frame isn't empty, and the workspace file and daily memory editors open only after their read completes, with stale reads discarded.
+- **Presets**: AIGoCode moves to aigocode.net, with api.aigocode.dev as the default request address and api.aigocode.app kept as a fallback.
+
+### Fixed
+
+- **Windows Install and Update Commands Lost the User PATH After an MSI Restart** (#8173, fixes #8171): Detection already restored the user PATH from the registry, but the `.bat` that runs install / update / uninstall inherited the stripped PATH, so npm was not found. The lifecycle subprocess now gets the effective PATH.
+- **Deferred Codex Fork Rollouts Reread Every Minute** (#8218, fixes #8217, #8209): A retryable child rollout was fully reparsed on every 60-second sync and its pending entry dropped, so the deferral warning was logged every minute too. A dependency snapshot of the child and every parent candidate is kept, and an unchanged child returns deferred before opening the file. Parent read failures stay uncached, and billing is unchanged.
+- **Codex Subagent Usage Lost After a Paginated Parent Turns the Page** (#8213, fixes #8210, #7084): Codex Desktop continues long threads in `rollout-<time>-<threadId>_<pageId>.jsonl`, but the rollout index only keyed files by the trailing UUID, so a child forked after the page turn found only the frozen first page and stayed deferred. Continuation pages are also registered under the thread UUID and all pages are merged in filename order before the fork cutoff check; every replica of a segment must reach the cutoff. Children deferred this way import on the next sync.
+- **Bulk Skills and MCP Toggles Reported Success When Writes Failed** (#8137): Bulk enable/disable in the Skills and MCP panels shows an error toast when every write fails and a warning on partial failure, and undo reports its real outcome.
+- **Workspace Editor Could Save the Previous File's Content** (#8201): The editor stayed mounted, so after a failed read it kept showing the previously opened file under the new title, and saving wrote that content into the new file. A failed read now returns to the list.
+- **StreamLake International Presets for OpenCode, OpenClaw and Pi**: They pointed at `.../endpoints/${ENDPOINT_ID}/openai`, which the gateway rejects ("Missing Action parameter"); they now use the `.../v1/endpoints` base with the endpoint ID as the model ID.
+
+## [4.0.10] - 2026-10-13
+
+The sixth patch release on the 4.0 stable line, centered on `ccswitch://` import links. Links clicked while CC Switch is not running are no longer lost; links can declare the API format, import Pi providers and bring the site's own icon; Codex and Grok Build links keep the provider settings carried in their `config.toml` instead of being rebuilt from a fixed template; values that additive apps would expand into commands or local secrets are rejected; and the confirmation dialog lets the user decide whether to switch right away. Site owners get a guide in three languages and an online link generator. Provider icons can be uploaded into a named "My Icons" library, and the usage page shows first-token time, estimated from session logs when routing is off. Fixes cover the routed Claude Code haiku alias being sent with thinking disabled, Codex sessions recorded under the retired `cc-switch-official` provider, Grok Build session titles on third-party providers, empty balances shown as an expired plan, Codex usage after an in-thread model change, settings autosave carrying unconfirmed directories, flicker when opening provider pages on Windows, and MSI upgrades recreating a deleted desktop shortcut.
+
+**Stats**: 32 commits | 123 files changed | +12435 insertions | -2355 deletions
+
+### Added
+
+- **Deep Link `apiFormat` and Pi Providers**: A single `apiFormat` parameter (`anthropic` / `openai_chat` / `openai_responses` / `gemini_native`) maps to each app's own field: `meta.apiFormat` for Claude Code, Codex and Grok Build (non-native formats need local routing), `npm` for OpenCode, `api` for OpenClaw and Pi, `api_mode` for Hermes. Unsupported combinations are rejected while parsing; links without it keep the previous defaults byte for byte. Pi provider links are now supported; they write a `models.json` node and must carry a model.
+- **Deep Link Activation Switch**: The confirmation dialog has a switch for "switch after import" (providers, off unless the link sets `enabled=true`, with a warning when on), "add to the app config" (additive apps, on by default), "enable in Pi" and "enable after import" (prompts). The link's `enabled` only sets the initial state. Turning the switch off only saves the row: a new `ProviderService::add_without_switching` skips the first-provider path in `add` that would otherwise write the client config.
+- **Deep Link `iconUrl`** (closes #8117): A provider link can carry an https address of the site's logo. The confirmation dialog downloads it on open and shows it; importing stores it as the card's custom icon, and any failure silently falls back to `icon` or the name's initials. The address is never stored or rendered and the import command never downloads. The download (`deeplink/icon_fetch.rs`) drops non-https, IP, non-default-port and credentialed addresses, requires every resolved address to be public and pins the connection to them, follows up to 3 redirects by hand with each hop rechecked, uses no system proxy, cookies or Referer, times out after 5 s, caps the body at 256 KB, and requires a PNG / JPEG / WebP / SVG Content-Type matching the magic bytes with bitmap dimensions up to 4096. 198.18.0.0/15 is allowed on purpose for Clash / Surge fake-ip mode. Errors are logged without the URL.
+- **Custom Provider Icons and "My Icons"** (refs #8117): The icon picker has two groups filtered by one search box. "My Icons" starts with an upload tile (PNG, JPG, WebP or SVG, up to 2 MB and 4096 px); the image is redrawn on a canvas into a 96×96 PNG and a naming dialog (file name by default) saves it to the library and selects it. Library icons can be picked by any provider in any app and renamed or deleted on hover; uploading an image already in the library reuses the entry, and a current custom icon outside the library (for example from an import link) shows as "Current icon" and can be saved. Clicking an icon selects it and closes the picker; "Clear icon" sits next to the search box. Providers store the image itself as a data URI in the existing `icon` column, not a library id, so library changes never alter a provider. The library lives in the cloud-synced settings key `custom_icons` (up to 100 icons, names up to 64 characters). SVG is loaded through `<img>` and rasterized, re-encoding drops EXIF, and custom icons are only ever rendered with `<img>`. Saving a provider or universal provider, syncing a universal provider and adding to the library fully decode the PNG with the `png` crate under a 1 MiB decode limit and cap it at 64 KiB and 256×256; SQL import and cloud sync drop invalid images from `providers`, the universal provider JSON and the library before replacing the main database; rendering checks the PNG signature and IHDR dimensions first. Aggregation no longer derives model key prefixes from a custom icon, and the deep-link `icon` parameter only accepts built-in names.
+- **First-Token Time on the Usage Page**: Provider and model stats gain a First token column with the median over successful streaming requests through the routing service, and the request log gains a First token column after Speed. Without routing, first-token time is derived from session logs and shown with ≈: for Claude Code, a reply that starts with a thinking block gives the block's write time minus `thinkingDurationMs`; for Codex, newer rollouts record `started_at_ms` on `item_completed`, and the earliest reasoning or agent message item marks the start. Replies that open with text or a tool call yield no estimate. Estimates are stored in `first_token_ms`, so exact and estimated values are told apart by `data_source`; estimated speed still divides by the whole duration, and earlier rows are not backfilled.
+- **Sub2API Usage Query Template**: Uses `GET /v1/usage` with the provider's key and base URL (with or without `/v1`), shows the plan name, and reports used/total only when the quota has a limit, so unlimited subscriptions no longer show a negative balance. The usage modal's hand-written template-type unions are replaced with the shared `TemplateType`.
+- **New Provider Preset**: NekoCode (nekoapi.ai) for Claude Code, Claude Desktop, Codex, OpenCode, OpenClaw, Hermes and Pi (MiniMax Code inherits the Pi preset). The site's default groups only serve Claude Code and Codex CLI, so the OpenCode, OpenClaw, Hermes and Pi presets carry the claude-cli User-Agent its "max (external)" group requires; Claude Desktop cannot set one and may be refused.
+
+### Changed
+
+- **Imported Usage Scripts Are Enabled by Default**: A provider link that carries a usage script now enables usage query unless it says `usageEnabled=false`. The script runs in the QuickJS sandbox and, without a template type, may only send one same-origin HTTPS request to the base URL. Links without a script still import usage fields disabled; the confirmation badge follows the backend rule and the script body is still shown in full.
+- **Connection Mode Help Leads With Each Mode's Strengths**: Direct keeps CC Switch out of the request path for the most native experience, Routing offers hot-switching, failover and format conversion, and Aggregation lets models from several providers be switched inside the client.
+- **Usage Tables Align to the Start**: All columns in the request log, provider, model and pricing tables align to the start (the pricing row actions stay at the end), first and last cells share their headers' 8px inset, and the request log's provider/model share drops from 40% to 32%.
+- **Presets**: YYLX shows as 鱼鱼连线 (魚魚連線 in zh-TW) through a `nameKey`, while the preset name and the written provider name stay "YYLX". OpenModel sign-up links point at the cc-switch referral URL.
+
+### Fixed
+
+- **Deep Links Lost on Cold Start**: On Windows and Linux the plugin emitted the startup URL before our handler was registered, and events fired before the JS listener existed (cold start, window rebuilt in lightweight mode) went nowhere. The parsed link or parse error now waits in a backend pending slot with a monotonic id; the dialog peeks on mount and on each `deeplink-pending` notification and acks by id only after showing it, processing serially so an older link can't replace a newer one. `get_current()` is read after registering the URL handler, and our own `RunEvent::Opened` handling on macOS is dropped since the plugin already emits it (links opened twice). `configUrl` is rejected up front, `mcode` is accepted for prompts and `pi` / `mcode` for MCP, and the tray menu refreshes after a provider import.
+- **Codex Deep Links Dropped Provider Settings** (refs #7438, #7942, #5510): A link carrying `config.toml` used to keep only the key, endpoint and model and rebuild a fixed template, dropping auth mode, headers, websocket support and the model catalog URL. The selected `[model_providers.*]` table now keeps its connection and auth fields (renamed to `custom`), `model_catalog_url` is kept only on the endpoint's origin, and top-level provider-exclusive fields (model, reasoning effort, web_search, context window, sub-agent model) are kept, using the same field lists as the live projection. Global settings are not imported. Tables using `auth`, `aws`, `gateway_oauth` or `env_http_headers` are rejected; `env_key` is dropped in favor of the link's key, and an `env_key`-only link is rejected. Links without a config keep the old template byte for byte.
+- **Grok Build Deep Links Dropped the Model Profile** (refs #6457): The table named by `[models] default` is kept through an allowlist of Grok 1.0.50 profile fields (display name, description, API backend, context window); endpoint, key and model come from the link. Tables using `auth_provider`, `env_http_headers` or `mtls_cert_dir` are rejected, `env_key` is dropped, and only one model table is imported.
+- **Deep Link Values Expanded by Additive Apps**: Pi values starting with `!` or containing `$NAME` / `${NAME}`, OpenCode `{env:}` / `{file:}`, and `${...}` for OpenClaw and Hermes would run a command or send local secrets and files to the link's endpoint. They are rejected when parsing, when merging `config` and when building the provider.
+- **Routed Claude Code Haiku Requests Rejected for Disabled Thinking** (fixes #8118): Routing writes stable role aliases, and Claude Code looks the alias up in its own model table to decide how to send thinking. `claude-haiku-4-5` is listed as able to disable thinking without adaptive thinking, so haiku-tier requests went out with thinking disabled and upstreams that require thinking rejected them. The alias is now `claude-haiku-5-5`, matching the sonnet and opus aliases; the proxy still maps by the "haiku" keyword.
+- **Codex Sessions Under the Retired `cc-switch-official` Provider** (refs #7948): v3.17–v3.20 recorded official-account sessions through routing under `cc-switch-official`, and resuming them in 4.0 failed with "Model provider `cc-switch-official` not found". On startup they are moved to the built-in `openai` bucket in the state DB and each rollout's `session_meta` line (compressed rollouts included), before the unify migration so that setting still works through its normal path; `config.toml` is untouched. The migration is skipped without recording completion when `config.toml` or a profile still selects `cc-switch-official`, or a state DB cannot be locked. Completion is recorded per Codex config directory and backups go to the existing session group migration folder.
+- **Grok Build Session Titles on Third-Party Providers** (fixes #7003): With `models.session_summary` unset, Grok Build (1.0.50) generates titles with the built-in `grok-4.6` model but sends the request to the default table's endpoint, so third-party upstreams reject it. The switch patch now points `session_summary` at the target table when it is unset or names a table CC Switch wrote, and removes it when switching to the official account; a user's own choice is left alone.
+- **Empty OpenRouter and Novita Balances Shown as an Expired Plan** (#8175, fixes #8148): A parsed balance of zero or less now stays valid and shows the existing "balance used up" line. Missing, malformed, non-finite or overflowing amounts return an error instead of a zero balance.
+- **Codex Usage After an In-Thread Model Change** (#8176): A model change recorded in `event_msg/thread_settings_applied` without a new `turn_context` was ignored, so later tokens were attributed and priced as the previous model (or `unknown`). `payload.thread_settings.model` is now read; existing rows can be corrected with Usage > Data sources > Rebuild Codex usage.
+- **Settings Autosave Committed Unconfirmed Directory Edits** (#8023, fixes #7849): Autosave of an unrelated setting now keeps the eight directory fields at their confirmed values unless the update changes that directory, and the directory display is reconciled with the effective path after the form resets.
+- **Flicker When Opening Provider Pages on Windows** (#8159, refs #8141): `FullScreenPanel` gains a `none` motion preset, used by the add and edit provider pages so the whole-panel fade no longer flickers.
+- **MSI Upgrades Recreated a Deleted Desktop Shortcut**: A major upgrade reinstalls from scratch and the shortcut component was unconditional. AppSearch now looks for the existing shortcut before the old version is removed, and the shortcut is installed only on a fresh install or when it is still present.
+- **Japanese Advanced Options Label**: 高級オプション is renamed to 詳細オプション in the UI and in the Japanese README, routing guides and user manual.
+
+### Docs
+
+- Site owner integration guide in Chinese, English and Japanese: building links, wiring an import button that fetches the link from the backend, the not-installed fallback, usage scripts (New API and Sub2API ship an import button already).
+- The link generator becomes a tool for site owners hosted at ccswitch.io/deplink.html (the old GitHub Pages link returned 404), with provider / MCP / prompt / Skill tabs, per-app `apiFormat` choices, usage script templates and `icon` / `iconUrl` checks matching the app.
+- The user manual covers `apiFormat`, Pi links, the activation switch, `iconUrl`, Codex config import rules, the Sub2API template and "My Icons".
+
+### Upgrade notes
+
+- **No database schema change** (still 20). The "My Icons" library is a settings key.
+- Routed Claude Code clients get the new haiku alias when CC Switch starts and reattaches.
+- The `cc-switch-official` session migration runs once per Codex config directory on startup.
+- New presets only affect newly added providers.
 
 ## [4.0.9] - 2026-10-11
 

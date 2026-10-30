@@ -32,7 +32,6 @@ function XaiOauthQuotaFooterComponent(props: XaiOauthQuotaFooterProps) {
       quota={quota}
       loading={loading}
       refetch={refetch}
-      appIdForExpiredHint="xai_oauth"
       inline={inline}
       display={display}
     />

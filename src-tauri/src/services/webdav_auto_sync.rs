@@ -45,17 +45,23 @@ impl AutoSyncKind for WebDavAutoSync {
         app: AppHandle,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), AppError>> + Send>> {
         Box::pin(async move {
-            let Some(mut sync) = settings::get_webdav_sync_settings() else {
-                return Ok(());
+            // Re-read settings under the sync lock so clearing the config or
+            // disabling auto sync wins over stale credentials captured earlier.
+            let outcome = webdav_sync_service::run_with_sync_lock(async {
+                let Some(mut sync) = settings::get_webdav_sync_settings() else {
+                    return Ok(None);
+                };
+                if !(sync.enabled && sync.auto_sync) {
+                    return Ok(None);
+                }
+                let result = webdav_sync_service::upload(&db, &mut sync).await;
+                Ok(Some(result))
+            })
+            .await?;
+            let result = match outcome {
+                Some(result) => result,
+                None => return Ok(()),
             };
-            // worker 是无条件起的，所以「这一端没开」必须在这里挡掉。
-            if !(sync.enabled && sync.auto_sync) {
-                return Ok(());
-            }
-            let result = webdav_sync_service::run_with_sync_lock(webdav_sync_service::upload(
-                &db, &mut sync,
-            ))
-            .await;
             match result {
                 Ok(_) => {
                     auto_sync::emit_status::<Self>(&app, "success", None);

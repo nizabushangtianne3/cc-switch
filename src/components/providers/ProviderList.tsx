@@ -55,6 +55,11 @@ import { usePiCurrentState } from "@/lib/query/pi";
 import { isPiFamilyApp } from "@/config/appConfig";
 import { isHermesReadOnlyProvider } from "@/config/hermesReadOnly";
 import {
+  DshAccountCard,
+  accountName as dshAccountName,
+  useDshAccountStatus,
+} from "@/components/providers/DshAccount";
+import {
   buildAdditiveSections,
   buildLaunchSections,
   buildSwitchSections,
@@ -189,6 +194,7 @@ function ProviderListComponent({
     (provider: Provider): boolean => {
       switch (appId) {
         case "kimi":
+        case "dsh":
         case "mcode":
           return provider.meta?.liveConfigManaged === true;
         case "opencode":
@@ -327,14 +333,29 @@ function ProviderListComponent({
     }));
   }, [isSearchOpen, sortedProviders]);
 
+  const searchKeyword = isSearchOpen ? searchTerm.trim().toLowerCase() : "";
+
+  // DSH 登录了 DeepSeek 账号时，「已添加」最前面画一张官方账号卡（不是供应商行，见 DshAccountCard）
+  const { data: dshAccount } = useDshAccountStatus(appId === "dsh");
+  const dshAccountCard =
+    appId === "dsh" && dshAccount?.signedIn ? dshAccount : null;
+  const showDshAccountCard = Boolean(
+    dshAccountCard &&
+      (!searchKeyword ||
+        ["deepseek", dshAccountName(dshAccountCard, "")]
+          .join("\n")
+          .toLowerCase()
+          .includes(searchKeyword)),
+  );
+
   // 关掉面板就不再过滤：搜索词留着，下次打开还在，但列表不会悄悄少几家
   const filteredProviders = useMemo(() => {
-    const keyword = isSearchOpen ? searchTerm.trim().toLowerCase() : "";
+    const keyword = searchKeyword;
     if (!keyword) return sortedProviders;
     return searchIndex
       .filter((entry) => entry.text.includes(keyword))
       .map((entry) => entry.provider);
-  }, [isSearchOpen, searchTerm, searchIndex, sortedProviders]);
+  }, [searchKeyword, searchIndex, sortedProviders]);
 
   const sections = useMemo<ProviderSection[]>(() => {
     if (switchMode) {
@@ -396,6 +417,7 @@ function ProviderListComponent({
         isHermesReadOnlyProvider(provider.settingsConfig),
       piStateUnavailable: isPiFamilyApp(appId) && !isPiStateReady,
       kimiCurrentId: currentProviderId,
+      extraAdded: showDshAccountCard ? 1 : 0,
       actions: {
         add: onSwitch,
         remove: (provider) =>
@@ -425,6 +447,7 @@ function ProviderListComponent({
     hermesModelConfig?.provider,
     isPiStateReady,
     currentProviderId,
+    showDshAccountCard,
     onRemoveFromConfig,
     onDelete,
     onDisableOmo,
@@ -456,7 +479,6 @@ function ProviderListComponent({
         {piStateError ? ` ${piStateError}` : ""}
       </Notice>
     ) : null;
-
   if (isLoading || (isLiveMembershipPending && sortedProviders.length > 0)) {
     return (
       <div className="space-y-2">
@@ -470,7 +492,7 @@ function ProviderListComponent({
     );
   }
 
-  if (sortedProviders.length === 0) {
+  if (sortedProviders.length === 0 && !dshAccountCard) {
     return (
       <div className="space-y-4">
         {piStateErrorNotice}
@@ -478,7 +500,10 @@ function ProviderListComponent({
           appId={appId}
           onCreate={isPiFamilyApp(appId) ? undefined : onCreate}
           onImport={
-            isPiFamilyApp(appId) || appId === "mcode" || appId === "kimi"
+            isPiFamilyApp(appId) ||
+            appId === "mcode" ||
+            appId === "kimi" ||
+            appId === "dsh"
               ? undefined
               : () => importMutation.mutate()
           }
@@ -487,7 +512,7 @@ function ProviderListComponent({
     );
   }
 
-  // 「当前」只用来决定额度显示和自动刷新：Pi 没有当前项，OMO / Hermes 各看自己的当前项；
+  // 「当前」只用来决定官方订阅 / OAuth 额度自动刷新：Pi 没有当前项，OMO / Hermes 各看自己的当前项；
   // Antigravity 没有「启用」，每张卡都随时能打开，额度一律照常显示
   const isCurrentFor = (provider: Provider) => {
     if (isPiFamilyApp(appId)) return false;
@@ -506,7 +531,6 @@ function ProviderListComponent({
       appId={appId}
       presentation={presentation}
       isCurrent={isCurrentFor(provider)}
-      isInConfig={isInConfig(provider)}
       onEdit={onEdit}
       onDelete={onDelete}
       onDuplicate={onDuplicate}
@@ -582,6 +606,9 @@ function ProviderListComponent({
       {section.help && (
         <HelpTip title={section.help.title}>{section.help.body}</HelpTip>
       )}
+      {section.note && (
+        <span className="ms-1 font-normal text-fg-3">{section.note}</span>
+      )}
     </div>
   );
 
@@ -592,7 +619,7 @@ function ProviderListComponent({
   const liftLeadTitle =
     !hostedSearch &&
     Boolean(leadSection?.title) &&
-    filteredProviders.length > 0;
+    (filteredProviders.length > 0 || showDshAccountCard);
   const showListHeader =
     !hostedSearch && (Boolean(leadSection?.title) || isSearchOpen);
 
@@ -615,7 +642,7 @@ function ProviderListComponent({
         </div>
       )}
 
-      {filteredProviders.length === 0 ? (
+      {filteredProviders.length === 0 && !showDshAccountCard ? (
         <div className="rounded-panel border border-dashed border-border px-6 py-8 text-center text-body text-fg-2">
           {t("provider.noSearchResults", {
             defaultValue: "No providers match your search.",
@@ -633,7 +660,12 @@ function ProviderListComponent({
               {section.title && !(sectionIndex === 0 && liftLeadTitle) && (
                 <div className="pt-1">{renderSectionTitle(section)}</div>
               )}
-              {section.items.length === 0 && section.emptyText ? (
+              {section.key === "added" &&
+                showDshAccountCard &&
+                dshAccountCard && <DshAccountCard status={dshAccountCard} />}
+              {section.items.length === 0 &&
+              section.emptyText &&
+              !(section.key === "added" && showDshAccountCard) ? (
                 <div className="rounded-panel border border-dashed border-border px-4 py-3 text-caption text-fg-3">
                   {section.emptyText}
                 </div>
@@ -664,7 +696,6 @@ interface SortableProviderCardProps {
   appId: AppId;
   presentation: CardPresentation;
   isCurrent: boolean;
-  isInConfig: boolean;
   onEdit: (provider: Provider) => void;
   onDelete: (provider: Provider) => void;
   onDuplicate: (provider: Provider) => void;

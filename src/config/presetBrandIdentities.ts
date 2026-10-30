@@ -231,6 +231,23 @@ export const PRESET_BRAND_IDENTITIES = {
     isPartner: true,
     partnerPromotionKey: "teamorouter",
   },
+  clinepass: {
+    category: "third_party",
+    icon: "cline",
+    name: "ClinePass",
+    websiteUrl: "https://docs.cline.bot/getting-started/clinepass",
+    apiKeyUrl: "https://app.cline.bot",
+  },
+  teamorouterClaude: {
+    name: "TeamoRouter Claude",
+    websiteUrl: "https://teamorouter.cn",
+    apiKeyUrl:
+      "https://teamorouter.cn/?utm_source=cc_switch&utm_medium=referral&utm_campaign=ai_directory",
+    category: "aggregator",
+    isPartner: true,
+    partnerPromotionKey: "teamorouter",
+    icon: "teamorouter",
+  },
   ppio: {
     name: "PPIO",
     websiteUrl: "https://ppio.com",

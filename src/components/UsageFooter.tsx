@@ -9,7 +9,6 @@ import {
   tierShortLabel,
 } from "@/components/SubscriptionQuotaFooter";
 import type { QuotaTier } from "@/types/subscription";
-import { isAdditiveAppId } from "@/config/appConfig";
 import { QuotaBars, QuotaLines } from "@/components/quota/QuotaLines";
 import { useQuotaDisplay } from "@/components/quota/useQuotaDisplay";
 import {
@@ -25,8 +24,6 @@ interface UsageFooterProps {
   providerId: string;
   appId: AppId;
   usageEnabled: boolean; // 是否启用了用量查询
-  isCurrent: boolean; // 是否为当前激活的供应商
-  isInConfig?: boolean; // OpenCode: 是否已添加到配置
   inline?: boolean; // 是否内联显示（在按钮左侧）
 }
 
@@ -98,26 +95,14 @@ function planLine(
 }
 
 function UsageFooterComponent(props: UsageFooterProps) {
-  const {
-    provider,
-    providerId,
-    appId,
-    usageEnabled,
-    isCurrent,
-    isInConfig = false,
-    inline = false,
-  } = props;
+  const { provider, providerId, appId, usageEnabled, inline = false } = props;
   const { t } = useTranslation();
   const display = useQuotaDisplay();
   const isTokenPlan =
     provider.meta?.usage_script?.templateType === "token_plan";
 
-  // 统一的用量查询（自动查询仅对当前激活的供应商启用）
-  // 累加模式：使用 isInConfig 代替 isCurrent
-  const shouldAutoQuery = isAdditiveAppId(appId) ? isInConfig : isCurrent;
-  const autoQueryInterval = shouldAutoQuery
-    ? provider.meta?.usage_script?.autoQueryInterval || 0
-    : 0;
+  // 按用户配置自动查询，未启用的供应商也可能在其他客户端产生用量。
+  const autoQueryInterval = provider.meta?.usage_script?.autoQueryInterval ?? 0;
 
   const {
     data: usage,

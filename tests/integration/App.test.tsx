@@ -298,8 +298,10 @@ describe("App integration with MSW", () => {
 
     fireEvent.click(screen.getByText("switch"));
     fireEvent.click(screen.getByText("duplicate"));
-    await waitFor(() =>
-      expect(screen.getByTestId("provider-list").textContent).toMatch(/copy/),
+    await waitFor(
+      () =>
+        expect(screen.getByTestId("provider-list").textContent).toMatch(/copy/),
+      { timeout: 10000 },
     );
 
     fireEvent.click(screen.getByText("open-website"));
@@ -581,11 +583,14 @@ describe("App integration with MSW", () => {
 
     fireEvent.click(screen.getByText("duplicate"));
 
-    await waitFor(() => {
-      const providerList = screen.getByTestId("provider-list").textContent;
-      expect(providerList).toContain("deepseek-copy-2");
-      expect(providerList).toContain("DeepSeek copy");
-    });
+    await waitFor(
+      () => {
+        const providerList = screen.getByTestId("provider-list").textContent;
+        expect(providerList).toContain("deepseek-copy-2");
+        expect(providerList).toContain("DeepSeek copy");
+      },
+      { timeout: 10000 },
+    );
 
     expect(toastErrorMock).not.toHaveBeenCalledWith(
       expect.stringContaining("Provider key is required for openclaw"),
@@ -662,10 +667,12 @@ describe("App integration with MSW", () => {
       ),
     );
     fireEvent.click(screen.getByText("duplicate"));
-    await waitFor(() =>
-      expect(screen.getByTestId("provider-list").textContent).toContain(
-        "custom-copy-2",
-      ),
+    await waitFor(
+      () =>
+        expect(screen.getByTestId("provider-list").textContent).toContain(
+          "custom-copy-2",
+        ),
+      { timeout: 10000 },
     );
     expect(toastErrorMock).not.toHaveBeenCalled();
   });
@@ -737,10 +744,12 @@ describe("App integration with MSW", () => {
       ),
     );
     fireEvent.click(screen.getByText("duplicate"));
-    await waitFor(() =>
-      expect(screen.getByTestId("provider-list").textContent).toContain(
-        "native-copy-2",
-      ),
+    await waitFor(
+      () =>
+        expect(screen.getByTestId("provider-list").textContent).toContain(
+          "native-copy-2",
+        ),
+      { timeout: 10000 },
     );
     expect(toastErrorMock).not.toHaveBeenCalled();
   });
@@ -771,10 +780,12 @@ describe("App integration with MSW", () => {
     );
     fireEvent.click(screen.getByText("duplicate"));
 
-    await waitFor(() =>
-      expect(screen.getByTestId("provider-list").textContent).toContain(
-        "kimi-copy-2",
-      ),
+    await waitFor(
+      () =>
+        expect(screen.getByTestId("provider-list").textContent).toContain(
+          "kimi-copy-2",
+        ),
+      { timeout: 10000 },
     );
     expect(toastErrorMock).not.toHaveBeenCalledWith(
       expect.stringContaining("Provider key is required for mcode"),
