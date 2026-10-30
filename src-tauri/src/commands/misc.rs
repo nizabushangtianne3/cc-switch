@@ -3983,7 +3983,7 @@ fn anchored_command_from_paths(tool: &str, bin_path: &str, real_target: &str) ->
         // npm 12 拦截后仍 exit 0，`||` 后的官方 installer 不会接手，用户继续跑旧版。
         // 环境变量只作用于 `||` 左侧这一条；internal / gh-release 模式不经 npm，不受影响。
         let update = anchored_official_update_command(tool, bin_path)?;
-        return Some(grok_native_update_command(format!(
+        return Some(grok_native_update_command(&format!(
             "{}{}",
             npm_scripts_env_prefix("@xai-official/grok"),
             update
