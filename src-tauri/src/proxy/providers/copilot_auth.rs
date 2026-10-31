@@ -608,12 +608,6 @@ impl CopilotAuthManager {
         oauth_accounts::sorted_accounts(&accounts, default_account_id.as_deref())
     }
 
-    /// 获取指定账号信息
-    pub async fn get_account(&self, account_id: &str) -> Option<GitHubAccount> {
-        let accounts = self.accounts.read().await;
-        accounts.get(account_id).map(GitHubAccount::from)
-    }
-
     /// 移除指定账号
     pub async fn remove_account(&self, account_id: &str) -> Result<(), CopilotAuthError> {
         log::info!("[CopilotAuth] 移除账号: {account_id}");

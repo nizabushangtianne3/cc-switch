@@ -86,7 +86,7 @@ pub struct Database {
     pub(crate) failover_queue_cache:
         Mutex<HashMap<String, dao::providers::CachedFailoverQueueProviders>>,
     pub(crate) provider_row_cache:
-        Mutex<HashMap<(String, String), dao::providers::CachedProviderById>>,
+        Mutex<HashMap<String, HashMap<String, dao::providers::CachedProviderById>>>,
     pub(crate) provider_table_generation: Arc<AtomicU64>,
 }
 

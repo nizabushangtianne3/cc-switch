@@ -591,32 +591,6 @@ impl McpService {
         Ok(result)
     }
 
-    /// [已废弃] 设置 MCP 服务器在指定应用的启用状态（兼容旧 API）
-    #[deprecated(since = "3.7.0", note = "Use toggle_app instead")]
-    pub fn set_enabled(
-        state: &AppState,
-        app: AppType,
-        id: &str,
-        enabled: bool,
-    ) -> Result<bool, AppError> {
-        Self::toggle_app(state, id, app, enabled)?;
-        Ok(true)
-    }
-
-    /// [已废弃] 同步启用的 MCP 到指定应用（兼容旧 API）
-    #[deprecated(since = "3.7.0", note = "Use sync_all_enabled instead")]
-    pub fn sync_enabled(state: &AppState, app: AppType) -> Result<(), AppError> {
-        let servers = Self::get_all_servers(state)?;
-
-        for server in servers.values() {
-            if server.apps.is_enabled_for(&app) {
-                Self::sync_server_to_app(state, server, &app)?;
-            }
-        }
-
-        Ok(())
-    }
-
     /// 从 Claude 导入 MCP（v3.7.0 已更新为统一结构）
     pub fn import_from_claude(state: &AppState) -> Result<usize, AppError> {
         // 创建临时 MultiAppConfig 用于导入

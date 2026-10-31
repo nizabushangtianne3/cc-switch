@@ -426,15 +426,20 @@ impl Database {
         let generation = self
             .provider_table_generation
             .load(std::sync::atomic::Ordering::SeqCst);
-        let key = (id.to_string(), app_type.to_string());
         {
             let cache = self
                 .provider_row_cache
                 .lock()
                 .map_err(|e| AppError::Database(format!("Provider cache lock failed: {e}")))?;
-            if let Some(entry) = cache.get(&key).filter(|entry| {
-                entry.generation == generation && entry.cached_at.elapsed() < PROVIDER_BY_ID_TTL
-            }) {
+            if let Some(entry) =
+                cache
+                    .get(app_type)
+                    .and_then(|by_id| by_id.get(id))
+                    .filter(|entry| {
+                        entry.generation == generation
+                            && entry.cached_at.elapsed() < PROVIDER_BY_ID_TTL
+                    })
+            {
                 return Ok(entry.provider.clone());
             }
         }
@@ -450,8 +455,8 @@ impl Database {
                 .load(std::sync::atomic::Ordering::SeqCst)
                 == generation
             {
-                cache.insert(
-                    key,
+                cache.entry(app_type.to_string()).or_default().insert(
+                    id.to_string(),
                     CachedProviderById {
                         generation,
                         cached_at: Instant::now(),
@@ -679,106 +684,6 @@ impl Database {
         Ok(())
     }
 
-    /// Replace a provider row under a new ID without exposing an intermediate
-    /// duplicate or missing row. Existing endpoint and health references move
-    /// with the provider, while its current-state bit is preserved.
-    pub fn replace_provider_id(
-        &self,
-        app_type: &str,
-        original_id: &str,
-        provider: &Provider,
-    ) -> Result<(), AppError> {
-        if original_id == provider.id {
-            return self.save_provider(app_type, provider);
-        }
-
-        let mut conn = lock_conn!(self.conn);
-        let tx = conn
-            .transaction()
-            .map_err(|e| AppError::Database(e.to_string()))?;
-
-        let (is_current, in_failover_queue) = tx
-            .query_row(
-                "SELECT is_current, in_failover_queue FROM providers WHERE id = ?1 AND app_type = ?2",
-                params![original_id, app_type],
-                |row| Ok((row.get::<_, bool>(0)?, row.get::<_, bool>(1)?)),
-            )
-            .optional()
-            .map_err(|e| AppError::Database(e.to_string()))?
-            .ok_or_else(|| {
-                AppError::Database(format!(
-                    "Provider '{original_id}' does not exist in app '{app_type}'"
-                ))
-            })?;
-
-        let target_exists = tx
-            .query_row(
-                "SELECT 1 FROM providers WHERE id = ?1 AND app_type = ?2",
-                params![provider.id, app_type],
-                |_| Ok(()),
-            )
-            .optional()
-            .map_err(|e| AppError::Database(e.to_string()))?
-            .is_some();
-        if target_exists {
-            return Err(AppError::Database(format!(
-                "Provider '{}' already exists in app '{app_type}'",
-                provider.id
-            )));
-        }
-
-        let mut meta = provider.meta.clone().unwrap_or_default();
-        meta.custom_endpoints.clear();
-        tx.execute(
-            "INSERT INTO providers (
-                id, app_type, name, settings_config, website_url, category,
-                created_at, sort_index, notes, icon, icon_color, meta,
-                is_current, in_failover_queue
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
-            params![
-                provider.id,
-                app_type,
-                provider.name,
-                serde_json::to_string(&provider.settings_config).map_err(|e| {
-                    AppError::Database(format!("Failed to serialize settings_config: {e}"))
-                })?,
-                provider.website_url,
-                provider.category,
-                provider.created_at,
-                provider.sort_index,
-                provider.notes,
-                provider.icon,
-                provider.icon_color,
-                serde_json::to_string(&meta).map_err(|e| {
-                    AppError::Database(format!("Failed to serialize meta: {e}"))
-                })?,
-                is_current,
-                in_failover_queue,
-            ],
-        )
-        .map_err(|e| AppError::Database(e.to_string()))?;
-
-        tx.execute(
-            "UPDATE provider_endpoints SET provider_id = ?1 WHERE provider_id = ?2 AND app_type = ?3",
-            params![provider.id, original_id, app_type],
-        )
-        .map_err(|e| AppError::Database(e.to_string()))?;
-        tx.execute(
-            "UPDATE provider_health SET provider_id = ?1 WHERE provider_id = ?2 AND app_type = ?3",
-            params![provider.id, original_id, app_type],
-        )
-        .map_err(|e| AppError::Database(e.to_string()))?;
-        tx.execute(
-            "DELETE FROM providers WHERE id = ?1 AND app_type = ?2",
-            params![original_id, app_type],
-        )
-        .map_err(|e| AppError::Database(e.to_string()))?;
-
-        tx.commit().map_err(|e| AppError::Database(e.to_string()))?;
-        self.invalidate_provider_caches();
-        Ok(())
-    }
-
     pub fn delete_provider(&self, app_type: &str, id: &str) -> Result<(), AppError> {
         let conn = lock_conn!(self.conn);
         conn.execute(
@@ -939,31 +844,6 @@ impl Database {
             params![provider_id, app_type, category],
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
-        Ok(())
-    }
-
-    /// 批量更新排序，避免完整读写每个 Provider 的 settings/meta。
-    pub fn update_provider_sort_order(
-        &self,
-        app_type: &str,
-        updates: &[(String, usize)],
-    ) -> Result<(), AppError> {
-        let mut conn = lock_conn!(self.conn);
-        let tx = conn
-            .transaction()
-            .map_err(|e| AppError::Database(e.to_string()))?;
-
-        for (provider_id, sort_index) in updates {
-            tx.execute(
-                "UPDATE providers SET sort_index = ?1
-                 WHERE id = ?2 AND app_type = ?3",
-                params![sort_index, provider_id, app_type],
-            )
-            .map_err(|e| AppError::Database(e.to_string()))?;
-        }
-
-        tx.commit().map_err(|e| AppError::Database(e.to_string()))?;
-        self.invalidate_provider_caches();
         Ok(())
     }
 

@@ -373,12 +373,11 @@ fn state_cache() -> &'static Mutex<Option<CachedState>> {
     &CACHE
 }
 
-fn cache_take_stale(path: &std::path::Path) -> Option<CachedState> {
+/// 读一次缓存条目，不含戳校验：临界区内只克隆 `Arc` 与路径，`stat` 放到锁外，
+/// 并发请求不会在文件系统调用上互相排队。
+fn cache_take(path: &std::path::Path) -> Option<CachedState> {
     let cache = state_cache().lock().unwrap_or_else(|e| e.into_inner());
-    cache
-        .as_ref()
-        .filter(|entry| entry.path == path && entry.stamp == FileStamp::of(path))
-        .cloned()
+    cache.as_ref().filter(|entry| entry.path == path).cloned()
 }
 
 fn cache_replace(path: &std::path::Path, state: Arc<LiveState>) {
@@ -392,13 +391,17 @@ fn cache_replace(path: &std::path::Path, state: Arc<LiveState>) {
 
 /// [`load`] 的缓存版：进程内同一路径只读盘一次，之后每次命中做一次 `stat`
 /// 校验；文件变了（外部写入或别处改名）或我们自己的写盘会自然失配重读。
-fn load_cached(store: &DeviceStore) -> Result<LiveState, AppError> {
+///
+/// 返回 `Arc<LiveState>`：命中只抬一次引用计数。热路径每个请求都要读一次
+/// 状态，深拷贝整棵状态树（每应用的模式、契约、Stack、pending、extra）的
+/// 开销曾经全花在克隆上。
+fn load_cached_shared(store: &DeviceStore) -> Result<Arc<LiveState>, AppError> {
     let path = store.state_path();
-    if let Some(entry) = cache_take_stale(&path) {
-        return Ok((*entry.state).clone());
+    if let Some(entry) = cache_take(&path).filter(|entry| entry.stamp == FileStamp::of(&path)) {
+        return Ok(entry.state);
     }
-    let state = load(store)?;
-    cache_replace(&path, Arc::new(state.clone()));
+    let state = Arc::new(load(store)?);
+    cache_replace(&path, Arc::clone(&state));
     Ok(state)
 }
 
@@ -439,8 +442,9 @@ pub fn mode_states<const N: usize>(
     store: &DeviceStore,
     apps: [&str; N],
 ) -> Result<[ModeState; N], AppError> {
-    let _guard = state_lock().lock().unwrap_or_else(|e| e.into_inner());
-    let state = load(store)?;
+    // 状态面板每 2 秒轮询一次：走同一份按文件戳失效的缓存，不再每次读盘解析，
+    // 也不为读持 `state_lock`（读-改-写才需要它，见 `update`）。
+    let state = load_cached_shared(store)?;
     Ok(apps.map(|app| {
         state
             .apps
@@ -485,9 +489,10 @@ pub fn stack_mode(store: &DeviceStore, app: &str) -> Result<bool, AppError> {
 
 /// 一次读出路由决策需要的模式状态和 Stack 开关；状态文件只读一次。
 pub fn routing_state(store: &DeviceStore, app: &str) -> Result<(ModeState, bool), AppError> {
-    let _guard = state_lock().lock().unwrap_or_else(|e| e.into_inner());
-    // 代理每个请求都过这里，走缓存版读状态（外部写盘按文件戳自然失效）。
-    let state = load_cached(store)?;
+    // 代理每个请求都过这里。写盘走临时文件原子替换，读端看到的永远是完整的
+    // 新旧状态之一，所以热路径读不再持 `state_lock`（那把锁只服务于
+    // `update` 的读-改-写）；缓存按文件戳自然失效，命中只抬一次引用计数。
+    let state = load_cached_shared(store)?;
     let app_state = state.apps.get(app);
     let mode = app_state.map(AppLiveState::mode_state).unwrap_or_default();
     let stack_mode =
@@ -700,6 +705,26 @@ mod tests {
                 .as_deref(),
             Some("a")
         );
+    }
+
+    /// 状态面板轮询走的 `mode_states` 与热路径共用同一份按文件戳失效的缓存：
+    /// 外部直接改文件后，下一次轮询必须读到新内容，而不是缓存里的旧快照。
+    #[test]
+    fn mode_states_cache_sees_external_rewrite() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = DeviceStore::at(dir.path());
+
+        assert!(!mode_states(&store, ["claude"]).unwrap()[0].is_proxy());
+
+        fs::write(
+            store.state_path(),
+            r#"{"version": 1, "apps": {"claude": {"mode": "proxy", "proxy_route": "polled"}}}"#,
+        )
+        .unwrap();
+
+        let modes = mode_states(&store, ["claude", "codex"]).unwrap();
+        assert_eq!(modes[0].proxy_route.as_deref(), Some("polled"));
+        assert!(!modes[1].is_proxy());
     }
 
     #[test]
