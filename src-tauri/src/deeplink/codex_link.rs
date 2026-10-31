@@ -255,3 +255,361 @@ fn value_at<'a>(root: &'a Table, segments: &[&str]) -> Option<&'a Value> {
     }
     current.get(last)?.as_value()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn json(value: serde_json::Value) -> serde_json::Value {
+        value
+    }
+
+    /// 解析失败的信息（`CodexLinkConfig` 没有 Debug，`unwrap_err` 用不了）。
+    fn parse_error(text: &str) -> String {
+        match CodexLinkConfig::parse(text) {
+            Err(error) => error.to_string(),
+            Ok(_) => panic!("expected the Codex link config to be refused"),
+        }
+    }
+
+    /// 渲染失败的信息（同上，`expect_err` 需要 `T: Debug`，这里给不了）。
+    fn render_error(config: &CodexLinkConfig) -> String {
+        match config.render(
+            "Display Name",
+            "https://api.example.com/v1",
+            "gpt-5",
+            "sk-link",
+        ) {
+            Err(error) => error.to_string(),
+            Ok(_) => panic!("expected the rendered config to be refused"),
+        }
+    }
+
+    // ---------- config_text ----------
+
+    #[test]
+    fn config_text_reads_the_inline_config_string() {
+        let config = json(serde_json::json!({"config": "model_provider = \"custom\""}));
+        let text = config_text(&config).unwrap().expect("inline config");
+        assert_eq!(text, "model_provider = \"custom\"");
+    }
+
+    #[test]
+    fn config_text_refuses_an_auth_only_object() {
+        let config = json(serde_json::json!({"auth": {"OPENAI_API_KEY": "sk-x"}}));
+        assert_eq!(config_text(&config).unwrap(), None);
+    }
+
+    #[test]
+    fn config_text_converts_a_whole_json_config_to_toml() {
+        let config = json(serde_json::json!({
+            "model": "gpt-5",
+            "model_provider": "custom",
+            "model_providers": {"custom": {"name": "Relay", "base_url": "https://api.example.com/v1"}}
+        }));
+        let text = config_text(&config).unwrap().expect("converted config");
+        assert!(text.contains("model_providers"), "{text}");
+        assert!(text.contains("[model_providers.custom]"), "{text}");
+        assert!(!CodexLinkConfig::parse(&text).unwrap().declares_env_key);
+    }
+
+    #[test]
+    fn config_text_returns_none_for_empty_or_non_object_values() {
+        assert_eq!(config_text(&json(serde_json::json!({}))).unwrap(), None);
+        assert_eq!(config_text(&json(serde_json::json!("text"))).unwrap(), None);
+        // 带了 config 键但不是字符串：同样没有可用的配置文本。
+        assert_eq!(
+            config_text(&json(serde_json::json!({"config": 5}))).unwrap(),
+            None
+        );
+    }
+
+    // ---------- parse ----------
+
+    #[test]
+    fn parse_keeps_whitelisted_table_keys_and_drops_the_rest() {
+        let text = r#"
+model = "gpt-5"
+model_provider = "custom"
+
+[model_providers.custom]
+name = "Relay"
+base_url = "https://api.example.com/v1"
+query_params = { api_version = "2024-05" }
+note_from_the_link = "should be dropped"
+"#;
+        let config = CodexLinkConfig::parse(text).unwrap();
+        let table = config.table.expect("selected table");
+        assert_eq!(non_empty_str(table.get("name")).as_deref(), Some("Relay"));
+        assert_eq!(
+            non_empty_str(table.get("base_url")).as_deref(),
+            Some("https://api.example.com/v1")
+        );
+        assert!(table.get("query_params").is_some());
+        assert!(table.get("note_from_the_link").is_none());
+    }
+
+    #[test]
+    fn parse_refuses_keys_that_make_codex_run_commands_or_read_local_credentials() {
+        for key in REJECTED_TABLE_KEYS {
+            let text = format!(
+                "model_provider = \"custom\"\n\n[model_providers.custom]\nname = \"Relay\"\n{key} = {{}}\n"
+            );
+            let message = parse_error(&text);
+            assert!(
+                message.contains(key),
+                "unexpected message for {key}: {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_flags_env_key_and_drops_it_from_the_table() {
+        let text = r#"
+model_provider = "custom"
+
+[model_providers.custom]
+name = "Relay"
+env_key = "MY_KEY"
+"#;
+        let config = CodexLinkConfig::parse(text).unwrap();
+        assert!(config.declares_env_key);
+        let table = config.table.expect("selected table");
+        assert!(table.get("env_key").is_none());
+    }
+
+    #[test]
+    fn parse_selects_the_table_the_model_provider_points_at() {
+        let text = r#"
+model_provider = "second"
+
+[model_providers.first]
+name = "First"
+
+[model_providers.second]
+name = "Second"
+"#;
+        let config = CodexLinkConfig::parse(text).unwrap();
+        let table = config.table.expect("selected table");
+        assert_eq!(non_empty_str(table.get("name")).as_deref(), Some("Second"));
+    }
+
+    #[test]
+    fn parse_falls_back_to_the_only_table_without_a_pointer() {
+        let text = r#"
+[model_providers.only]
+name = "Only"
+"#;
+        let config = CodexLinkConfig::parse(text).unwrap();
+        let table = config.table.expect("selected table");
+        assert_eq!(non_empty_str(table.get("name")).as_deref(), Some("Only"));
+    }
+
+    #[test]
+    fn parse_without_a_pointer_and_many_tables_selects_nothing() {
+        let text = r#"
+[model_providers.a]
+name = "A"
+
+[model_providers.b]
+name = "B"
+"#;
+        let config = CodexLinkConfig::parse(text).unwrap();
+        assert!(config.table.is_none());
+    }
+
+    #[test]
+    fn parse_reads_nested_model_names() {
+        let text = r#"
+model = "gpt-5"
+
+[agents]
+default_subagent_model = "gpt-5-mini"
+default_subagent_reasoning_effort = "low"
+
+[memories]
+extract_model = "gpt-5-nano"
+consolidation_model = "gpt-5"
+"#;
+        let config = CodexLinkConfig::parse(text).unwrap();
+        let nested: Vec<(&[&str], String)> = config
+            .nested
+            .iter()
+            .map(|(segments, value)| {
+                (
+                    *segments,
+                    value
+                        .as_str()
+                        .expect("nested value is a string")
+                        .to_string(),
+                )
+            })
+            .collect();
+        assert!(nested.contains(&(
+            &["agents", "default_subagent_model"][..],
+            "gpt-5-mini".to_string()
+        )));
+        assert!(nested.contains(&(&["memories", "extract_model"][..], "gpt-5-nano".to_string())));
+    }
+
+    #[test]
+    fn parse_rejects_broken_toml() {
+        let message = CodexLinkConfig::parse("not = = toml")
+            .err()
+            .expect("broken TOML must be refused")
+            .to_string();
+        assert!(message.contains("Invalid Codex config.toml"), "{message}");
+    }
+
+    #[test]
+    fn base_url_and_model_read_the_link_values() {
+        let text = r#"
+model = "gpt-5"
+model_provider = "custom"
+
+[model_providers.custom]
+name = "Relay"
+base_url = "https://api.example.com/v1"
+"#;
+        let config = CodexLinkConfig::parse(text).unwrap();
+        assert_eq!(
+            config.base_url().as_deref(),
+            Some("https://api.example.com/v1")
+        );
+        assert_eq!(config.model().as_deref(), Some("gpt-5"));
+    }
+
+    // ---------- render ----------
+
+    #[test]
+    fn render_writes_the_route_row_with_link_values() {
+        let text = r#"
+model = "ignored-model"
+model_provider = "custom"
+
+[model_providers.custom]
+name = "Relay"
+base_url = "https://old.example.com/v1"
+wire_api = "responses"
+"#;
+        let config = CodexLinkConfig::parse(text).unwrap();
+        let rendered = config
+            .render(
+                "Display Name",
+                "https://api.example.com/v1",
+                "gpt-5",
+                "sk-link",
+            )
+            .unwrap();
+        let doc = rendered.parse::<DocumentMut>().unwrap();
+        assert_eq!(doc["model_provider"].as_str(), Some(ROUTE_ID));
+        assert_eq!(doc["model"].as_str(), Some("gpt-5"));
+        let table = doc["model_providers"][ROUTE_ID].as_table_like().unwrap();
+        assert_eq!(non_empty_str(table.get("name")).as_deref(), Some("Relay"));
+        assert_eq!(
+            non_empty_str(table.get("base_url")).as_deref(),
+            Some("https://api.example.com/v1")
+        );
+        assert_eq!(
+            non_empty_str(table.get("wire_api")).as_deref(),
+            Some("responses")
+        );
+    }
+
+    #[test]
+    fn render_falls_back_to_the_display_name_and_defaults() {
+        let config = CodexLinkConfig::parse("model = \"gpt-5\"").unwrap();
+        let rendered = config
+            .render(
+                "Display Name",
+                "https://api.example.com/v1",
+                "gpt-5",
+                "sk-link",
+            )
+            .unwrap();
+        let doc = rendered.parse::<DocumentMut>().unwrap();
+        let table = doc["model_providers"][ROUTE_ID].as_table_like().unwrap();
+        assert_eq!(
+            non_empty_str(table.get("name")).as_deref(),
+            Some("Display Name")
+        );
+        assert_eq!(
+            non_empty_str(table.get("wire_api")).as_deref(),
+            Some("responses")
+        );
+        assert_eq!(
+            table
+                .get("requires_openai_auth")
+                .and_then(Item::as_value)
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn render_replaces_the_bearer_token_with_the_link_key() {
+        let text = r#"
+model_provider = "custom"
+
+[model_providers.custom]
+name = "Relay"
+experimental_bearer_token = "stale-key-from-the-link"
+"#;
+        let config = CodexLinkConfig::parse(text).unwrap();
+        let rendered = config
+            .render(
+                "Display Name",
+                "https://api.example.com/v1",
+                "gpt-5",
+                "sk-link",
+            )
+            .unwrap();
+        let doc = rendered.parse::<DocumentMut>().unwrap();
+        let table = doc["model_providers"][ROUTE_ID].as_table_like().unwrap();
+        assert_eq!(
+            non_empty_str(table.get("experimental_bearer_token")).as_deref(),
+            Some("sk-link")
+        );
+    }
+
+    #[test]
+    fn render_allows_a_catalog_url_on_the_endpoint_origin() {
+        let text = r#"
+model_provider = "custom"
+
+[model_providers.custom]
+name = "Relay"
+model_catalog_url = "https://api.example.com/models.json"
+"#;
+        let config = CodexLinkConfig::parse(text).unwrap();
+        let rendered = config
+            .render(
+                "Display Name",
+                "https://api.example.com/v1",
+                "gpt-5",
+                "sk-link",
+            )
+            .expect("same-origin catalog");
+        let doc = rendered.parse::<DocumentMut>().unwrap();
+        let table = doc["model_providers"][ROUTE_ID].as_table_like().unwrap();
+        assert_eq!(
+            non_empty_str(table.get("model_catalog_url")).as_deref(),
+            Some("https://api.example.com/models.json")
+        );
+    }
+
+    #[test]
+    fn render_rejects_a_catalog_url_on_another_origin() {
+        let text = r#"
+model_provider = "custom"
+
+[model_providers.custom]
+name = "Relay"
+model_catalog_url = "https://evil.example.com/models.json"
+"#;
+        let config = CodexLinkConfig::parse(text).unwrap();
+        let message = render_error(&config);
+        assert!(message.contains("same origin"), "{message}");
+        assert!(message.contains("evil.example.com"), "{message}");
+    }
+}
