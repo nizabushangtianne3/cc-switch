@@ -307,6 +307,23 @@ impl Database {
             .collect())
     }
 
+    /// [`Self::get_shared_failover_queue_providers`] 的纯缓存版：命中直接返回队列
+    /// 快照，未命中返回 `None` 且**不碰数据库**。
+    ///
+    /// 故障转移开启时每个请求都要排一次队：命中（providers 表代次未变、TTL 未过）
+    /// 就能同步零 IO 返回，省掉一次线程池往返；未命中由调用方回退到会查库的版本。
+    pub fn cached_failover_queue_providers(&self, app_type: &str) -> Option<Vec<Arc<Provider>>> {
+        let read_generation = self
+            .provider_table_generation
+            .load(std::sync::atomic::Ordering::SeqCst);
+        let cache = self.failover_queue_cache.lock().ok()?;
+        let entry = cache.get(app_type).filter(|entry| {
+            entry.generation == read_generation
+                && entry.cached_at.elapsed() < FAILOVER_QUEUE_PROVIDER_TTL
+        })?;
+        Some(entry.providers.clone())
+    }
+
     fn get_failover_queue_providers_sync(&self, app_type: &str) -> Result<Vec<Provider>, AppError> {
         let conn = lock_conn!(self.conn);
         let mut stmt = conn.prepare_cached(
@@ -1453,6 +1470,38 @@ mod ensure_official_seed_tests {
         )?;
         assert!(
             db.cached_shared_provider(&provider.id, "claude").is_none(),
+            "providers 表写入后代次已变，纯缓存版必须未命中",
+        );
+
+        Ok(())
+    }
+
+    /// 队列的纯缓存版：没读过是未命中；温过之后命中；providers 表一有写入再未命中。
+    #[test]
+    fn cached_failover_queue_providers_only_serves_fresh_entries() -> Result<(), AppError> {
+        let db = Database::memory()?;
+        let first = Provider::with_id(
+            "queue-cached-first".to_string(),
+            "Queue Cached First".to_string(),
+            serde_json::json!({}),
+            None,
+        );
+        db.save_provider("claude", &first)?;
+        db.add_to_failover_queue("claude", &first.id)?;
+
+        assert!(db.cached_failover_queue_providers("claude").is_none());
+
+        let warmed = db.get_shared_failover_queue_providers("claude")?;
+        let cached = db
+            .cached_failover_queue_providers("claude")
+            .expect("cached queue");
+        assert_eq!(cached.len(), warmed.len());
+        assert!(db.cached_failover_queue_providers("codex").is_none());
+
+        // 队列本身也是 providers 表上的写：代次抬升后必须未命中。
+        db.remove_from_failover_queue("claude", &first.id)?;
+        assert!(
+            db.cached_failover_queue_providers("claude").is_none(),
             "providers 表写入后代次已变，纯缓存版必须未命中",
         );
 

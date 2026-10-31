@@ -100,13 +100,22 @@ impl ProviderRouter {
             result.push(current_provider.expect("checked above"));
         } else if auto_failover_enabled {
             // 故障转移开启：仅按队列顺序依次尝试（P1 → P2 → ...）
-            let db = Arc::clone(&self.db);
-            let queue_app_type = app_type.to_string();
-            let providers = tokio::task::spawn_blocking(move || {
-                db.get_shared_failover_queue_providers(&queue_app_type)
-            })
-            .await
-            .map_err(|error| AppError::Database(format!("故障转移队列读取任务失败: {error}")))??;
+            // 队列按 1 秒快照缓存：命中时代次与 TTL 都新鲜，同步零 IO 返回，省掉
+            // 一次线程池往返；未命中才进阻塞线程池查库，SQLite 读取不占 tokio worker。
+            let providers = match self.db.cached_failover_queue_providers(app_type) {
+                Some(cached) => cached,
+                None => {
+                    let db = Arc::clone(&self.db);
+                    let queue_app_type = app_type.to_string();
+                    tokio::task::spawn_blocking(move || {
+                        db.get_shared_failover_queue_providers(&queue_app_type)
+                    })
+                    .await
+                    .map_err(|error| {
+                        AppError::Database(format!("故障转移队列读取任务失败: {error}"))
+                    })??
+                }
+            };
             for provider in providers {
                 if !provider_supports_failover(app_type, &provider) {
                     continue;
@@ -619,6 +628,12 @@ mod tests {
         let router = ProviderRouter::new(db.clone());
         let providers = router.select_providers("claude").await.unwrap();
 
+        // 再选一次：队列已在 1 秒缓存里，走纯缓存快路径（不进线程池），结果必须一致。
+        let cached = router.select_providers("claude").await.unwrap();
+        assert_eq!(
+            cached.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(),
+            providers.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(),
+        );
         assert_eq!(providers.len(), 2);
         // 故障转移开启时：仅按队列顺序选择（忽略当前供应商）
         assert_eq!(providers[0].id, "b");
