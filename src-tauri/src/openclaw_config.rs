@@ -858,13 +858,11 @@ mod tests {
     use crate::config::get_app_config_dir;
     use serial_test::serial;
     use std::path::Path;
-    use std::sync::{Mutex, OnceLock};
 
-    fn test_guard() -> std::sync::MutexGuard<'static, ()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-            .lock()
-            .unwrap_or_else(|err| err.into_inner())
+    fn test_guard() -> tokio::sync::MutexGuard<'static, ()> {
+        // 和 hermes_config / commands::workspace 共用一把：大家都会换 CC_SWITCH_TEST_HOME。
+        // 这些测试是同步的，用 blocking_lock。
+        crate::config::test_home_lock().blocking_lock()
     }
 
     fn with_test_paths<T>(source: &str, test: impl FnOnce(&Path) -> T) -> T {

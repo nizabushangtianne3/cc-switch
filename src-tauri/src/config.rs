@@ -30,6 +30,20 @@ pub fn get_home_dir() -> PathBuf {
     })
 }
 
+/// 改主目录环境变量的测试共用的全局锁。
+///
+/// `openclaw_config`、`hermes_config`、`commands::workspace` 等模块的测试都会把
+/// `CC_SWITCH_TEST_HOME` 指到各自的临时目录再还原；各用各的私有锁时，并行测试会在
+/// 对方的窗口里换掉临时主目录。共用这一把，互斥就不再取决于模块。
+///
+/// 用 `tokio::sync::Mutex`：同步测试 `blocking_lock()`，异步测试 `.lock().await`，
+/// 后者不会出现「持锁跨 await」。
+#[cfg(test)]
+pub(crate) fn test_home_lock() -> &'static tokio::sync::Mutex<()> {
+    static LOCK: std::sync::OnceLock<tokio::sync::Mutex<()>> = std::sync::OnceLock::new();
+    LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
+}
+
 /// 检测路径是否为 WSL 网络路径（如 \\wsl$\Ubuntu\... 或 \\wsl.localhost\Ubuntu\...）
 /// 注意：仅检测直接 UNC 路径，映射磁盘符（如 Z: -> \\wsl$\...）无法检测
 #[cfg(windows)]

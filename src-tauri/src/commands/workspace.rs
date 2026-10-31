@@ -360,3 +360,203 @@ pub async fn open_workspace_directory(handle: AppHandle, subdir: String) -> Resu
 
     Ok(true)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 在临时主目录里跑命令：`get_openclaw_dir` 经 `CC_SWITCH_TEST_HOME` 落到这里。
+    /// 锁和 hermes/openclaw 的测试共用，避免并行测试互换临时主目录。
+    ///
+    /// 环境在整个 future 期间保持，await 完才还原。
+    async fn with_test_home<T, F>(test: impl FnOnce() -> F) -> T
+    where
+        F: std::future::Future<Output = T>,
+    {
+        // 异步侧用 `.lock().await`：guard 可 Send，不会持 std 锁跨 await。
+        let _guard = crate::config::test_home_lock().lock().await;
+        let temp = tempfile::tempdir().expect("create temp home");
+        std::fs::create_dir_all(
+            temp.path()
+                .join(".openclaw")
+                .join("workspace")
+                .join("memory"),
+        )
+        .expect("create memory dir");
+        let old_test_home = std::env::var_os("CC_SWITCH_TEST_HOME");
+        let old_home = std::env::var_os("HOME");
+        std::env::set_var("CC_SWITCH_TEST_HOME", temp.path());
+        std::env::set_var("HOME", temp.path());
+        let result = test().await;
+        match old_home {
+            Some(value) => std::env::set_var("HOME", value),
+            None => std::env::remove_var("HOME"),
+        }
+        match old_test_home {
+            Some(value) => std::env::set_var("CC_SWITCH_TEST_HOME", value),
+            None => std::env::remove_var("CC_SWITCH_TEST_HOME"),
+        }
+        result
+    }
+
+    // ---- 文件名白名单 ----
+
+    #[test]
+    fn workspace_filenames_are_whitelisted() {
+        assert!(validate_filename("AGENTS.md").is_ok());
+        assert!(validate_filename("MEMORY.md").is_ok());
+        assert!(validate_filename("SOUL.md").is_ok());
+
+        let message = validate_filename("agents.md").unwrap_err();
+        assert!(message.contains("Invalid workspace filename"), "{message}");
+        assert!(message.contains("AGENTS.md"), "{message}");
+
+        // 路径穿越也过不了白名单。
+        assert!(validate_filename("../AGENTS.md").is_err());
+        assert!(validate_filename("AGENTS").is_err());
+    }
+
+    #[test]
+    fn daily_memory_filenames_must_be_iso_dates() {
+        assert!(validate_daily_memory_filename("2026-10-31.md").is_ok());
+
+        for bad in [
+            "2026-10-31.txt",
+            "2026-10-3.md",
+            "26-10-31.md",
+            "2026-10-31",
+            "../2026-10-31.md",
+        ] {
+            let message = validate_daily_memory_filename(bad).unwrap_err();
+            assert!(
+                message.contains("YYYY-MM-DD.md"),
+                "unexpected message for {bad}: {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn char_boundary_helpers_round_to_utf8_boundaries() {
+        // 两个三字节汉字加两个 ASCII：边界在 0/3/6/7/8。
+        let text = "\u{4f60}\u{597d}ab";
+        assert_eq!(text.len(), 8);
+        assert_eq!(floor_char_boundary(text, 0), 0);
+        assert_eq!(floor_char_boundary(text, 4), 3);
+        assert_eq!(floor_char_boundary(text, 7), 7);
+        assert_eq!(floor_char_boundary(text, 99), 8);
+        assert_eq!(ceil_char_boundary(text, 4), 6);
+        assert_eq!(ceil_char_boundary(text, 1), 3);
+        assert_eq!(ceil_char_boundary(text, 8), 8);
+        assert_eq!(ceil_char_boundary(text, 99), 8);
+    }
+
+    // ---- 命令 ----
+
+    #[tokio::test]
+    async fn daily_memory_write_read_list_delete_round_trip() {
+        with_test_home(|| async {
+            write_daily_memory_file("2026-10-01.md".into(), "older".into())
+                .await
+                .expect("write older");
+            write_daily_memory_file("2026-10-31.md".into(), "newer".into())
+                .await
+                .expect("write newer");
+
+            let read = read_daily_memory_file("2026-10-31.md".into())
+                .await
+                .expect("read");
+            assert_eq!(read.as_deref(), Some("newer"));
+
+            let listed = list_daily_memory_files().await.expect("list");
+            assert_eq!(listed.len(), 2);
+            // 新日期在前。
+            assert_eq!(listed[0].filename, "2026-10-31.md");
+            assert_eq!(listed[0].date, "2026-10-31");
+            assert_eq!(listed[0].preview, "newer");
+            assert_eq!(listed[1].filename, "2026-10-01.md");
+
+            delete_daily_memory_file("2026-10-31.md".into())
+                .await
+                .expect("delete");
+            assert_eq!(
+                read_daily_memory_file("2026-10-31.md".into())
+                    .await
+                    .expect("read after delete"),
+                None
+            );
+            // 幂等：再删一次不报错。
+            delete_daily_memory_file("2026-10-31.md".into())
+                .await
+                .expect("delete twice");
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn search_matches_content_and_dates_with_snippets() {
+        with_test_home(|| async {
+            // 匹配点在第 60 字节：片段要带前导省略号，且不越界。
+            let mut content = "x".repeat(60);
+            content.push_str("NEEDLE");
+            content.push_str(&"y".repeat(60));
+            write_daily_memory_file("2026-10-01.md".into(), content.clone())
+                .await
+                .expect("write content");
+            write_daily_memory_file("2026-10-02.md".into(), "nothing here".into())
+                .await
+                .expect("write plain");
+
+            let hits = search_daily_memory_files("needle".into())
+                .await
+                .expect("search");
+            assert_eq!(hits.len(), 1);
+            assert_eq!(hits[0].filename, "2026-10-01.md");
+            assert_eq!(hits[0].match_count, 1);
+            assert!(hits[0].snippet.starts_with("..."), "{}", hits[0].snippet);
+            assert!(hits[0].snippet.contains("NEEDLE"));
+
+            // 日期也能命中：没有正文匹配时用文件开头兜底。
+            let date_hits = search_daily_memory_files("2026-10-02".into())
+                .await
+                .expect("date search");
+            assert_eq!(date_hits.len(), 1);
+            assert_eq!(date_hits[0].filename, "2026-10-02.md");
+            assert_eq!(date_hits[0].match_count, 0);
+            assert_eq!(date_hits[0].snippet, "nothing here");
+
+            // 空查询直接空结果。
+            assert!(search_daily_memory_files(String::new())
+                .await
+                .expect("empty search")
+                .is_empty());
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn daily_memory_commands_refuse_unknown_filenames() {
+        with_test_home(|| async {
+            let message = write_daily_memory_file("../evil.md".into(), "x".into())
+                .await
+                .expect_err("traversal write");
+            assert!(message.contains("YYYY-MM-DD.md"), "{message}");
+            assert!(read_daily_memory_file("evil.md".into()).await.is_err());
+            assert!(delete_daily_memory_file("evil.md".into()).await.is_err());
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn list_and_search_are_empty_without_the_memory_dir() {
+        with_test_home(|| async {
+            let memory = get_openclaw_dir().join("workspace").join("memory");
+            std::fs::remove_dir_all(&memory).expect("remove memory dir");
+            assert!(list_daily_memory_files().await.expect("list").is_empty());
+            assert!(search_daily_memory_files("anything".into())
+                .await
+                .expect("search")
+                .is_empty());
+        })
+        .await;
+    }
+}
