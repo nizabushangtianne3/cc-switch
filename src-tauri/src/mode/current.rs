@@ -74,19 +74,23 @@ fn provider_in_use_shared(db: &Database, app: &AppType) -> Result<Option<Arc<Pro
 }
 
 /// 请求热路径的一次读取版本：模式状态和 Stack 开关来自同一个状态快照。
+///
+/// 设备目录由调用方给出：请求热路径每请求构造一次
+/// [`DeviceStore`](crate::live::engine::DeviceStore) 交给它，和
+/// [`provider_in_use_cached`] 共用同一个目录（测试也因此能完全隔离）。
 pub fn provider_in_use_and_stack_mode(
     db: &Database,
     app: &AppType,
+    store: &DeviceStore,
 ) -> (Option<Arc<Provider>>, bool) {
     if !app.has_route_mode() {
         return (direct_provider_shared(db, app).unwrap_or(None), false);
     }
 
-    let (mode, stack_mode) = state::routing_state(&DeviceStore::for_device(), app.as_str())
-        .unwrap_or_else(|err| {
-            log::warn!("读取 {} 的路由状态失败，按直连处理: {err}", app.as_str());
-            (ModeState::default(), false)
-        });
+    let (mode, stack_mode) = state::routing_state(store, app.as_str()).unwrap_or_else(|err| {
+        log::warn!("读取 {} 的路由状态失败，按直连处理: {err}", app.as_str());
+        (ModeState::default(), false)
+    });
     let provider = provider_in_use_shared_with_state(db, app, mode).unwrap_or(None);
     (provider, stack_mode)
 }
@@ -100,6 +104,37 @@ fn provider_in_use_shared_with_state(
         Some(route) => Ok(Some(route)),
         None => direct_provider_shared(db, app),
     }
+}
+
+/// [`provider_in_use_and_stack_mode`] 的全缓存快照版：模式状态、Stack 开关和供应商行
+/// 全部命中缓存（状态文件戳未变、providers 表代次未变、行 TTL 未过）时零 IO 返回。
+///
+/// 任何一项未命中返回 `None`，调用方回退到会读盘/查库的版本，语义与今天完全一致：
+/// - providers 表的增删改都会抬代次，行被删必然未命中；
+/// - 本地指针存在即赢（`is_current` 只是回退值），所以缓存行命中时无需再解析指针；
+/// - 本地指针为空或行未缓存（含负缓存）都回退，由 `get_effective_current_provider`
+///   做存在性校验和回退。
+pub fn provider_in_use_cached(
+    db: &Database,
+    app: &AppType,
+    store: &DeviceStore,
+) -> Option<(Option<Arc<Provider>>, bool)> {
+    if !app.has_route_mode() {
+        let local = crate::settings::get_current_provider(app)?;
+        let row = db.cached_shared_provider(&local, app.as_str())?;
+        return Some((Some(row), false));
+    }
+
+    let (mode, stack_mode) = crate::mode::state::routing_state_cached(store, app.as_str())?;
+    let route_or_pointer = if mode.is_proxy() {
+        mode.proxy_route
+            .or_else(|| crate::settings::get_current_provider(app))
+    } else {
+        crate::settings::get_current_provider(app)
+    };
+    let id = route_or_pointer?;
+    let row = db.cached_shared_provider(&id, app.as_str())?;
+    Some((Some(row), stack_mode))
 }
 
 fn proxy_route_row_shared_with_state(
@@ -160,6 +195,10 @@ pub fn is_referenced(db: &Database, app: &AppType, id: &str) -> Result<bool, App
 
 #[cfg(test)]
 mod tests {
+    use super::state;
+    use super::{provider_in_use_and_stack_mode, provider_in_use_cached};
+    use crate::app_config::AppType;
+    use crate::live::engine::DeviceStore;
     use std::fs;
     use std::path::Path;
 
@@ -224,6 +263,91 @@ mod tests {
             hits.is_empty(),
             "读当前供应商要经 mode::current::provider_for 并说明用途（直连指针还是正在用的那家）:\n{}",
             hits.join("\n")
+        );
+    }
+
+    /// 独立设备目录 + 内存库：代理路由指向的那家；代理模式下这条路径不读 settings。
+    fn claude_proxy_route_fixture(
+        route: &str,
+    ) -> (
+        std::sync::Arc<crate::database::Database>,
+        DeviceStore,
+        tempfile::TempDir,
+    ) {
+        let dir = tempfile::tempdir().expect("create device dir");
+        let store = DeviceStore::at(dir.path());
+        let provider = crate::provider::Provider::with_id(
+            route.to_string(),
+            format!("Provider {route}"),
+            serde_json::json!({"original": true}),
+            None,
+        );
+        state::update(&store, |live| {
+            let app_state = live.apps.entry("claude".to_string()).or_default();
+            app_state.mode = Some(state::Mode::Proxy);
+            app_state.proxy_route = Some(route.to_string());
+        })
+        .expect("write proxy state");
+        let db = std::sync::Arc::new(crate::database::Database::memory().expect("memory db"));
+        db.save_provider("claude", &provider)
+            .expect("save routed provider");
+        // 代理路由读不到时冷路径要回退到 is_current 行：在库里标记，避免依赖
+        // 全局 settings 里的直连指针（那是真实用户目录的状态）。
+        db.set_current_provider("claude", route)
+            .expect("mark provider current");
+        // dir 跟着元组返回：状态缓存按路径隔离，测试结束目录删除、缓存项自然失配。
+        (db, store, dir)
+    }
+
+    /// 稳态（状态文件戳、providers 表代次都没变）下缓存路径与冷路径选同一家；
+    /// 行被删后代次抬升，缓存路径必须未命中、交给回退路径。
+    #[test]
+    fn provider_in_use_cached_matches_the_cold_path_until_a_write() {
+        let (db, store, _dir) = claude_proxy_route_fixture("cached-hit");
+
+        // 缓存按路径隔离，先经冷路径把状态和行都读进缓存，再走快路径。
+        let cold = provider_in_use_and_stack_mode(&db, &AppType::Claude, &store);
+        let cached = provider_in_use_cached(&db, &AppType::Claude, &store).expect("cached hit");
+        assert_eq!(
+            cached.0.as_ref().map(|provider| provider.id.as_str()),
+            cold.0.as_ref().map(|provider| provider.id.as_str()),
+        );
+        assert_eq!(cached.1, cold.1);
+
+        db.delete_provider("claude", "cached-hit")
+            .expect("delete routed provider");
+        assert!(
+            provider_in_use_cached(&db, &AppType::Claude, &store).is_none(),
+            "providers 表代次已变，缓存路径必须未命中并回退到查库",
+        );
+    }
+
+    /// 外部直接改写 live-state.json（别的进程/手工编辑）：文件戳变了，
+    /// 缓存路径未命中，回退路径读到新内容。
+    #[test]
+    fn provider_in_use_cached_misses_after_an_external_state_rewrite() {
+        let (db, store, _dir) = claude_proxy_route_fixture("cached-hit");
+
+        // 同上：先冷路径温缓存，快路径必须命中。
+        let _warm = provider_in_use_and_stack_mode(&db, &AppType::Claude, &store);
+        assert!(provider_in_use_cached(&db, &AppType::Claude, &store).is_some());
+
+        fs::write(
+            store.state_path(),
+            r#"{"version": 1, "apps": {"claude": {"mode": "proxy", "proxy_route": "external"}}}"#,
+        )
+        .unwrap();
+
+        // 外部写盘改了文件戳：快路径必须未命中，不能端出缓存里的旧快照。
+        assert!(
+            provider_in_use_cached(&db, &AppType::Claude, &store).is_none(),
+            "状态文件戳已变，缓存路径必须未命中",
+        );
+        // 回退路径照样看得到外部写入的新路由（该路由不存在时落到直连指针）。
+        let cold = provider_in_use_and_stack_mode(&db, &AppType::Claude, &store);
+        assert_eq!(
+            cold.0.as_ref().map(|provider| provider.id.as_str()),
+            Some("cached-hit"),
         );
     }
 }

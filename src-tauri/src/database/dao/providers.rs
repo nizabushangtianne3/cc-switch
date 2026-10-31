@@ -423,6 +423,10 @@ impl Database {
         id: &str,
         app_type: &str,
     ) -> Result<Option<Arc<Provider>>, AppError> {
+        if let Some(hit) = self.cached_shared_provider(id, app_type) {
+            return Ok(Some(hit));
+        }
+
         let generation = self
             .provider_table_generation
             .load(std::sync::atomic::Ordering::SeqCst);
@@ -466,6 +470,27 @@ impl Database {
             }
         }
         Ok(provider)
+    }
+
+    /// [`Self::get_shared_provider_by_id`] 的纯缓存版：命中（providers 表代次未变、
+    /// TTL 未过）直接返回；未命中返回 `None` 且**不碰数据库**。
+    ///
+    /// 请求热路径（[`crate::mode::current::provider_in_use_cached`]）用它把
+    /// 「本地指针有效、行刚读过」的常见情形做成零 IO：providers 表的任何增删改都会
+    /// 抬 `provider_table_generation`，行被删掉这里必然未命中，由调用方回退到查库。
+    pub fn cached_shared_provider(&self, id: &str, app_type: &str) -> Option<Arc<Provider>> {
+        let generation = self
+            .provider_table_generation
+            .load(std::sync::atomic::Ordering::SeqCst);
+        let cache = self.provider_row_cache.lock().ok()?;
+        cache
+            .get(app_type)
+            .and_then(|by_id| by_id.get(id))
+            .filter(|entry| {
+                entry.generation == generation && entry.cached_at.elapsed() < PROVIDER_BY_ID_TTL
+            })
+            // 负缓存（行不存在）对调用方等同未命中：交给会查库的版本走 is_current 回退。
+            .and_then(|entry| entry.provider.clone())
     }
 
     fn get_provider_by_id_sync(
@@ -1392,6 +1417,44 @@ mod ensure_official_seed_tests {
             .expect("second provider");
 
         assert!(std::sync::Arc::ptr_eq(&first, &second));
+
+        Ok(())
+    }
+
+    /// 纯缓存版：没读过是未命中、不查库；温过之后命中并复用同一个 Arc；
+    /// providers 表一有写入（代次抬升）立刻未命中。
+    #[test]
+    fn cached_shared_provider_only_serves_fresh_entries() -> Result<(), AppError> {
+        let db = Database::memory()?;
+        let provider = Provider::with_id(
+            "cached-only".to_string(),
+            "Cached Only".to_string(),
+            serde_json::json!({}),
+            None,
+        );
+        db.save_provider("claude", &provider)?;
+
+        assert!(db.cached_shared_provider(&provider.id, "claude").is_none());
+
+        let warmed = db
+            .get_shared_provider_by_id(&provider.id, "claude")?
+            .expect("warmed provider");
+        let hit = db
+            .cached_shared_provider(&provider.id, "claude")
+            .expect("cached hit");
+        assert!(std::sync::Arc::ptr_eq(&warmed, &hit));
+        assert!(db.cached_shared_provider("missing-id", "claude").is_none());
+        assert!(db.cached_shared_provider(&provider.id, "codex").is_none());
+
+        db.update_provider_settings_config(
+            "claude",
+            &provider.id,
+            &serde_json::json!({"original": false}),
+        )?;
+        assert!(
+            db.cached_shared_provider(&provider.id, "claude").is_none(),
+            "providers 表写入后代次已变，纯缓存版必须未命中",
+        );
 
         Ok(())
     }

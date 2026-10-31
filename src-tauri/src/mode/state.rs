@@ -10,11 +10,11 @@
 //!
 //! 文件是设备本地的（0600，不同步），路径见 [`DeviceStore`]。
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::io::ErrorKind;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
@@ -341,7 +341,6 @@ fn save(store: &DeviceStore, state: &LiveState) -> Result<(), AppError> {
 /// `stat` 加一个 `Arc` 克隆。
 #[derive(Clone)]
 struct CachedState {
-    path: PathBuf,
     stamp: FileStamp,
     state: Arc<LiveState>,
 }
@@ -368,8 +367,11 @@ impl FileStamp {
     }
 }
 
-fn state_cache() -> &'static Mutex<Option<CachedState>> {
-    static CACHE: Mutex<Option<CachedState>> = Mutex::new(None);
+/// 按路径各存一份。一个进程只有一个设备目录，生产行为和「只存一条、读谁替换谁」
+/// 完全一致；各路径独立后，并发的读者不会因为别的路径写缓存而丢自己的条目。
+fn state_cache() -> &'static Mutex<HashMap<PathBuf, CachedState>> {
+    static CACHE: LazyLock<Mutex<HashMap<PathBuf, CachedState>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
     &CACHE
 }
 
@@ -377,16 +379,18 @@ fn state_cache() -> &'static Mutex<Option<CachedState>> {
 /// 并发请求不会在文件系统调用上互相排队。
 fn cache_take(path: &std::path::Path) -> Option<CachedState> {
     let cache = state_cache().lock().unwrap_or_else(|e| e.into_inner());
-    cache.as_ref().filter(|entry| entry.path == path).cloned()
+    cache.get(path).cloned()
 }
 
 fn cache_replace(path: &std::path::Path, state: Arc<LiveState>) {
     let mut cache = state_cache().lock().unwrap_or_else(|e| e.into_inner());
-    *cache = Some(CachedState {
-        path: path.to_path_buf(),
-        stamp: FileStamp::of(path),
-        state,
-    });
+    cache.insert(
+        path.to_path_buf(),
+        CachedState {
+            stamp: FileStamp::of(path),
+            state,
+        },
+    );
 }
 
 /// [`load`] 的缓存版：进程内同一路径只读盘一次，之后每次命中做一次 `stat`
@@ -498,6 +502,24 @@ pub fn routing_state(store: &DeviceStore, app: &str) -> Result<(ModeState, bool)
     let stack_mode =
         app_state.is_some_and(|state| state.mode == Some(Mode::Proxy) && state.stack.enabled);
     Ok((mode, stack_mode))
+}
+
+/// [`routing_state`] 的全缓存版：命中时只做一次 `stat` 比对文件戳，不读盘、不解析；
+/// 未命中（缓存为空、换了路径、文件戳变了）返回 `None`，调用方回退到会读盘的版本。
+///
+/// 代理热路径每个请求都要拿这两位开关，缓存命中是稳态；未命中回退后由
+/// [`load_cached_shared`] 把新内容补进缓存。
+pub fn routing_state_cached(store: &DeviceStore, app: &str) -> Option<(ModeState, bool)> {
+    let path = store.state_path();
+    let entry = cache_take(&path)?;
+    if entry.stamp != FileStamp::of(&path) {
+        return None;
+    }
+    let app_state = entry.state.apps.get(app);
+    let mode = app_state.map(AppLiveState::mode_state).unwrap_or_default();
+    let stack_mode =
+        app_state.is_some_and(|state| state.mode == Some(Mode::Proxy) && state.stack.enabled);
+    Some((mode, stack_mode))
 }
 
 /// 有未完成操作的应用。

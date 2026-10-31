@@ -139,18 +139,34 @@ impl RequestContext {
                 (provider, providers, provider_id, target.original_model)
             }
             None => {
-                // 模式状态和当前供应商读取涉及文件/SQLite IO，移到阻塞线程池，
-                // 避免请求高峰占用 tokio worker。
-                let routing_db = state.db.clone();
-                let routing_app_type = app_type;
-                let (current_provider, stack_mode) = tokio::task::spawn_blocking(move || {
-                    crate::mode::current::provider_in_use_and_stack_mode(
-                        &routing_db,
-                        &routing_app_type,
-                    )
-                })
-                .await
-                .unwrap_or((None, false));
+                // 模式状态和当前供应商读取涉及文件/SQLite IO。稳态下（状态文件戳和
+                // providers 表代次都没变、行缓存未过期）全部命中缓存，同步零 IO 返回，
+                // 省掉一次线程池往返；任何未命中才移到阻塞线程池，避免请求高峰占用
+                // tokio worker。
+                // 冷热两条路径共用同一个设备目录。
+                let device_store = crate::live::engine::DeviceStore::for_device();
+                let (current_provider, stack_mode) =
+                    match crate::mode::current::provider_in_use_cached(
+                        &state.db,
+                        &app_type,
+                        &device_store,
+                    ) {
+                        Some(hit) => hit,
+                        None => {
+                            let routing_db = state.db.clone();
+                            let routing_app_type = app_type;
+                            let routing_store = device_store;
+                            tokio::task::spawn_blocking(move || {
+                                crate::mode::current::provider_in_use_and_stack_mode(
+                                    &routing_db,
+                                    &routing_app_type,
+                                    &routing_store,
+                                )
+                            })
+                            .await
+                            .unwrap_or((None, false))
+                        }
+                    };
                 let current_provider_id = current_provider
                     .as_ref()
                     .map(|provider| provider.id.clone())
