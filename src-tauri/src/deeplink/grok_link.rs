@@ -192,3 +192,172 @@ fn selected_profile(doc: &DocumentMut) -> Result<(String, &dyn TableLike), AppEr
         )),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse_error(text: &str) -> String {
+        match GrokLinkProfile::parse(text) {
+            Err(error) => error.to_string(),
+            Ok(_) => panic!("expected the Grok link config to be refused"),
+        }
+    }
+
+    #[test]
+    fn parse_keeps_whitelisted_keys_and_drops_the_rest() {
+        let text = r#"
+[models]
+default = "relay"
+
+[model.relay]
+name = "Relay"
+description = "A relay"
+temperature = 0.5
+note_from_the_link = "should be dropped"
+"#;
+        let profile = GrokLinkProfile::parse(text).unwrap();
+        assert_eq!(profile.name, "relay");
+        assert!(profile.table.get("name").is_some());
+        assert!(profile.table.get("temperature").is_some());
+        assert!(profile.table.get("note_from_the_link").is_none());
+        assert!(!profile.declares_env_key);
+    }
+
+    #[test]
+    fn parse_refuses_keys_that_make_grok_read_local_credentials() {
+        for key in REJECTED_PROFILE_KEYS {
+            let text = format!("[model.relay]\nname = \"Relay\"\n{key} = {{}}\n");
+            let message = parse_error(&text);
+            assert!(
+                message.contains(key),
+                "unexpected message for {key}: {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_flags_env_key_and_drops_it_from_the_table() {
+        let text = r#"
+[model.relay]
+name = "Relay"
+env_key = "MY_KEY"
+"#;
+        let profile = GrokLinkProfile::parse(text).unwrap();
+        assert!(profile.declares_env_key);
+        assert!(profile.table.get("env_key").is_none());
+    }
+
+    #[test]
+    fn parse_reads_model_endpoint_and_key_from_the_link() {
+        let text = r#"
+[model.relay]
+name = "Relay"
+model = "grok-4"
+base_url = "https://relay.example.com/v1"
+api_key = "sk-from-table"
+"#;
+        let profile = GrokLinkProfile::parse(text).unwrap();
+        assert_eq!(profile.model().as_deref(), Some("grok-4"));
+        assert_eq!(
+            profile.base_url().as_deref(),
+            Some("https://relay.example.com/v1")
+        );
+        assert_eq!(profile.api_key().as_deref(), Some("sk-from-table"));
+    }
+
+    #[test]
+    fn parse_refuses_a_config_without_any_model_table() {
+        assert!(parse_error("model_provider = \"custom\"").contains("no [model."));
+    }
+
+    #[test]
+    fn parse_refuses_several_tables_without_a_default() {
+        let text = r#"
+[model.a]
+name = "A"
+
+[model.b]
+name = "B"
+"#;
+        let message = parse_error(text);
+        assert!(message.contains("several [model.*] tables"), "{message}");
+    }
+
+    #[test]
+    fn parse_rejects_broken_toml() {
+        assert!(parse_error("not = = toml").contains("Invalid Grok Build config.toml"));
+    }
+
+    #[test]
+    fn render_writes_the_route_row_with_link_values_and_defaults() {
+        let text = r#"
+[model.relay]
+model = "grok-4"
+base_url = "https://old.example.com/v1"
+api_key = "sk-stale"
+"#;
+        let profile = GrokLinkProfile::parse(text).unwrap();
+        let rendered = profile.render(
+            "Display Name",
+            "grok-5",
+            "https://relay.example.com/v1",
+            "sk-link",
+        );
+        let doc = rendered.parse::<DocumentMut>().unwrap();
+
+        assert_eq!(doc["models"]["default"].as_str(), Some("relay"));
+        let table = doc["model"]["relay"].as_table_like().unwrap();
+        // 链接参数盖过表里的旧值。
+        assert_eq!(non_empty_str(table.get("model")).as_deref(), Some("grok-5"));
+        assert_eq!(
+            non_empty_str(table.get("base_url")).as_deref(),
+            Some("https://relay.example.com/v1")
+        );
+        assert_eq!(
+            non_empty_str(table.get("api_key")).as_deref(),
+            Some("sk-link")
+        );
+        // 显示名缺省用链接展示名，接口和窗口缺省用模板默认值。
+        assert_eq!(
+            non_empty_str(table.get("name")).as_deref(),
+            Some("Display Name")
+        );
+        assert_eq!(
+            non_empty_str(table.get("api_backend")).as_deref(),
+            Some(DEFAULT_API_BACKEND)
+        );
+        assert_eq!(
+            table.get("context_window").and_then(Item::as_integer),
+            Some(DEFAULT_CONTEXT_WINDOW)
+        );
+    }
+
+    #[test]
+    fn render_keeps_the_table_values_when_the_link_does_not_override_them() {
+        let text = r#"
+[model.relay]
+name = "Relay"
+api_backend = "chat_completions"
+context_window = 777
+"#;
+        let profile = GrokLinkProfile::parse(text).unwrap();
+        let rendered = profile.render(
+            "Display Name",
+            "grok-5",
+            "https://relay.example.com/v1",
+            "sk-link",
+        );
+        let doc = rendered.parse::<DocumentMut>().unwrap();
+        let table = doc["model"]["relay"].as_table_like().unwrap();
+        assert_eq!(non_empty_str(table.get("name")).as_deref(), Some("Relay"));
+        assert_eq!(
+            non_empty_str(table.get("api_backend")).as_deref(),
+            Some("chat_completions")
+        );
+        assert_eq!(
+            table.get("context_window").and_then(Item::as_integer),
+            Some(777)
+        );
+    }
+}
