@@ -235,3 +235,252 @@ fn changes(base_entries: &[Entry], edited_entries: &[Entry]) -> Vec<Change> {
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn doc(text: &str) -> DocumentMut {
+        text.parse::<DocumentMut>().expect("test TOML must parse")
+    }
+
+    fn path_of(path: &[&str]) -> Vec<String> {
+        path.iter().map(|segment| segment.to_string()).collect()
+    }
+
+    /// 以 `v` 为键的值条目，供比较用。
+    fn value_from(text: &str) -> Item {
+        doc(text).get("v").unwrap().clone()
+    }
+
+    fn entry(path: &[&str], item_text: &str) -> Entry {
+        Entry {
+            path: path_of(path),
+            item: value_from(item_text),
+        }
+    }
+
+    #[test]
+    fn config_text_reads_the_inline_toml_or_defaults_empty() {
+        assert_eq!(
+            config_text(&serde_json::json!({"config": "a = 1"})),
+            "a = 1"
+        );
+        assert_eq!(config_text(&serde_json::json!({})), "");
+        assert_eq!(config_text(&serde_json::json!({"config": 5})), "");
+        assert_eq!(config_text(&serde_json::json!({"other": "a = 1"})), "");
+    }
+
+    #[test]
+    fn parse_text_names_the_app_and_the_source_in_the_error() {
+        let parsed = parse_text("a = 1", "codex.config", "Codex", "row").unwrap();
+        assert_eq!(parsed["a"].as_integer(), Some(1));
+
+        let error = parse_text("a = =", "codex.config", "Codex", "row").unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .starts_with("Codex 配置不是合法的 TOML（row）："),
+            "{error}"
+        );
+        // 本地化键要留着，前端可按 key 取英文消息。
+        match error {
+            AppError::Localized { key, zh, en } => {
+                assert_eq!(key, "codex.config");
+                assert!(zh.contains("（row）"), "{zh}");
+                assert!(en.contains("(row)"), "{en}");
+            }
+            other => panic!("expected Localized, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn render_canonicalizes_values_and_only_the_top_level_of_a_table() {
+        // 值：装饰整层清掉，键统一换成 "v"。
+        assert_eq!(render(&value_from("v = 1  # trailing\n")), "v = 1");
+        assert_eq!(render(&value_from("\n\nv = 1\n")), "v = 1");
+
+        // 表：只清表自己那层的装饰；子值上的注释会原样留着。
+        let table = doc("[t]\nname = \"R\"\n").get("t").unwrap().clone();
+        assert_eq!(render(&table), "[v]\nname = \"R\"");
+        let commented = doc("[t]\nname = \"R\"  # note\n").get("t").unwrap().clone();
+        assert_eq!(render(&commented), "[v]\nname = \"R\"  # note");
+    }
+
+    #[test]
+    fn item_at_walks_tables_inline_tables_and_reports_misses() {
+        let live = doc("[model_providers.custom]\nname = \"Relay\"\n\n\
+             [model_providers.custom.http_headers]\nX-Key = \"1\"\n");
+        let deep = item_at(
+            &live,
+            &path_of(&["model_providers", "custom", "http_headers", "X-Key"]),
+        )
+        .unwrap();
+        assert_eq!(render(deep), "v = \"1\"");
+
+        // 空路径、缺键、中间段是值都返回 None。
+        assert!(item_at(&live, &[]).is_none());
+        assert!(item_at(&live, &path_of(&["model_providers", "custom", "nope"])).is_none());
+        assert!(item_at(&live, &path_of(&["name", "deeper", "nope"])).is_none());
+
+        let inline = doc("model_providers = { custom = { name = \"Inline\" } }\n");
+        assert_eq!(
+            render(item_at(&inline, &path_of(&["model_providers", "custom", "name"])).unwrap()),
+            "v = \"Inline\""
+        );
+    }
+
+    #[test]
+    fn insert_at_creates_missing_parents_and_inlines_inside_inline_tables() {
+        let mut live = doc("x = 0\n");
+        insert_at(
+            &mut live,
+            &path_of(&["model_providers", "custom", "name"]),
+            value_from("v = 1"),
+        );
+        let text = live.to_string();
+        assert!(text.contains("[model_providers]"), "{text}");
+        assert!(text.contains("[model_providers.custom]"), "{text}");
+        assert!(text.contains("name = 1"), "{text}");
+
+        // 空路径什么都不做。
+        let snapshot = live.to_string();
+        insert_at(&mut live, &[], value_from("v = 1"));
+        assert_eq!(live.to_string(), snapshot);
+
+        let mut inline = doc("model_providers = { custom = { name = 0 } }\n");
+        let sub = doc("[http_headers]\nX-Key = \"1\"\n")
+            .get("http_headers")
+            .unwrap()
+            .clone();
+        insert_at(
+            &mut inline,
+            &path_of(&["model_providers", "custom", "http_headers"]),
+            sub,
+        );
+        assert!(
+            inline.to_string().contains("http_headers = {"),
+            "tables inside inline tables must stay inline: {}",
+            inline
+        );
+    }
+
+    #[test]
+    fn insert_at_replacing_a_value_keeps_the_old_decor() {
+        let mut live = doc("name = \"old\"  # keep me\n");
+        insert_at(&mut live, &path_of(&["name"]), value_from("v = \"new\""));
+        let text = live.to_string();
+        assert!(text.contains("\"new\""), "{text}");
+        assert!(text.contains("# keep me"), "{text}");
+    }
+
+    #[test]
+    fn remove_at_drops_the_key_and_ignores_missing_paths() {
+        let mut live = doc("[t]\na = 1\nb = 2\n");
+        remove_at(&mut live, &path_of(&["t", "a"]));
+        assert!(live.get("t").unwrap().get("a").is_none());
+        assert_eq!(live["t"]["b"].as_integer(), Some(2));
+
+        let snapshot = live.to_string();
+        remove_at(&mut live, &path_of(&["t", "zzz"]));
+        remove_at(&mut live, &path_of(&["zzz", "a"]));
+        remove_at(&mut live, &[]);
+        assert_eq!(live.to_string(), snapshot);
+    }
+
+    #[test]
+    fn changes_come_out_in_base_order_then_editor_only_paths() {
+        let base = vec![entry(&["m"], "v = \"1\""), entry(&["keep"], "v = \"x\"")];
+        let edited = vec![
+            entry(&["keep"], "v = \"x\""),
+            entry(&["m"], "v = \"2\""),
+            entry(&["zeta"], "v = \"9\""),
+        ];
+        let edits = TomlEdits::between(&base, &edited, ConflictPolicy::KeepMine);
+        assert!(!edits.is_empty());
+        assert_eq!(edits.paths(), vec!["m".to_string(), "zeta".to_string()]);
+
+        // 两侧一致的条目不动。
+        assert!(TomlEdits::between(&base, &base, ConflictPolicy::KeepMine).is_empty());
+    }
+
+    #[test]
+    fn entries_that_disappear_from_the_editor_become_removals() {
+        let base = vec![
+            entry(&["model"], "v = \"old\""),
+            entry(&["gone"], "v = \"bye\""),
+        ];
+        let edits = TomlEdits::between(&base, &[], ConflictPolicy::KeepMine);
+        assert_eq!(edits.paths(), vec!["model".to_string(), "gone".to_string()]);
+
+        let mut live = doc("model = \"old\"\ngone = \"bye\"\n");
+        edits
+            .apply_to(Path::new("/data/config.toml"), &mut live)
+            .unwrap();
+        assert!(live.get("model").is_none());
+        assert!(live.get("gone").is_none());
+    }
+
+    #[test]
+    fn apply_to_carries_editor_edits_into_the_live_document() {
+        let base = vec![entry(&["model"], "v = \"old\"")];
+        let edited = vec![entry(&["model"], "v = \"new\"")];
+        let edits = TomlEdits::between(&base, &edited, ConflictPolicy::KeepMine);
+
+        let mut live = doc("model = \"old\"\n");
+        edits
+            .apply_to(Path::new("/data/config.toml"), &mut live)
+            .unwrap();
+        assert_eq!(live["model"].as_str(), Some("new"));
+
+        // live 被人改过时 KeepTheirs 跳过这处改动。
+        let keep_theirs = TomlEdits::between(&base, &edited, ConflictPolicy::KeepTheirs);
+        let mut foreign = doc("model = \"foreign\"\n");
+        keep_theirs
+            .apply_to(Path::new("/data/config.toml"), &mut foreign)
+            .unwrap();
+        assert_eq!(foreign["model"].as_str(), Some("foreign"));
+    }
+
+    #[test]
+    fn apply_to_refuses_the_whole_save_on_a_conflicting_change() {
+        let base = vec![entry(&["model"], "v = \"old\"")];
+        let edited = vec![entry(&["model"], "v = \"new\"")];
+        let edits = TomlEdits::between(&base, &edited, ConflictPolicy::Refuse);
+
+        let mut live = doc("model = \"foreign\"\n");
+        let error = edits
+            .apply_to(Path::new("/data/config.toml"), &mut live)
+            .unwrap_err();
+        match error {
+            LiveWriteError::EditConflict { path, keys } => {
+                assert_eq!(path, Path::new("/data/config.toml"));
+                assert_eq!(keys, vec!["model".to_string()]);
+            }
+            other => panic!("expected EditConflict, got {other:?}"),
+        }
+        // 拒绝时一个键都不写。
+        assert_eq!(live["model"].as_str(), Some("foreign"));
+    }
+
+    #[test]
+    fn inactive_fields_lists_row_values_the_display_no_longer_shows() {
+        let row = vec![
+            entry(&["env", "KEY"], "v = \"row\"  # from row\n"),
+            entry(&["model"], "v = \"same\""),
+        ];
+        let display = doc("env = { KEY = \"live\" }\nmodel = \"same\"\n");
+
+        let fields = inactive_fields(row, &display);
+        assert_eq!(fields.len(), 1);
+        assert_eq!(fields[0].path, path_of(&["env", "KEY"]));
+        // 值是可以照抄的 TOML 片段，键路径齐全。
+        let fragment = fields[0].value.as_str().unwrap();
+        assert!(fragment.contains("KEY = \"row\""), "{fragment}");
+        let parsed: DocumentMut = fragment.parse().expect("fragment must parse");
+        assert_eq!(
+            render(item_at(&parsed, &path_of(&["env", "KEY"])).unwrap()),
+            "v = \"row\""
+        );
+    }
+}
