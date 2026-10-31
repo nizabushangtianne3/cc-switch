@@ -1,10 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import {
-  OpenTerminalDialog,
-  terminalAvailable,
-} from "@/components/providers/OpenTerminalDialog";
+import { OpenTerminalDialog } from "@/components/providers/OpenTerminalDialog";
+import { terminalAvailable } from "@/components/providers/terminalCapabilities";
 import type { Provider } from "@/types";
 
 const openTerminalMock = vi.fn();
