@@ -147,3 +147,164 @@ pub fn format_skill_error(
         format!("ERROR:{code}")
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_skill_error_emits_structured_json() {
+        let json = format_skill_error(
+            "backup_failed",
+            &[
+                ("skill", "commit-msg"),
+                ("path", "/data/skills"),
+                ("reason", "access denied"),
+            ],
+            Some("Retry with administrator rights"),
+        );
+        let parsed: serde_json::Value =
+            serde_json::from_str(&json).expect("skill error must be valid JSON");
+        assert_eq!(parsed["code"], "backup_failed");
+        assert_eq!(parsed["context"]["skill"], "commit-msg");
+        assert_eq!(parsed["context"]["path"], "/data/skills");
+        assert_eq!(parsed["context"]["reason"], "access denied");
+        assert_eq!(parsed["suggestion"], "Retry with administrator rights");
+    }
+
+    #[test]
+    fn format_skill_error_without_suggestion_keeps_an_empty_context() {
+        let json = format_skill_error("noop", &[], None);
+        let parsed: serde_json::Value =
+            serde_json::from_str(&json).expect("skill error must be valid JSON");
+        assert_eq!(parsed["code"], "noop");
+        assert_eq!(parsed["context"], serde_json::json!({}));
+        assert!(parsed["suggestion"].is_null());
+    }
+
+    #[test]
+    fn display_prefixes_identify_the_error_family_for_the_frontend() {
+        assert_eq!(AppError::Config("bad".into()).to_string(), "配置错误: bad");
+        assert_eq!(
+            AppError::InvalidInput("bad".into()).to_string(),
+            "无效输入: bad"
+        );
+        assert_eq!(
+            AppError::Conflict("edit".into()).to_string(),
+            "并发冲突: edit"
+        );
+        assert_eq!(
+            AppError::Lock("mutex".into()).to_string(),
+            "锁获取失败: mutex"
+        );
+        assert_eq!(
+            AppError::McpValidation("shape".into()).to_string(),
+            "MCP 校验失败: shape"
+        );
+        assert_eq!(AppError::Message("plain".into()).to_string(), "plain");
+        assert_eq!(
+            AppError::Database("db".into()).to_string(),
+            "数据库错误: db"
+        );
+        assert_eq!(
+            AppError::HttpStatus {
+                status: 429,
+                body: "slow down".into()
+            }
+            .to_string(),
+            "HTTP 429: slow down"
+        );
+        assert_eq!(
+            AppError::OmoConfigNotFound.to_string(),
+            "OMO 配置文件不存在"
+        );
+        assert_eq!(
+            AppError::AllProvidersCircuitOpen.to_string(),
+            "所有供应商已熔断，无可用渠道"
+        );
+        assert_eq!(AppError::NoProvidersConfigured.to_string(), "未配置供应商");
+    }
+
+    #[test]
+    fn localized_errors_carry_the_locale_key_and_both_strings() {
+        let error = AppError::localized("switch.locked", "切换锁定中", "Switch in progress");
+        assert_eq!(error.to_string(), "切换锁定中 (Switch in progress)");
+        match error {
+            AppError::Localized { key, zh, en } => {
+                assert_eq!(key, "switch.locked");
+                assert_eq!(zh, "切换锁定中");
+                assert_eq!(en, "Switch in progress");
+            }
+            other => panic!("expected Localized, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn io_context_errors_keep_their_own_prefix_without_a_path() {
+        let error = AppError::IoContext {
+            context: "读取代理配置".into(),
+            source: std::io::Error::other("denied"),
+        };
+        assert_eq!(error.to_string(), "读取代理配置: denied");
+    }
+
+    #[test]
+    fn source_errors_wrap_their_path_and_cause() {
+        let io = AppError::io("/data/config.json", std::io::Error::other("denied"));
+        let message = io.to_string();
+        assert!(
+            message.starts_with("IO 错误: /data/config.json: "),
+            "{message}"
+        );
+        assert!(message.ends_with("denied"), "{message}");
+
+        let json = AppError::json(
+            "/data/settings.json",
+            serde_json::from_str::<()>("not json").unwrap_err(),
+        );
+        assert!(
+            json.to_string()
+                .starts_with("JSON 解析错误: /data/settings.json: "),
+            "{json}"
+        );
+
+        let toml = AppError::toml(
+            "/data/config.toml",
+            toml::from_str::<toml::Value>("x = =").unwrap_err(),
+        );
+        assert!(
+            toml.to_string()
+                .starts_with("TOML 解析错误: /data/config.toml: "),
+            "{toml}"
+        );
+    }
+
+    #[test]
+    fn foreign_errors_map_into_the_two_shared_variants() {
+        let from_sqlite: AppError = rusqlite::Error::InvalidQuery.into();
+        assert_eq!(
+            from_sqlite.to_string(),
+            "数据库错误: Query is not read-only"
+        );
+
+        let poisoned: AppError = std::sync::PoisonError::<()>::new(()).into();
+        assert!(
+            poisoned.to_string().starts_with("锁获取失败: "),
+            "{poisoned}"
+        );
+
+        // 前端拿到的就是 display 字符串，不需要二次结构。
+        let message: String = AppError::Message("boom".into()).into();
+        assert_eq!(message, "boom");
+    }
+
+    #[test]
+    fn serialization_is_the_display_string_so_the_frontend_shows_one_line() {
+        let json = serde_json::to_string(&AppError::InvalidInput("bad".into()))
+            .expect("errors must serialize");
+        assert_eq!(
+            serde_json::from_str::<String>(&json).expect("serialized string"),
+            "无效输入: bad"
+        );
+    }
+}

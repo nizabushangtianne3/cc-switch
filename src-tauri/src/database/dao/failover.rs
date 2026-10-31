@@ -100,3 +100,105 @@ impl Database {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::provider::Provider;
+
+    fn provider(id: &str, name: &str, sort_index: Option<usize>) -> Provider {
+        let mut provider = Provider::with_id(
+            id.to_string(),
+            name.to_string(),
+            serde_json::json!({"env": {"ANTHROPIC_BASE_URL": "https://api.example.com"}}),
+            None,
+        );
+        provider.sort_index = sort_index;
+        provider
+    }
+
+    fn health_rows(db: &Database) -> i64 {
+        let conn = db.conn.lock().expect("conn lock");
+        conn.query_row("SELECT COUNT(*) FROM provider_health", [], |row| row.get(0))
+            .expect("health count")
+    }
+
+    #[test]
+    fn queue_lists_by_sort_index_then_id_with_missing_index_last() {
+        let db = Database::memory().expect("memory db");
+        db.save_provider("claude", &provider("late", "Late", None))
+            .unwrap();
+        db.save_provider("claude", &provider("two", "Two", Some(2)))
+            .unwrap();
+        db.save_provider("claude", &provider("one", "One", Some(1)))
+            .unwrap();
+        db.save_provider("claude", &provider("aaa", "Aaa", Some(2)))
+            .unwrap();
+        for id in ["late", "two", "one", "aaa"] {
+            db.add_to_failover_queue("claude", id).unwrap();
+        }
+
+        let queue = db.get_failover_queue("claude").unwrap();
+        let ids: Vec<&str> = queue.iter().map(|item| item.provider_id.as_str()).collect();
+        assert_eq!(ids, vec!["one", "aaa", "two", "late"]);
+        assert_eq!(queue[0].provider_name, "One");
+        assert_eq!(queue[1].sort_index, Some(2));
+        assert_eq!(queue[3].sort_index, None);
+        // 别的 app 的队列互不干扰。
+        assert_eq!(db.get_failover_queue("codex").unwrap().len(), 0);
+    }
+
+    #[test]
+    fn removing_a_provider_also_clears_its_monitored_health() {
+        let db = Database::memory().expect("memory db");
+        db.save_provider("claude", &provider("p1", "P1", Some(1)))
+            .unwrap();
+        db.add_to_failover_queue("claude", "p1").unwrap();
+        {
+            let conn = db.conn.lock().expect("conn lock");
+            conn.execute(
+                "INSERT INTO provider_health (
+                    provider_id, app_type, is_healthy, consecutive_failures, updated_at
+                ) VALUES ('p1', 'claude', 0, 3, '2026-01-01T00:00:00Z')",
+                [],
+            )
+            .expect("seed health row");
+        }
+        assert_eq!(health_rows(&db), 1);
+
+        db.remove_from_failover_queue("claude", "p1").unwrap();
+
+        assert_eq!(health_rows(&db), 0);
+        assert_eq!(db.get_failover_queue("claude").unwrap().len(), 0);
+        // 供应商行本身还在，只是退出队列。
+        assert!(db.get_provider_by_id("p1", "claude").unwrap().is_some());
+    }
+
+    #[test]
+    fn a_queue_write_invalidates_the_warm_snapshot_cache() {
+        let db = Database::memory().expect("memory db");
+        db.save_provider("claude", &provider("warm", "Warm", Some(1)))
+            .unwrap();
+        db.save_provider("claude", &provider("cold", "Cold", Some(2)))
+            .unwrap();
+        db.add_to_failover_queue("claude", "warm").unwrap();
+
+        // 先经冷路径填一次温缓存。
+        let warm = db.get_shared_failover_queue_providers("claude").unwrap();
+        assert_eq!(warm.len(), 1);
+        assert_eq!(warm[0].id, "warm");
+        let cached = db
+            .cached_failover_queue_providers("claude")
+            .expect("warm snapshot");
+        assert_eq!(cached.len(), 1);
+
+        // 入队第二个供应商后 providers 表代次前进，旧快照必须失效。
+        db.add_to_failover_queue("claude", "cold").unwrap();
+        assert!(db.cached_failover_queue_providers("claude").is_none());
+
+        let requeued = db.get_shared_failover_queue_providers("claude").unwrap();
+        assert_eq!(requeued.len(), 2);
+        assert_eq!(requeued[0].id, "warm");
+        assert_eq!(requeued[1].id, "cold");
+    }
+}
