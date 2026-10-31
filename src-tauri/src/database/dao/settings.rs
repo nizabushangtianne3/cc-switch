@@ -324,3 +324,182 @@ impl Database {
         self.set_setting("log_config", &json)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn memory_db() -> Database {
+        Database::memory().expect("memory db")
+    }
+
+    #[test]
+    fn settings_round_trip_and_missing_keys_read_as_none() {
+        let db = memory_db();
+        assert_eq!(db.get_setting("absent").unwrap(), None);
+
+        db.set_setting("probe", "first").unwrap();
+        assert_eq!(db.get_setting("probe").unwrap().as_deref(), Some("first"));
+
+        db.set_setting("probe", "second").unwrap();
+        assert_eq!(db.get_setting("probe").unwrap().as_deref(), Some("second"));
+    }
+
+    #[test]
+    fn bool_flags_only_accept_true_or_one() {
+        let db = memory_db();
+        assert!(!db.get_bool_flag("absent").unwrap());
+
+        db.set_setting("flag", "1").unwrap();
+        assert!(db.get_bool_flag("flag").unwrap());
+
+        db.set_setting("flag", "true").unwrap();
+        assert!(db.get_bool_flag("flag").unwrap());
+
+        db.set_setting("flag", "yes").unwrap();
+        assert!(!db.get_bool_flag("flag").unwrap());
+    }
+
+    #[test]
+    fn config_snippet_and_its_cleared_marker_gate_auto_extraction() {
+        let db = memory_db();
+        assert!(db.get_config_snippet("claude").unwrap().is_none());
+        assert!(db.should_auto_extract_config_snippet("claude").unwrap());
+
+        db.set_config_snippet("claude", Some("snippet".to_string()))
+            .unwrap();
+        assert_eq!(
+            db.get_config_snippet("claude").unwrap().as_deref(),
+            Some("snippet")
+        );
+        assert!(!db.should_auto_extract_config_snippet("claude").unwrap());
+
+        // 清空片段后恢复可抽取，但用户显式清过的标记要一直压着它。
+        db.set_config_snippet("claude", None).unwrap();
+        assert!(db.get_config_snippet("claude").unwrap().is_none());
+        assert!(db.should_auto_extract_config_snippet("claude").unwrap());
+
+        db.set_config_snippet_cleared("claude", true).unwrap();
+        assert!(db.is_config_snippet_cleared("claude").unwrap());
+        assert!(!db.should_auto_extract_config_snippet("claude").unwrap());
+
+        // 取消清除是删键，不是写 "false"。
+        db.set_config_snippet_cleared("claude", false).unwrap();
+        assert!(!db.is_config_snippet_cleared("claude").unwrap());
+        assert!(db.should_auto_extract_config_snippet("claude").unwrap());
+    }
+
+    #[test]
+    fn legacy_common_config_migrated_only_counts_true() {
+        let db = memory_db();
+        assert!(!db.is_legacy_common_config_migrated().unwrap());
+
+        db.set_legacy_common_config_migrated(true).unwrap();
+        assert!(db.is_legacy_common_config_migrated().unwrap());
+
+        db.set_legacy_common_config_migrated(false).unwrap();
+        assert!(!db.is_legacy_common_config_migrated().unwrap());
+
+        // 和 get_bool_flag 不同：这里只认 "true"，"1" 不算。
+        db.set_setting(Database::LEGACY_COMMON_CONFIG_MIGRATED_KEY, "1")
+            .unwrap();
+        assert!(!db.is_legacy_common_config_migrated().unwrap());
+    }
+
+    #[test]
+    fn global_proxy_url_trims_and_clears() {
+        let db = memory_db();
+        assert_eq!(db.get_global_proxy_url().unwrap(), None);
+
+        db.set_global_proxy_url(Some("  http://127.0.0.1:7890  "))
+            .unwrap();
+        assert_eq!(
+            db.get_global_proxy_url().unwrap().as_deref(),
+            Some("http://127.0.0.1:7890")
+        );
+
+        db.set_global_proxy_url(Some("   ")).unwrap();
+        assert_eq!(db.get_global_proxy_url().unwrap(), None);
+
+        db.set_global_proxy_url(Some("http://127.0.0.1:7890"))
+            .unwrap();
+        assert_eq!(
+            db.get_global_proxy_url().unwrap().as_deref(),
+            Some("http://127.0.0.1:7890")
+        );
+        db.set_global_proxy_url(None).unwrap();
+        assert_eq!(db.get_global_proxy_url().unwrap(), None);
+    }
+
+    #[test]
+    fn stored_configs_fall_back_to_defaults_then_round_trip() {
+        let db = memory_db();
+
+        let rectifier = db.get_rectifier_config().unwrap();
+        assert!(rectifier.enabled);
+        assert!(rectifier.request_thinking_signature);
+        let optimizer = db.get_optimizer_config().unwrap();
+        assert!(!optimizer.enabled);
+        assert!(optimizer.cache_injection);
+        let copilot = db.get_copilot_optimizer_config().unwrap();
+        assert!(copilot.enabled);
+        assert!(copilot.warmup_downgrade);
+        let log = db.get_log_config().unwrap();
+        assert!(log.enabled);
+        assert_eq!(log.level, "info");
+
+        let rectifier = crate::proxy::types::RectifierConfig {
+            enabled: false,
+            request_media_heuristic: false,
+            ..Default::default()
+        };
+        db.set_rectifier_config(&rectifier).unwrap();
+        let stored = db.get_rectifier_config().unwrap();
+        assert!(!stored.enabled);
+        assert!(!stored.request_media_heuristic);
+        assert!(stored.request_thinking_budget);
+
+        let optimizer = crate::proxy::types::OptimizerConfig {
+            enabled: true,
+            cache_injection: false,
+            ..Default::default()
+        };
+        db.set_optimizer_config(&optimizer).unwrap();
+        let stored = db.get_optimizer_config().unwrap();
+        assert!(stored.enabled);
+        assert!(!stored.cache_injection);
+        assert!(stored.thinking_optimizer);
+
+        let copilot = crate::proxy::types::CopilotOptimizerConfig {
+            enabled: false,
+            warmup_model: "gpt-5.1-codex-mini".to_string(),
+            ..Default::default()
+        };
+        db.set_copilot_optimizer_config(&copilot).unwrap();
+        let stored = db.get_copilot_optimizer_config().unwrap();
+        assert!(!stored.enabled);
+        assert_eq!(stored.warmup_model, "gpt-5.1-codex-mini");
+        assert!(stored.subagent_detection);
+
+        let log = crate::proxy::types::LogConfig {
+            enabled: false,
+            level: "debug".to_string(),
+        };
+        db.set_log_config(&log).unwrap();
+        let stored = db.get_log_config().unwrap();
+        assert!(!stored.enabled);
+        assert_eq!(stored.level, "debug");
+    }
+
+    #[test]
+    fn a_corrupt_stored_config_is_a_database_error_not_a_panic() {
+        let db = memory_db();
+        db.set_setting("rectifier_config", "not json").unwrap();
+        let error = db.get_rectifier_config().unwrap_err().to_string();
+        assert!(error.contains("解析整流器配置失败"), "{error}");
+
+        db.set_setting("log_config", "not json").unwrap();
+        let error = db.get_log_config().unwrap_err().to_string();
+        assert!(error.contains("解析日志配置失败"), "{error}");
+    }
+}
