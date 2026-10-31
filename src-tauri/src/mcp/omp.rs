@@ -245,3 +245,87 @@ pub(crate) fn import(state: &AppState) -> Result<usize, AppError> {
         Err(AppError::InvalidInput(format!("Imported {count} Oh My Pi MCP servers; skipped {}. Native configurations were preserved.", skipped.join("; "))))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn update_list_adds_removes_and_leaves_absent_fields_alone() {
+        let mut document = json!({});
+        // 没有这个字段又不用列入：不建字段。
+        update_list(&mut document, "disabledServers", "a", false).unwrap();
+        assert!(document.get("disabledServers").is_none());
+
+        update_list(&mut document, "disabledServers", "a", true).unwrap();
+        assert_eq!(document["disabledServers"], json!(["a"]));
+        // 重复列入只留一份，但会先删再插：位置挪到队尾。
+        update_list(&mut document, "disabledServers", "b", true).unwrap();
+        update_list(&mut document, "disabledServers", "a", true).unwrap();
+        assert_eq!(document["disabledServers"], json!(["b", "a"]));
+
+        update_list(&mut document, "disabledServers", "a", false).unwrap();
+        assert_eq!(document["disabledServers"], json!(["b"]));
+        // 删不存在的 id 是空操作。
+        update_list(&mut document, "disabledServers", "zzz", false).unwrap();
+        assert_eq!(document["disabledServers"], json!(["b"]));
+
+        // 字段不是数组时报错，别的地方照旧。
+        let mut wrong = json!({"enabledServers": "a"});
+        let error = update_list(&mut wrong, "enabledServers", "a", true)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("must be an array"), "{error}");
+    }
+
+    #[test]
+    fn native_enabled_lets_the_denylist_win_over_everything() {
+        let document = json!({"disabledServers": ["a"], "enabledServers": ["a"]});
+        // 两份名单都有也不许启用：denylist 优先，防止项目配置把它放回来。
+        assert!(!native_enabled(&document, "a", &json!({})));
+        assert!(!native_enabled(&document, "a", &json!({"enabled": true})));
+    }
+
+    #[test]
+    fn native_enabled_reads_the_flag_and_the_allowlist() {
+        let document = json!({"enabledServers": ["b"]});
+        // 没禁就是启用。
+        assert!(native_enabled(&document, "a", &json!({"command": "node"})));
+        assert!(native_enabled(&document, "a", &json!({"enabled": true})));
+        // 显式禁用：allowlist 里点了名才放行。
+        assert!(!native_enabled(&document, "a", &json!({"enabled": false})));
+        assert!(!native_enabled(
+            &document,
+            "a",
+            &json!({"enabled": "false"})
+        ));
+        assert!(!native_enabled(&document, "a", &json!({"enabled": "0"})));
+        assert!(native_enabled(&document, "b", &json!({"enabled": false})));
+        assert!(native_enabled(&document, "b", &json!({"enabled": "false"})));
+        // 别的字符串值不算禁用标记。
+        assert!(native_enabled(&document, "a", &json!({"enabled": "no"})));
+    }
+
+    #[test]
+    fn omp_change_maps_the_enabled_flag_to_the_right_variant() {
+        let spec = json!({"type": "stdio"});
+        assert!(matches!(
+            OmpChange::from_enabled(&spec, true),
+            OmpChange::Enable(_, _)
+        ));
+        assert!(matches!(
+            OmpChange::from_enabled(&spec, false),
+            OmpChange::Disable(_, _)
+        ));
+
+        let previous = json!({"type": "sse"});
+        let previous_enabled = OmpChange::from_previous(&spec, &previous, true);
+        assert!(
+            matches!(previous_enabled, OmpChange::Enable(new, old) if *new == spec && *old == previous)
+        );
+        let previous_disabled = OmpChange::from_previous(&spec, &previous, false);
+        assert!(
+            matches!(previous_disabled, OmpChange::Disable(new, old) if *new == spec && *old == previous)
+        );
+    }
+}

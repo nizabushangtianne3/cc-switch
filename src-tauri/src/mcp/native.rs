@@ -125,3 +125,96 @@ pub(crate) fn import(state: &AppState, source: &NativeSource) -> Result<usize, A
         )))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn read_native_treats_a_missing_file_as_an_empty_document() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mcp.json");
+        let value = read_native(&path, "Pi", false).unwrap();
+        assert_eq!(value, json!({"mcpServers": {}}));
+    }
+
+    #[test]
+    fn read_native_keeps_a_well_formed_document_untouched() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mcp.json");
+        fs::write(
+            &path,
+            r#"{"custom":"keep","mcpServers":{"s":{"url":"https://x"}}}"#,
+        )
+        .unwrap();
+        let value = read_native(&path, "Kimi Code", false).unwrap();
+        assert_eq!(value["custom"], "keep");
+        assert_eq!(value["mcpServers"]["s"]["url"], "https://x");
+    }
+
+    #[test]
+    fn read_native_rejects_broken_shapes_and_names_the_client() {
+        let dir = tempfile::tempdir().unwrap();
+        let cases = [
+            ("{invalid", false),
+            ("[1, 2]", false),
+            (r#"{"mcpServers": 3}"#, false),
+            ("", false),
+            ("   ", false),
+        ];
+        for (text, tolerate) in cases {
+            let path = dir.path().join("mcp.json");
+            fs::write(&path, text).unwrap();
+            let error = read_native(&path, "Pi", tolerate).unwrap_err().to_string();
+            assert!(
+                error.contains("Invalid Pi MCP") || error.contains("Invalid Pi mcpServers"),
+                "{text:?}: {error}"
+            );
+        }
+
+        // 只有 AGy 把空文件当空配置；别家遇到 0 字节就是损坏的配置。
+        let empty = dir.path().join("empty.json");
+        fs::write(&empty, "").unwrap();
+        assert_eq!(
+            read_native(&empty, "Antigravity", true).unwrap(),
+            json!({"mcpServers": {}})
+        );
+        let error = read_native(&empty, "Pi", false).unwrap_err().to_string();
+        assert!(error.contains("Invalid Pi MCP"), "{error}");
+    }
+
+    #[test]
+    fn read_native_only_tolerates_whitespace_for_the_empty_file_client() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mcp.json");
+        fs::write(&path, "  \n\t ").unwrap();
+        assert_eq!(
+            read_native(&path, "Antigravity", true).unwrap(),
+            json!({"mcpServers": {}})
+        );
+        let error = read_native(&path, "Pi", false).unwrap_err().to_string();
+        assert!(error.contains("Invalid Pi MCP"), "{error}");
+    }
+
+    #[test]
+    fn transport_fields_of_keeps_only_the_listed_keys() {
+        let unified = json!({
+            "type": "sse",
+            "url": "https://example.com/sse",
+            "headers": {"X-Test": "keep"},
+            "toolTimeoutMs": 1234,
+        });
+        let spec = transport_fields_of(&unified, &["type", "url"]);
+        assert_eq!(
+            spec,
+            json!({"type": "sse", "url": "https://example.com/sse"})
+        );
+
+        // 非对象原样返回：没有可筛的键也不造假形状。
+        assert_eq!(transport_fields_of(&json!(5), &["type"]), json!(5));
+        assert_eq!(
+            transport_fields_of(&json!({"type": "stdio"}), &[]),
+            json!({})
+        );
+    }
+}
