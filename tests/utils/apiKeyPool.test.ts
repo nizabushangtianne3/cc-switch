@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   apiKeyEntriesFromText,
-  apiKeyEntriesToText,
   normalizeApiKeyEntries,
   normalizeApiKeyWeight,
   splitApiKeyText,
@@ -24,7 +23,6 @@ describe("apiKeyPool", () => {
       { key: "sk-a", weight: 1 },
       { key: "sk-b", weight: 1 },
     ]);
-    expect(apiKeyEntriesToText([{ key: "sk-a", weight: 2 }])).toBe("sk-a");
   });
 
   it("normalizes weights and removes blank keys", () => {

@@ -13,7 +13,6 @@ import type { PresetFamilyFields } from "./presetFamilies";
  * `PROVIDER_SOURCE_FIELD` / `PROVIDER_SOURCE_CUSTOM_LIST` / `PROVIDER_SOURCE_DICT`.
  */
 export const HERMES_PROVIDER_SOURCE_FIELD = "_cc_source";
-export const HERMES_PROVIDER_SOURCE_CUSTOM_LIST = "custom_providers";
 export const HERMES_PROVIDER_SOURCE_DICT = "providers_dict";
 
 /**

@@ -8,7 +8,6 @@ import {
   ProviderPresetSelector,
   filterPresetEntries,
   getPresetDisplayName,
-  getVisiblePresetEntries,
   getVisiblePresetRows,
   type PresetEntry,
 } from "@/components/providers/forms/ProviderPresetSelector";
@@ -185,23 +184,7 @@ describe("preset helpers", () => {
     ]);
   });
 
-  it("sorts only by name, with Chinese names placed by pinyin initial", () => {
-    expect(
-      getVisiblePresetEntries(entries, { query: "", t }).map(
-        (entry) => entry.id,
-      ),
-    ).toEqual([
-      "alpha",
-      "bedrock",
-      "gamma",
-      "copilot",
-      "huoshan",
-      "ollama-local",
-      "zhipu",
-    ]);
-  });
-
-  it("searches display names, domains and aliases but not TLDs", () => {
+ it("searches display names, domains and aliases but not TLDs", () => {
     expect(domainBody("api.gamma.com")).toBe("gamma");
     const ids = (query: string) =>
       filterPresetEntries(entries, query, t).map((entry) => entry.id);

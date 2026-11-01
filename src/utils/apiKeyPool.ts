@@ -26,8 +26,3 @@ export const normalizeApiKeyEntries = (
 
 export const apiKeyEntriesFromText = (text: string): ApiKeyEntry[] =>
   splitApiKeyText(text).map((key) => ({ key, weight: 1 }));
-
-export const apiKeyEntriesToText = (entries: ApiKeyEntry[]): string =>
-  normalizeApiKeyEntries(entries)
-    .map((entry) => entry.key)
-    .join("\n");

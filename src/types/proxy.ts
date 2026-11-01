@@ -183,32 +183,6 @@ export interface CircuitBreakerStats {
   failedRequests: number;
 }
 
-// 供应商健康状态枚举
-export enum ProviderHealthStatus {
-  Healthy = "healthy",
-  Degraded = "degraded",
-  Failed = "failed",
-  Unknown = "unknown",
-}
-
-// 扩展 ProviderHealth 以包含前端计算的状态
-export interface ProviderHealthWithStatus extends ProviderHealth {
-  status: ProviderHealthStatus;
-  circuitState?: CircuitState;
-}
-
-export interface ProxyUsageRecord {
-  provider_id: string;
-  app_type: string;
-  endpoint: string;
-  request_tokens: number | null;
-  response_tokens: number | null;
-  status_code: number;
-  latency_ms: number;
-  error: string | null;
-  timestamp: string;
-}
-
 // 故障转移队列条目
 export interface FailoverQueueItem {
   providerId: string;

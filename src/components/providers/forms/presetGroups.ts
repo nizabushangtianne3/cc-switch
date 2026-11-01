@@ -408,13 +408,6 @@ function sortByName<T>(items: T[], nameOf: (item: T) => string): T[] {
     .map(({ item }) => item);
 }
 
-export function sortPresetsByName(
-  entries: PresetEntry[],
-  t: Translate,
-): PresetEntry[] {
-  return sortByName(entries, (entry) => presetDisplayName(entry.preset, t));
-}
-
 export function sortPresetRowsByName<T extends { row: PresetRowItem }>(
   items: T[],
   t: Translate,

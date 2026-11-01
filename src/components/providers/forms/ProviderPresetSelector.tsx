@@ -57,7 +57,6 @@ import {
   presetVersions,
   sectionPresetRows,
   sortPresetRowsByName,
-  sortPresetsByName,
   type PresetGroup,
   type PresetRowItem,
 } from "./presetGroups";
@@ -97,14 +96,6 @@ export function filterPresetEntries(
 ): PresetEntry[] {
   if (!query.trim()) return entries;
   return entries.filter((entry) => presetMatches(entry, query, t));
-}
-
-/** 一律按名称排（中文名按拼音插进字母序），不再有官方 / 赞助商置顶 */
-export function getVisiblePresetEntries(
-  entries: PresetEntry[],
-  { query, t }: { query: string; t: PresetTranslator },
-): PresetEntry[] {
-  return sortPresetsByName(filterPresetEntries(entries, query, t), t);
 }
 
 /** 第 1 步的一行和搜索命中的版本下标（空 = 整家命中） */

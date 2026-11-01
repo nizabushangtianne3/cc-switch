@@ -998,5 +998,3 @@ export const PRESET_BRAND_IDENTITIES = {
     iconColor: "#FF9900",
   },
 } as const satisfies Record<string, PresetBrandIdentity>;
-
-export type PresetBrandIdentityId = keyof typeof PRESET_BRAND_IDENTITIES;
