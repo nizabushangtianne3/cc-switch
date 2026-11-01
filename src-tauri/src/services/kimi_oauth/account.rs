@@ -474,3 +474,311 @@ pub(crate) fn remove_separate_credential_blocking(
         Err(e) => Err(format!("Cannot remove Kimi Code credentials: {e}")),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_home() -> tempfile::TempDir {
+        let home = tempfile::tempdir().unwrap();
+        fs::create_dir_all(home.path().join("credentials")).unwrap();
+        home
+    }
+
+    fn credential_at(home: &Path, name: &str, credential: &Value) -> PathBuf {
+        let path = home.join("credentials").join(format!("{name}.json"));
+        fs::write(&path, credential.to_string()).unwrap();
+        path
+    }
+
+    fn oauth(key: &str) -> Value {
+        json!({"key": key})
+    }
+
+    fn live(extra_seconds: i64, expires_in: Option<i64>) -> Value {
+        let mut credential = json!({"access_token": "tok", "expires_at": chrono::Utc::now().timestamp() + extra_seconds});
+        if let Some(expires_in) = expires_in {
+            credential["expires_in"] = json!(expires_in);
+        }
+        credential
+    }
+
+    #[test]
+    fn read_credential_separates_missing_revoked_and_valid_files() {
+        let home = temp_home();
+        let path = home.path().join("credentials/kimi-code.json");
+        assert!(matches!(
+            read_credential(&path).unwrap(),
+            Credential::Missing
+        ));
+
+        fs::write(&path, "{invalid").unwrap();
+        // Credential 没 derive Debug：unwrap_err 用不了，就地把 Err 断言掉。
+        match read_credential(&path) {
+            Err(error) => assert!(error.contains("Invalid Kimi Code credentials"), "{error}"),
+            Ok(_) => panic!("invalid JSON must be refused"),
+        }
+
+        // Kimi 登出后写的墓碑：两个令牌都空。
+        let path = credential_at(
+            home.path(),
+            "kimi-code",
+            &json!({"access_token": "", "refresh_token": ""}),
+        );
+        assert!(matches!(
+            read_credential(&path).unwrap(),
+            Credential::Revoked
+        ));
+
+        // 只空一个还算有效。
+        let path = credential_at(
+            home.path(),
+            "kimi-code",
+            &json!({"access_token": "a", "refresh_token": ""}),
+        );
+        let valid = read_credential(&path).unwrap();
+        assert!(matches!(valid, Credential::Valid(ref v) if v["access_token"] == "a"));
+    }
+
+    #[test]
+    fn access_valid_needs_a_token_and_a_future_expiry() {
+        let now = chrono::Utc::now().timestamp();
+        assert!(access_valid(&live(60, None)));
+        assert!(!access_valid(&live(-1, None)));
+        assert!(!access_valid(
+            &json!({"access_token": "", "expires_at": now + 60})
+        ));
+        assert!(!access_valid(&json!({"access_token": "tok"})));
+    }
+
+    #[test]
+    fn should_refresh_follows_kimis_own_rule() {
+        // 没写过期时间：不知道什么时候过期，不刷新。
+        assert!(!should_refresh(&json!({"access_token": "tok"})));
+        assert!(!should_refresh(
+            &json!({"access_token": "tok", "expires_at": 0})
+        ));
+
+        // 默认看 300 秒；剩得比它少就刷（整秒时钟下用 299 才稳定）。
+        assert!(should_refresh(&live(299, None)));
+        assert!(!should_refresh(&live(600, None)));
+
+        // 寿命过半超过 300 秒时按半条命算：expires_in=1000 的阈值是 500。
+        assert!(should_refresh(&live(30, Some(1000))));
+        assert!(!should_refresh(&live(600, Some(1000))));
+
+        // 半条命不到 300 秒时保底 300。
+        assert!(!should_refresh(&live(600, Some(200))));
+    }
+
+    #[test]
+    fn the_revoked_tombstone_blanks_tokens_and_keeps_the_scope() {
+        let revoked = tombstone(&json!({
+            "access_token": "a", "refresh_token": "r", "expires_at": 5, "expires_in": 6,
+            "scope": "openid profile", "token_type": "Bot", "extra": "drop",
+        }));
+        assert_eq!(revoked["access_token"], "");
+        assert_eq!(revoked["refresh_token"], "");
+        assert_eq!(revoked["expires_at"], 0);
+        assert_eq!(revoked["expires_in"], 0);
+        assert_eq!(revoked["scope"], "openid profile");
+        assert_eq!(revoked["token_type"], "Bot");
+        assert!(revoked.get("extra").is_none());
+
+        // 没写 token_type 时默认 Bearer。
+        let default = tombstone(&json!({"scope": "s"}));
+        assert_eq!(default["token_type"], "Bearer");
+        assert_eq!(default["scope"], "s");
+    }
+
+    #[test]
+    fn slot_name_is_the_credential_file_stem() {
+        assert_eq!(
+            slot_name(Path::new("/x/kimi-code-ccs-abcd.json")),
+            "kimi-code-ccs-abcd"
+        );
+        assert_eq!(slot_name(Path::new("/x/kimi-code")), "kimi-code");
+        assert_eq!(slot_name(Path::new("")), "");
+    }
+
+    #[test]
+    fn the_separate_slot_suffix_is_stable_and_region_specific() {
+        let first = account_suffix(KimiRegion::MainlandCn, "user-1");
+        assert_eq!(first, account_suffix(KimiRegion::MainlandCn, "user-1"));
+        assert_eq!(first.len(), 8);
+        assert_ne!(first, account_suffix(KimiRegion::Global, "user-1"));
+        assert_ne!(first, account_suffix(KimiRegion::MainlandCn, "user-2"));
+    }
+
+    #[test]
+    fn the_token_marker_follows_only_the_refresh_token() {
+        let marker =
+            token_marker(&json!({"refresh_token": "r1", "access_token": "a"})).expect("marker");
+        assert_eq!(marker.len(), 16);
+        assert!(marker.chars().all(|c| c.is_ascii_hexdigit()), "{marker}");
+        assert_ne!(
+            marker,
+            token_marker(&json!({"refresh_token": "r2"})).unwrap()
+        );
+        assert_eq!(token_marker(&json!({"refresh_token": ""})), None);
+        assert_eq!(token_marker(&json!({"access_token": "a"})), None);
+    }
+
+    #[test]
+    fn string_field_reads_trimmed_strings_and_numbers_only() {
+        assert_eq!(
+            string_field(&json!({"a": "  x "}), "a").as_deref(),
+            Some("x")
+        );
+        assert_eq!(string_field(&json!({"a": 5}), "a").as_deref(), Some("5"));
+        assert_eq!(string_field(&json!({"a": "   "}), "a"), None);
+        assert_eq!(string_field(&json!({"a": ""}), "a"), None);
+        assert_eq!(string_field(&json!({"a": true}), "a"), None);
+        assert_eq!(string_field(&json!({}), "a"), None);
+    }
+
+    #[test]
+    fn the_identity_cache_round_trips_through_the_store_file() {
+        let home = temp_home();
+        let path = home.path().join("kimi_accounts.json");
+        assert!(Store::load(&path).accounts.is_empty());
+
+        let identity = Identity {
+            user_id: "u1".into(),
+            nickname: Some("Nick".into()),
+            ..Default::default()
+        };
+        remember(&path, PROVIDER_ID, identity).unwrap();
+
+        let store = Store::load(&path);
+        assert_eq!(store.version, 1);
+        assert_eq!(store.accounts[PROVIDER_ID].user_id, "u1");
+        assert!(!store.is_dismissed(PROVIDER_ID));
+        assert!(!store.is_dismissed("kimi-code-ccs-abcd"));
+    }
+
+    #[test]
+    fn hiding_the_native_login_pins_the_hide_to_its_account() {
+        let home = temp_home();
+        let path = home.path().join("kimi_accounts.json");
+        update_store(&path, |store| store.dismissed.push(PROVIDER_ID.into())).unwrap();
+
+        let first = Identity {
+            user_id: "u1".into(),
+            ..Default::default()
+        };
+        remember(&path, PROVIDER_ID, first).unwrap();
+        let store = Store::load(&path);
+        assert!(store.is_dismissed(PROVIDER_ID), "藏过又认出来了，接着藏");
+        assert!(!store.dismissed.iter().any(|key| key == PROVIDER_ID));
+        assert!(store.dismissed.iter().any(|key| key == "u1"));
+
+        // 换了个号占这个槽位：重新显示。
+        let second = Identity {
+            user_id: "u2".into(),
+            ..Default::default()
+        };
+        remember(&path, PROVIDER_ID, second).unwrap();
+        assert!(!Store::load(&path).is_dismissed(PROVIDER_ID));
+    }
+
+    #[test]
+    fn signing_in_through_cc_switch_unhides_the_native_login() {
+        let home = temp_home();
+        let path = home.path().join("kimi_accounts.json");
+        update_store(&path, |store| {
+            store.dismissed = vec![PROVIDER_ID.into(), "u1".into(), "keep".into()];
+        })
+        .unwrap();
+
+        let identity = Identity {
+            user_id: "u1".into(),
+            ..Default::default()
+        };
+        remember_login(&path, PROVIDER_ID, identity).unwrap();
+
+        let store = Store::load(&path);
+        assert!(!store.is_dismissed(PROVIDER_ID));
+        // 别的号的隐藏不动。
+        assert!(store.dismissed.iter().any(|key| key == "keep"));
+
+        // 非官方槽位的隐藏与登录无关。
+        update_store(&path, |store| store.dismissed.push("other-user".into())).unwrap();
+        let identity = Identity {
+            user_id: "u9".into(),
+            ..Default::default()
+        };
+        remember_login(&path, "kimi-code-ccs-abcd", identity).unwrap();
+        assert!(Store::load(&path)
+            .dismissed
+            .iter()
+            .any(|key| key == "other-user"));
+    }
+
+    #[test]
+    fn only_separate_slot_credentials_are_removed() {
+        let home = temp_home();
+        let native = credential_at(
+            home.path(),
+            "kimi-code",
+            &json!({"access_token": "a", "refresh_token": "r"}),
+        );
+        // 原生槽位和 Kimi 自己的环境槽位：CC Switch 不碰。
+        remove_separate_credential_blocking(home.path(), &oauth("oauth/kimi-code")).unwrap();
+        assert!(native.exists());
+
+        // 自己的槽位：删掉，再删一次也不算错。
+        let separate = credential_at(
+            home.path(),
+            "kimi-code-ccs-abcd",
+            &json!({"access_token": "a", "refresh_token": "r"}),
+        );
+        remove_separate_credential_blocking(home.path(), &oauth("oauth/kimi-code-ccs-abcd"))
+            .unwrap();
+        assert!(!separate.exists());
+        remove_separate_credential_blocking(home.path(), &oauth("oauth/kimi-code-ccs-abcd"))
+            .unwrap();
+    }
+
+    #[test]
+    fn a_card_without_its_credential_is_not_signed_in() {
+        let home = temp_home();
+        assert_eq!(
+            ensure_signed_in(home.path(), &oauth("oauth/kimi-code")).unwrap_err(),
+            "not signed in"
+        );
+
+        let tombstone = home.path().join("credentials/kimi-code.json");
+        fs::write(
+            &tombstone,
+            json!({"access_token": "", "refresh_token": ""}).to_string(),
+        )
+        .unwrap();
+        assert_eq!(
+            ensure_signed_in(home.path(), &oauth("oauth/kimi-code")).unwrap_err(),
+            "not signed in"
+        );
+
+        fs::write(
+            &tombstone,
+            json!({"access_token": "a", "refresh_token": "r"}).to_string(),
+        )
+        .unwrap();
+        ensure_signed_in(home.path(), &oauth("oauth/kimi-code")).unwrap();
+    }
+
+    #[test]
+    fn the_quota_row_is_always_a_failure_with_its_message() {
+        let quota = quota_status(CredentialStatus::RefreshPending, "use it once");
+        assert_eq!(quota.tool, "kimi_oauth");
+        assert!(matches!(
+            quota.credential_status,
+            CredentialStatus::RefreshPending
+        ));
+        assert_eq!(quota.credential_message.as_deref(), Some("use it once"));
+        assert!(!quota.success);
+        assert!(quota.tiers.is_empty());
+        assert!(quota.error.is_none());
+        assert!(quota.queried_at.is_some_and(|at| at > 0));
+    }
+}
