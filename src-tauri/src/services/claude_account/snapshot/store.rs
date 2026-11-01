@@ -208,3 +208,198 @@ pub mod memory {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use std::fs;
+
+    fn account_slot(dir: &Path) -> Slot {
+        Slot::Account(dir.to_path_buf())
+    }
+
+    #[test]
+    fn secure_dir_points_at_the_claude_directory_or_the_account_dir() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let home = temp.path().join("home");
+        assert_eq!(
+            Slot::Default { home: home.clone() }.secure_dir(),
+            home.join(".claude")
+        );
+        assert_eq!(account_slot(temp.path()).secure_dir(), *temp.path());
+    }
+
+    #[test]
+    fn global_config_prefers_a_non_empty_legacy_config() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let home = temp.path().join("home");
+        let slot = Slot::Default { home: home.clone() };
+        let legacy = home.join(".claude").join(".config.json");
+        fs::create_dir_all(legacy.parent().expect("legacy has a parent")).expect("create .claude");
+        fs::write(&legacy, r#"{"oauthAccount":{}}"#).expect("write legacy");
+
+        assert_eq!(slot.global_config(), legacy);
+    }
+
+    #[test]
+    fn global_config_ignores_an_empty_legacy_config() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let home = temp.path().join("home");
+        let slot = Slot::Default { home: home.clone() };
+        fs::create_dir_all(home.join(".claude")).expect("create .claude");
+        fs::write(home.join(".claude").join(".config.json"), "").expect("write empty legacy");
+
+        assert_eq!(slot.global_config(), home.join(".claude.json"));
+    }
+
+    #[test]
+    fn global_config_marks_the_account_directory_for_account_slots() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let slot = account_slot(temp.path());
+
+        // 没有旧版文件：账号目录里的 .claude.json。
+        assert_eq!(slot.global_config(), temp.path().join(".claude.json"));
+
+        // 账号目录里也可能有非空旧版 .config.json，优先用它。
+        fs::write(temp.path().join(".config.json"), "{}").expect("write legacy");
+        assert_eq!(slot.global_config(), temp.path().join(".config.json"));
+    }
+
+    #[test]
+    fn credentials_file_sits_in_the_secure_dir() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let home = temp.path().join("home");
+        assert_eq!(
+            Slot::Default { home: home.clone() }.credentials_file(),
+            home.join(".claude").join(".credentials.json")
+        );
+        assert_eq!(
+            account_slot(temp.path()).credentials_file(),
+            temp.path().join(".credentials.json")
+        );
+    }
+
+    #[test]
+    fn keychain_service_distinguishes_the_default_slot_from_accounts() {
+        assert_eq!(
+            Slot::Default {
+                home: PathBuf::from("/home/someone")
+            }
+            .keychain_service(),
+            "Claude Code-credentials"
+        );
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let service = account_slot(temp.path()).keychain_service();
+        let suffix = service
+            .strip_prefix("Claude Code-credentials-")
+            .expect("account slots carry a suffix");
+        assert_eq!(suffix.len(), 8);
+        assert!(suffix.chars().all(|c| c.is_ascii_hexdigit()));
+
+        let other = account_slot(&temp.path().join("elsewhere")).keychain_service();
+        assert_ne!(
+            service, other,
+            "different directories get different services"
+        );
+    }
+
+    #[test]
+    fn secret_parse_accepts_only_a_json_object() {
+        let Value::Object(map) = json!({"claudeAiOauth": {"refreshToken": "t"}}) else {
+            unreachable!()
+        };
+        let secret = Secret::parse(br#"{"claudeAiOauth":{"refreshToken":"t"}}"#)
+            .expect("a json object parses");
+        assert_eq!(secret, Secret(map));
+
+        for bytes in [
+            &b"[]"[..],
+            &b"42"[..],
+            &b"\"text\""[..],
+            &b"null"[..],
+            &b"{"[..],
+            &b""[..],
+        ] {
+            let error = Secret::parse(bytes).unwrap_err().to_string();
+            assert!(error.contains("登录信息"), "{error}");
+        }
+    }
+
+    #[test]
+    fn secret_to_bytes_and_fingerprint_agree_only_for_equal_content() {
+        let secret = Secret::parse(br#"{"a":1,"b":"x"}"#).expect("a json object parses");
+        assert_eq!(secret.fingerprint(), secret.clone().fingerprint());
+
+        let Value::Object(map) = json!({"a": 1, "b": "y"}) else {
+            unreachable!()
+        };
+        assert_ne!(secret.fingerprint(), Secret(map).fingerprint());
+
+        // 字节内容往返之后指纹不变。
+        let reparsed = Secret::parse(&secret.to_bytes()).expect("round trip parses");
+        assert_eq!(reparsed.fingerprint(), secret.fingerprint());
+    }
+
+    #[test]
+    fn read_file_treats_missing_and_blank_files_as_no_login() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        assert_eq!(read_file(&temp.path().join("absent.json")).unwrap(), None);
+
+        let blank = temp.path().join("blank.json");
+        fs::write(&blank, b"\n\t \r\n").expect("write blank bytes");
+        assert_eq!(read_file(&blank).unwrap(), None);
+    }
+
+    #[test]
+    fn read_file_reports_unreadable_bytes() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let broken = temp.path().join("broken.json");
+        fs::write(&broken, b"not json").expect("write broken bytes");
+        let error = read_file(&broken).unwrap_err().to_string();
+        assert!(error.contains("登录信息"), "{error}");
+
+        let valid = temp.path().join("valid.json");
+        fs::write(&valid, br#"{"organizationUuid":"org-1"}"#).expect("write valid bytes");
+        let secret = read_file(&valid).unwrap().expect("a login is stored");
+        assert_eq!(secret.0["organizationUuid"], "org-1");
+    }
+
+    #[test]
+    fn file_store_round_trips_and_tolerates_a_missing_delete() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let slot = account_slot(temp.path());
+        let store = FileStore;
+        let secret = Secret::parse(br#"{"claudeAiOauth":{"refreshToken":"t"}}"#)
+            .expect("a json object parses");
+
+        assert_eq!(store.read(&slot).unwrap(), None);
+        store.write(&slot, &secret).expect("write lands");
+        assert_eq!(store.read(&slot).unwrap(), Some(secret));
+
+        store.delete(&slot).expect("delete removes the file");
+        assert_eq!(store.read(&slot).unwrap(), None);
+        store
+            .delete(&slot)
+            .expect("deleting a missing file is fine");
+    }
+
+    #[test]
+    fn file_store_write_creates_the_account_directory() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let slot = account_slot(
+            &temp
+                .path()
+                .join("claude-accounts")
+                .join("abc")
+                .join("config"),
+        );
+        let secret = Secret::parse(b"{}").expect("an empty object parses");
+
+        FileStore
+            .write(&slot, &secret)
+            .expect("write through missing directories");
+        assert!(slot.credentials_file().is_file());
+    }
+}
