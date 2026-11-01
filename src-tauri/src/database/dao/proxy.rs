@@ -537,37 +537,6 @@ impl Database {
         }
     }
 
-    /// 更新代理配置（兼容旧接口，更新所有三行的公共字段）
-    pub async fn update_proxy_config(&self, config: ProxyConfig) -> Result<(), AppError> {
-        let conn = lock_conn!(self.conn);
-
-        // 更新所有三行的公共字段
-        conn.execute(
-            "UPDATE proxy_config SET
-                listen_address = ?1,
-                listen_port = ?2,
-                max_retries = ?3,
-                enable_logging = ?4,
-                streaming_first_byte_timeout = ?5,
-                streaming_idle_timeout = ?6,
-                non_streaming_timeout = ?7,
-                updated_at = datetime('now')",
-            rusqlite::params![
-                config.listen_address,
-                config.listen_port as i32,
-                config.max_retries as i32,
-                if config.enable_logging { 1 } else { 0 },
-                config.streaming_first_byte_timeout as i32,
-                config.streaming_idle_timeout as i32,
-                config.non_streaming_timeout as i32,
-            ],
-        )
-        .map_err(|e| AppError::Database(e.to_string()))?;
-
-        self.invalidate_proxy_request_config_cache();
-        Ok(())
-    }
-
     /// 检查是否处于 Live 接管模式
     ///
     /// 检查是否有任一 app 的 enabled = true

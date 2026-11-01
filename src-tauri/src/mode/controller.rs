@@ -2544,7 +2544,7 @@ mod mode_tests {
     use crate::mode::operation::failpoint;
     use crate::mode::stack::StackMemberView;
     use crate::mode::state::{self, Mode};
-    use crate::proxy::types::ProxyConfig;
+    use crate::proxy::types::GlobalProxyConfig;
     use crate::services::provider::ProviderService;
     use serde_json::{json, Value};
     use serial_test::serial;
@@ -2613,7 +2613,7 @@ mod mode_tests {
         db.set_current_provider(app.as_str(), current)
             .expect("set current");
         crate::settings::set_current_provider(&app, Some(current)).expect("local current");
-        db.update_proxy_config(ProxyConfig {
+        db.update_global_proxy_config(GlobalProxyConfig {
             listen_port: 0,
             ..Default::default()
         })
@@ -3289,9 +3289,13 @@ mod mode_tests {
         let old_url = state.proxy_service.build_proxy_urls().await.unwrap().0;
 
         fs::write(settings_path(), "not json").unwrap();
-        let mut config = state.db.get_proxy_config().await.unwrap();
+        let mut config = state.db.get_global_proxy_config().await.unwrap();
         config.listen_port = 0;
-        assert!(state.proxy_service.update_config(&config).await.unwrap());
+        assert!(state
+            .proxy_service
+            .update_global_config(&config)
+            .await
+            .unwrap());
         let new_url = state.proxy_service.build_proxy_urls().await.unwrap().0;
         assert_ne!(new_url, old_url);
 
@@ -5462,7 +5466,7 @@ model_provider = "c"
 
     async fn state_without_providers() -> AppState {
         let db = Arc::new(Database::memory().expect("memory db"));
-        db.update_proxy_config(ProxyConfig {
+        db.update_global_proxy_config(GlobalProxyConfig {
             listen_port: 0,
             ..Default::default()
         })
@@ -6600,7 +6604,7 @@ model_provider = "c"
         let busy = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
         state
             .db
-            .update_proxy_config(ProxyConfig {
+            .update_global_proxy_config(GlobalProxyConfig {
                 listen_port: busy.local_addr().unwrap().port(),
                 ..Default::default()
             })

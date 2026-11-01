@@ -25,22 +25,6 @@ pub struct ProxyService {
     switch_locks: SwitchLockManager,
 }
 
-/// 重启失败时写回库的那份配置：设置页只动四个全局字段，旧接口是整份七个字段。
-enum SavedProxyConfig {
-    Global(GlobalProxyConfig),
-    Legacy(ProxyConfig),
-}
-
-impl SavedProxyConfig {
-    async fn write(&self, db: &Database) -> Result<(), String> {
-        match self {
-            Self::Global(config) => db.update_global_proxy_config(config.clone()).await,
-            Self::Legacy(config) => db.update_proxy_config(config.clone()).await,
-        }
-        .map_err(|e| format!("恢复原代理配置失败: {e}"))
-    }
-}
-
 /// 客户端连接代理用的地址。`host` 是设置里的客户端地址，没设时是监听地址，后者可能是
 /// `0.0.0.0` / `::`（监听所有网卡），客户端连不上这个地址，改用本机回环；IPv6 加方括号。
 pub(crate) fn proxy_origin(host: &str, listen_port: u16) -> String {
@@ -473,43 +457,7 @@ impl ProxyService {
         }
     }
 
-    /// 获取代理配置
-    pub async fn get_config(&self) -> Result<ProxyConfig, String> {
-        self.db
-            .get_proxy_config()
-            .await
-            .map_err(|e| format!("获取代理配置失败: {e}"))
-    }
-
-    /// 更新代理配置（旧接口：七个字段整份写进四行）。返回代理是否因地址或端口变了而重启：
-    /// 重启后调用方要按新地址重写接上代理的客户端（`mode::controller::resync_route`）。
-    pub async fn update_config(&self, config: &ProxyConfig) -> Result<bool, String> {
-        // 记录旧配置用于判定是否需要重启
-        let previous = self
-            .db
-            .get_proxy_config()
-            .await
-            .map_err(|e| format!("获取代理配置失败: {e}"))?;
-
-        // 保存到数据库（保持 live_takeover_active 状态不变）
-        let mut new_config = config.clone();
-        new_config.live_takeover_active = previous.live_takeover_active;
-
-        self.db
-            .update_proxy_config(new_config.clone())
-            .await
-            .map_err(|e| format!("保存代理配置失败: {e}"))?;
-
-        // 判断是否需要重启（地址或端口变更）
-        let require_restart = new_config.listen_address != previous.listen_address
-            || new_config.listen_port != previous.listen_port;
-        self.apply_saved_config(require_restart, SavedProxyConfig::Legacy(previous))
-            .await
-    }
-
-    /// 设置页「保存并重启服务」：只写四个全局字段。各应用自己的重试次数和超时不碰——
-    /// [`Self::update_config`] 走的旧 DAO 读的是 claude 行、写的是四行，会把 claude 的
-    /// 应用级字段广播给其他三家。返回值同 [`Self::update_config`]。
+    /// 设置页「保存并重启服务」：只写四个全局字段，各应用自己的重试次数和超时不碰。
     pub async fn update_global_config(&self, config: &GlobalProxyConfig) -> Result<bool, String> {
         let previous = self
             .db
@@ -524,8 +472,7 @@ impl ProxyService {
 
         let require_restart = config.listen_address != previous.listen_address
             || config.listen_port != previous.listen_port;
-        self.apply_saved_config(require_restart, SavedProxyConfig::Global(previous))
-            .await
+        self.apply_saved_config(require_restart, previous).await
     }
 
     /// 让运行中的服务用上刚写进库的配置：地址或端口变了就重启（返回 true），否则实时应用。
@@ -535,7 +482,7 @@ impl ProxyService {
     async fn apply_saved_config(
         &self,
         require_restart: bool,
-        previous: SavedProxyConfig,
+        previous: GlobalProxyConfig,
     ) -> Result<bool, String> {
         let mut server_guard = self.server.write().await;
         if server_guard.is_none() {
@@ -596,8 +543,11 @@ impl ProxyService {
         Ok(server)
     }
 
-    async fn restore_and_start(&self, previous: SavedProxyConfig) -> Result<ProxyServer, String> {
-        previous.write(&self.db).await?;
+    async fn restore_and_start(&self, previous: GlobalProxyConfig) -> Result<ProxyServer, String> {
+        self.db
+            .update_global_proxy_config(previous)
+            .await
+            .map_err(|e| format!("恢复原代理配置失败: {e}"))?;
         let config = self
             .db
             .get_proxy_config()

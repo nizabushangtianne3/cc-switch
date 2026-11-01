@@ -160,6 +160,18 @@ pub struct GlobalProxyConfig {
     pub enable_logging: bool,
 }
 
+impl Default for GlobalProxyConfig {
+    fn default() -> Self {
+        // 与 proxy_config 表 seed 的默认值一致。
+        Self {
+            proxy_enabled: false,
+            listen_address: "127.0.0.1".to_string(),
+            listen_port: 15721,
+            enable_logging: true,
+        }
+    }
+}
+
 /// 应用级代理配置（每个 app 独立）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

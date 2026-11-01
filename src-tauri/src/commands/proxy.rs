@@ -217,25 +217,6 @@ pub async fn get_proxy_status(state: tauri::State<'_, AppState>) -> Result<Proxy
     state.proxy_service.get_status().await
 }
 
-/// 获取代理配置
-#[tauri::command]
-pub async fn get_proxy_config(state: tauri::State<'_, AppState>) -> Result<ProxyConfig, String> {
-    state.proxy_service.get_config().await
-}
-
-/// 更新代理配置
-#[tauri::command]
-pub async fn update_proxy_config(
-    state: tauri::State<'_, AppState>,
-    config: ProxyConfig,
-) -> Result<(), String> {
-    if state.proxy_service.update_config(&config).await? {
-        // 代理换了地址：按新地址重写接上代理的客户端。
-        crate::mode::controller::resync_routes(state.inner()).await?;
-    }
-    Ok(())
-}
-
 // ==================== Global & Per-App Config ====================
 
 /// 获取全局代理配置
