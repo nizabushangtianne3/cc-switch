@@ -235,6 +235,7 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
         drop(listener);
 
+        let _ = rustls::crypto::ring::default_provider().install_default();
         let client = reqwest::Client::builder()
             .no_proxy()
             .build()

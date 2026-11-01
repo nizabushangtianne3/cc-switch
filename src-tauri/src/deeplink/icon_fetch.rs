@@ -593,6 +593,7 @@ mod tests {
     #[tokio::test]
     async fn request_errors_leave_the_url_out_of_the_log() {
         // 连本机一个没人监听的端口，拿到一个带 URL 的真实 reqwest 错误
+        let _ = rustls::crypto::ring::default_provider().install_default();
         let error = reqwest::Client::builder()
             .no_proxy()
             .build()
