@@ -2,7 +2,6 @@ export interface ProxyConfig {
   listen_address: string;
   listen_port: number;
   max_retries: number;
-  request_timeout: number;
   enable_logging: boolean;
   live_takeover_active?: boolean;
   // 超时配置

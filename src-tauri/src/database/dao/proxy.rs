@@ -515,7 +515,6 @@ impl Database {
                         listen_address: row.get(0)?,
                         listen_port: row.get::<_, i32>(1)? as u16,
                         max_retries: row.get::<_, i32>(2)? as u8,
-                        request_timeout: 600, // 废弃字段，返回默认值
                         enable_logging: row.get::<_, i32>(3)? != 0,
                         live_takeover_active: false, // 废弃字段
                         streaming_first_byte_timeout: row.get::<_, i32>(4).unwrap_or(60) as u64,

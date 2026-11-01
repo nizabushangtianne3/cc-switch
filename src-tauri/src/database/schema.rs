@@ -658,6 +658,23 @@ impl Database {
                         }
                         Self::set_user_version(conn, 24)?;
                     }
+                    24 => {
+                        // `request_timeout` 早已不在建表语句里，DAO 也不再读它：
+                        // 历史库残留的这一列删掉，结构和新库一致。
+                        if Self::has_column(conn, "proxy_config", "request_timeout")? {
+                            conn.execute(
+                                "ALTER TABLE proxy_config DROP COLUMN request_timeout",
+                                [],
+                            )
+                            .map_err(|e| {
+                                AppError::Database(format!(
+                                    "删除废弃的 request_timeout 列失败: {e}"
+                                ))
+                            })?;
+                            log::info!("迁移数据库从 v24 到 v25（删除 proxy_config 的废弃 request_timeout 列）");
+                        }
+                        Self::set_user_version(conn, 25)?;
+                    }
                     _ => {
                         return Err(AppError::Database(format!(
                             "未知的数据库版本 {version}，无法迁移到 {SCHEMA_VERSION}"
@@ -4114,6 +4131,37 @@ mod tests {
             "session_log_sync",
             "parser_state"
         )?);
+        Ok(())
+    }
+
+    #[test]
+    fn migrate_v24_to_v25_drops_the_dead_request_timeout_column() -> Result<(), AppError> {
+        let conn = Connection::open_in_memory()?;
+        // 老库的 proxy_config：建表语句早已不写 request_timeout，但它还在历史库里。
+        conn.execute_batch(
+            "CREATE TABLE proxy_config (
+                app_type TEXT PRIMARY KEY,
+                listen_port INTEGER NOT NULL DEFAULT 15721,
+                request_timeout INTEGER NOT NULL DEFAULT 300
+             );
+             INSERT INTO proxy_config (app_type, listen_port) VALUES ('claude', 15721);",
+        )?;
+        Database::set_user_version(&conn, 24)?;
+        Database::apply_schema_migrations_on_conn(&conn)?;
+        assert_eq!(Database::get_user_version(&conn)?, 25);
+        assert!(!Database::has_column(
+            &conn,
+            "proxy_config",
+            "request_timeout"
+        )?);
+        // 其余列和行数据不动。
+        let port: i64 =
+            conn.query_row("SELECT listen_port FROM proxy_config", [], |row| row.get(0))?;
+        assert_eq!(port, 15721);
+
+        // 新库本来就没有这一列：再迁移一次也不能报错。
+        Database::apply_schema_migrations_on_conn(&conn)?;
+        assert_eq!(Database::get_user_version(&conn)?, SCHEMA_VERSION);
         Ok(())
     }
 

@@ -10,8 +10,6 @@ pub struct ProxyConfig {
     pub listen_port: u16,
     /// 最大重试次数
     pub max_retries: u8,
-    /// 请求超时时间（秒）- 已废弃，保留兼容
-    pub request_timeout: u64,
     /// 是否启用日志
     pub enable_logging: bool,
     /// 是否正在接管 Live 配置
@@ -46,7 +44,6 @@ impl Default for ProxyConfig {
             listen_address: "127.0.0.1".to_string(),
             listen_port: 15721, // 使用较少占用的高位端口
             max_retries: 3,
-            request_timeout: 600,
             enable_logging: true,
             live_takeover_active: false,
             streaming_first_byte_timeout: 60,

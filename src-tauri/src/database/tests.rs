@@ -528,7 +528,6 @@ fn schema_create_tables_repairs_legacy_proxy_config_singleton_to_per_app() {
             listen_address TEXT NOT NULL DEFAULT '127.0.0.1',
             listen_port INTEGER NOT NULL DEFAULT 5000,
             max_retries INTEGER NOT NULL DEFAULT 3,
-            request_timeout INTEGER NOT NULL DEFAULT 300,
             enable_logging INTEGER NOT NULL DEFAULT 1,
             target_app TEXT NOT NULL DEFAULT 'claude',
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
