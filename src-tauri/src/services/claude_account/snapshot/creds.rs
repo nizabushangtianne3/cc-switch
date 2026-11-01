@@ -174,3 +174,310 @@ pub(super) fn changed() -> AppError {
         "Claude Code just changed its sign-in data, so the switch was canceled. Try again.",
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    use std::sync::Mutex;
+
+    fn secret(org: &str, refresh: &str) -> Secret {
+        let Value::Object(map) = serde_json::json!({
+            "claudeAiOauth": {
+                "accessToken": format!("at-{refresh}"),
+                "refreshToken": refresh,
+                "subscriptionType": "max",
+                "rateLimitTier": "default_claude_max_20x"
+            },
+            "organizationUuid": org,
+            "mcpOAuth": {"server": "kept-per-slot"}
+        }) else {
+            unreachable!()
+        };
+        Secret(map)
+    }
+
+    fn profile(account: &str, org: &str) -> Value {
+        serde_json::json!({
+            "oauthAccount": {
+                "accountUuid": account,
+                "organizationUuid": org,
+                "emailAddress": format!("{account}@x.com")
+            }
+        })
+    }
+
+    fn slot() -> Slot {
+        Slot::Account(PathBuf::from("/tmp/work"))
+    }
+
+    /// 写进去什么、读出来什么的存储。
+    struct HonestStore(Mutex<Option<Secret>>);
+
+    impl CredentialStore for HonestStore {
+        fn read(&self, _slot: &Slot) -> Result<Option<Secret>, AppError> {
+            Ok(self.0.lock().unwrap().clone())
+        }
+        fn write(&self, _slot: &Slot, secret: &Secret) -> Result<(), AppError> {
+            *self.0.lock().unwrap() = Some(secret.clone());
+            Ok(())
+        }
+        fn delete(&self, _slot: &Slot) -> Result<(), AppError> {
+            *self.0.lock().unwrap() = None;
+            Ok(())
+        }
+    }
+
+    /// 写入被悄悄丢弃、读出来永远是 `stored` 的存储。
+    struct DroppingStore(Secret);
+
+    impl CredentialStore for DroppingStore {
+        fn read(&self, _slot: &Slot) -> Result<Option<Secret>, AppError> {
+            Ok(Some(self.0.clone()))
+        }
+        fn write(&self, _slot: &Slot, _secret: &Secret) -> Result<(), AppError> {
+            Ok(())
+        }
+        fn delete(&self, _slot: &Slot) -> Result<(), AppError> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn merge_keeps_the_bases_shared_keys_and_takes_the_accounts_login_keys() {
+        let base = secret("org-base", "base-token");
+        let account = secret("org-target", "target-token");
+
+        let merged = merge(Some(&base), &account);
+
+        // 账号键整组换成 target 的。
+        assert_eq!(merged.0["organizationUuid"], "org-target");
+        assert_eq!(merged.0["claudeAiOauth"]["refreshToken"], "target-token");
+        // 这台机器的共享键留在 base 那份里。
+        assert_eq!(merged.0["mcpOAuth"]["server"], "kept-per-slot");
+    }
+
+    #[test]
+    fn merge_without_a_base_starts_from_the_account_only() {
+        let account = secret("org-target", "target-token");
+        let merged = merge(None, &account);
+        // 没有 base 可继承：只带账号自己的登录键，共享键不会凭空出现。
+        assert_eq!(merged.0["claudeAiOauth"]["refreshToken"], "target-token");
+        assert_eq!(merged.0["organizationUuid"], "org-target");
+        let foreign: Vec<&String> = merged
+            .0
+            .keys()
+            .filter(|key| !ACCOUNT_KEYS.contains(&key.as_str()))
+            .collect();
+        assert!(
+            foreign.is_empty(),
+            "no shared key should appear: {foreign:?}"
+        );
+    }
+
+    #[test]
+    fn account_fingerprint_counts_only_the_account_keys() {
+        let account = secret("org-1", "token-1");
+        let fingerprint = account_fingerprint(&account);
+
+        // 共享键被 Claude Code 改写不改变指纹。
+        let mut shared_changed = account.0.clone();
+        shared_changed.insert(
+            "mcpOAuth".to_string(),
+            serde_json::json!({"server": "other"}),
+        );
+        assert_eq!(account_fingerprint(&Secret(shared_changed)), fingerprint);
+
+        // 账号键变了指纹必须变。
+        let other = secret("org-1", "token-2");
+        assert_ne!(account_fingerprint(&other), fingerprint);
+    }
+
+    #[test]
+    fn has_login_needs_a_non_empty_refresh_token() {
+        assert!(has_login(&secret("org", "token")));
+
+        let mut no_refresh = secret("org", "token").0;
+        no_refresh.remove("claudeAiOauth");
+        assert!(!has_login(&Secret(no_refresh)));
+
+        let mut blank = secret("org", "token").0;
+        blank.insert(
+            "claudeAiOauth".to_string(),
+            serde_json::json!({"refreshToken": ""}),
+        );
+        assert!(!has_login(&Secret(blank)));
+    }
+
+    #[test]
+    fn login_expiry_normalizes_seconds_to_milliseconds() {
+        let with_seconds = |at: Value| {
+            let mut map = secret("org", "token").0;
+            map.get_mut("claudeAiOauth")
+                .unwrap()
+                .as_object_mut()
+                .unwrap()
+                .insert("refreshTokenExpiresAt".to_string(), at);
+            Secret(map)
+        };
+
+        // 秒级（< 1e11）补三个零。
+        assert_eq!(
+            login_expiry(&with_seconds(serde_json::json!(1_700_000_000))),
+            Some(1_700_000_000_000)
+        );
+        // 毫秒级原样。
+        assert_eq!(
+            login_expiry(&with_seconds(serde_json::json!(1_700_000_000_000i64))),
+            Some(1_700_000_000_000)
+        );
+        // 浮点也认。
+        assert_eq!(
+            login_expiry(&with_seconds(serde_json::json!(1_700_000_000.0))),
+            Some(1_700_000_000_000)
+        );
+        // 没有这个字段就没有期限。
+        assert_eq!(login_expiry(&secret("org", "token")), None);
+    }
+
+    #[test]
+    fn credential_org_and_plan_read_the_non_secret_fields() {
+        let account = secret("org-1", "token");
+        assert_eq!(credential_org(&account).as_deref(), Some("org-1"));
+
+        let plan = credential_plan(&account);
+        assert_eq!(plan.subscription_type.as_deref(), Some("max"));
+        assert_eq!(
+            plan.rate_limit_tier.as_deref(),
+            Some("default_claude_max_20x")
+        );
+
+        // 空串当没有填。
+        let mut map = account.0.clone();
+        map.get_mut("claudeAiOauth")
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .insert("subscriptionType".to_string(), serde_json::json!("  "));
+        assert_eq!(credential_plan(&Secret(map)).subscription_type, None);
+    }
+
+    #[test]
+    fn note_expiry_records_and_drops_the_timestamp() {
+        let mut state = State::default();
+        let account = secret("org-1", "token");
+        let mut with_expiry = account.0.clone();
+        with_expiry
+            .get_mut("claudeAiOauth")
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .insert(
+                "refreshTokenExpiresAt".to_string(),
+                serde_json::json!(1_700_000_000),
+            );
+
+        note_expiry(&mut state, "work", &Secret(with_expiry));
+        assert_eq!(state.login_expiry.get("work"), Some(&1_700_000_000_000));
+
+        // 没有过期时间的账号删掉旧记录，不留过期提示。
+        note_expiry(&mut state, "work", &account);
+        assert!(!state.login_expiry.contains_key("work"));
+    }
+
+    #[test]
+    fn owner_of_needs_a_usable_login_and_a_matching_profile() {
+        // 没有登录：不知道是谁，但也不是错误。
+        assert_eq!(
+            owner_of(None, Some(&profile("acct", "org-1"))).unwrap(),
+            None
+        );
+
+        let account = secret("org-1", "token");
+        let found = owner_of(Some(&account), Some(&profile("acct", "org-1")))
+            .unwrap()
+            .expect("matching profile identifies the login");
+        assert!(found.key.contains("acct"), "{found:?}");
+
+        // 组织对不上：宁可报错也不把它收错地方。
+        let error = owner_of(Some(&account), Some(&profile("acct", "org-2")))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("认不出"), "{error}");
+
+        // 有登录但没有资料：同样报错。
+        assert!(owner_of(Some(&account), None).is_err());
+    }
+
+    #[test]
+    fn owner_of_ignores_a_login_it_cannot_see() {
+        let mut no_login = secret("org-1", "token").0;
+        no_login.remove("claudeAiOauth");
+        assert_eq!(owner_of(Some(&Secret(no_login)), None).unwrap(), None);
+    }
+
+    #[test]
+    fn write_verified_rejects_a_write_that_does_not_land() {
+        let store = HonestStore(Mutex::new(None));
+        let account = secret("org-1", "token");
+        write_verified(&store, &slot(), &account, || {
+            AppError::Message("write failed".to_string())
+        })
+        .unwrap();
+        assert!(store.read(&slot()).unwrap().is_some());
+
+        let silent = DroppingStore(secret("org-other", "other-token"));
+        let error = write_verified(&silent, &slot(), &account, || {
+            AppError::Message("write failed".to_string())
+        })
+        .unwrap_err();
+        assert_eq!(error.to_string(), "write failed");
+    }
+
+    #[test]
+    fn strip_account_keys_writes_the_rest_or_deletes_the_slot() {
+        let store = HonestStore(Mutex::new(None));
+        let account = secret("org-1", "token");
+
+        // 有共享键剩下：写回剩下的部分。
+        strip_account_keys(&store, &slot(), &account).unwrap();
+        let left = store
+            .read(&slot())
+            .unwrap()
+            .expect("slot keeps the shared keys");
+        assert!(left.0.contains_key("mcpOAuth"));
+        assert!(!left.0.contains_key("organizationUuid"));
+        assert!(!left.0.contains_key("claudeAiOauth"));
+
+        // 什么都不剩：整个槽位删掉。
+        let Value::Object(only) = serde_json::json!({"organizationUuid": "org-1"}) else {
+            unreachable!()
+        };
+        let only_account = Secret(only);
+        strip_account_keys(&store, &slot(), &only_account).unwrap();
+        assert!(store.read(&slot()).unwrap().is_none());
+    }
+
+    #[test]
+    fn read_login_filters_blank_and_expired_tokens() {
+        let usable = secret("org-1", "token");
+        let store = HonestStore(Mutex::new(Some(usable)));
+        assert!(read_login(&store, &slot()).unwrap().is_some());
+
+        let mut expired = secret("org-1", "token").0;
+        expired
+            .get_mut("claudeAiOauth")
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .insert(
+                "refreshTokenExpiresAt".to_string(),
+                serde_json::json!(1_000),
+            );
+        let store = HonestStore(Mutex::new(Some(Secret(expired))));
+        assert!(read_login(&store, &slot()).unwrap().is_none());
+
+        let store = HonestStore(Mutex::new(None));
+        assert!(read_login(&store, &slot()).unwrap().is_none());
+    }
+}
