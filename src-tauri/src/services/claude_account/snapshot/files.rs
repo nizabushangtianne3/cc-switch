@@ -99,3 +99,81 @@ pub fn backup_dir(dir: &Path) -> PathBuf {
 pub(super) fn backup_slot(dir: &Path) -> Slot {
     Slot::Account(backup_dir(dir))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_backup_dir_is_a_sibling_with_a_prev_suffix() {
+        assert_eq!(
+            backup_dir(Path::new("/data/accounts/work")),
+            PathBuf::from("/data/accounts/work.prev")
+        );
+        assert_eq!(backup_dir(Path::new("work")), PathBuf::from("work.prev"));
+    }
+
+    #[test]
+    fn read_profile_returns_none_for_missing_or_broken_files() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(read_profile(&dir.path().join("absent.json")), None);
+
+        std::fs::write(dir.path().join("broken.json"), "{not json").unwrap();
+        assert_eq!(read_profile(&dir.path().join("broken.json")), None);
+
+        let path = dir.path().join("profile.json");
+        std::fs::write(&path, r#"{"oauthAccount":{"organizationUuid":"org-1"}}"#).unwrap();
+        let loaded = read_profile(&path).expect("valid profile");
+        assert_eq!(loaded["oauthAccount"]["organizationUuid"], "org-1");
+    }
+
+    #[test]
+    fn write_profile_swaps_the_account_and_drops_the_account_caches() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".claude.json");
+        std::fs::write(
+            &path,
+            r#"{
+                "oauthAccount": {"organizationUuid": "old-org"},
+                "modelAccessCache": {"stale": true},
+                "numStartups": 42,
+                "hasCompletedOnboarding": true
+            }"#,
+        )
+        .unwrap();
+
+        write_profile(
+            &path,
+            Some(&serde_json::json!({"organizationUuid": "new-org"})),
+        )
+        .unwrap();
+
+        let saved: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(saved["oauthAccount"]["organizationUuid"], "new-org");
+        assert!(saved.get("modelAccessCache").is_none());
+        // 与账号无关的字段原样留着。
+        assert_eq!(saved["numStartups"], 42);
+        assert_eq!(saved["hasCompletedOnboarding"], true);
+
+        // None 是删掉账号资料。
+        write_profile(&path, None).unwrap();
+        let saved: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(saved.get("oauthAccount").is_none());
+        assert_eq!(saved["numStartups"], 42);
+    }
+
+    #[test]
+    fn write_profile_creates_a_missing_file_and_refuses_a_non_object() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".claude.json");
+
+        write_profile(&path, Some(&serde_json::json!({"organizationUuid": "org"}))).unwrap();
+        let saved: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(saved["oauthAccount"]["organizationUuid"], "org");
+        assert_eq!(saved["hasCompletedOnboarding"], true);
+
+        std::fs::write(&path, "[]").unwrap();
+        let error = write_profile(&path, None).unwrap_err().to_string();
+        assert!(error.contains("不是 JSON 对象"), "{error}");
+    }
+}

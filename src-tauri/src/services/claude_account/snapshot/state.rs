@@ -106,3 +106,111 @@ pub fn confirm(data_dir: &Path) {
         log::warn!("[ClaudeAccount] 清除切换日志失败: {error}");
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn journal(step: Step) -> Journal {
+        Journal {
+            target: "work".to_string(),
+            target_dir: PathBuf::from("/tmp/work"),
+            target_org: Some("org-1".to_string()),
+            target_account: "fp-target".to_string(),
+            before_account: Some("fp-before".to_string()),
+            before_owner: Some("before-owner".to_string()),
+            step,
+        }
+    }
+
+    #[test]
+    fn a_missing_or_corrupt_state_file_reads_as_the_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = load_state(dir.path());
+        assert!(state.journal.is_none());
+        assert!(state.login_expiry.is_empty());
+
+        std::fs::write(state_path(dir.path()), "{not json").unwrap();
+        let state = load_state(dir.path());
+        assert!(state.journal.is_none());
+        assert!(state.login_expiry.is_empty());
+    }
+
+    #[test]
+    fn the_journal_round_trips_through_camel_case_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let saved = State {
+            journal: Some(journal(Step::Committed)),
+            login_expiry: BTreeMap::from([("work".to_string(), 1_700_000_000_000)]),
+        };
+        update_state(dir.path(), |state| *state = saved.clone()).unwrap();
+
+        let raw = std::fs::read_to_string(state_path(dir.path())).unwrap();
+        assert!(raw.contains("\"targetOrg\""), "{raw}");
+        assert!(raw.contains("\"beforeAccount\""), "{raw}");
+        assert!(raw.contains("\"loginExpiry\""), "{raw}");
+
+        let loaded = load_state(dir.path());
+        assert_eq!(loaded.journal, saved.journal);
+        assert_eq!(loaded.login_expiry, saved.login_expiry);
+    }
+
+    #[test]
+    fn an_empty_expiry_map_is_omitted_from_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        update_state(dir.path(), |state| {
+            state.login_expiry.insert("work".to_string(), 42);
+        })
+        .unwrap();
+        let raw = std::fs::read_to_string(state_path(dir.path())).unwrap();
+        assert!(raw.contains("loginExpiry"), "{raw}");
+
+        update_state(dir.path(), |state| state.login_expiry.clear()).unwrap();
+        let raw = std::fs::read_to_string(state_path(dir.path())).unwrap();
+        assert!(!raw.contains("loginExpiry"), "{raw}");
+    }
+
+    #[test]
+    fn confirm_clears_a_finished_switch_and_keeps_an_unfinished_one() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // 没有日志：什么都不做，也不建文件。
+        confirm(dir.path());
+        assert!(!state_path(dir.path()).exists());
+
+        for step in [Step::Parked, Step::Committed] {
+            update_state(dir.path(), |state| state.journal = Some(journal(step))).unwrap();
+            confirm(dir.path());
+            let loaded = load_state(dir.path());
+            assert_eq!(
+                loaded.journal.map(|journal| journal.step),
+                Some(step),
+                "step {step:?} must survive confirm so recovery can finish it"
+            );
+        }
+
+        update_state(dir.path(), |state| {
+            state.journal = Some(journal(Step::Done))
+        })
+        .unwrap();
+        confirm(dir.path());
+        let loaded = load_state(dir.path());
+        assert!(loaded.journal.is_none(), "a done switch must be cleared");
+    }
+
+    #[test]
+    fn confirm_keeps_the_expiry_map_when_it_drops_the_journal() {
+        let dir = tempfile::tempdir().unwrap();
+        update_state(dir.path(), |state| {
+            state.journal = Some(journal(Step::Done));
+            state.login_expiry.insert("work".to_string(), 7);
+        })
+        .unwrap();
+
+        confirm(dir.path());
+
+        let loaded = load_state(dir.path());
+        assert!(loaded.journal.is_none());
+        assert_eq!(loaded.login_expiry.get("work"), Some(&7));
+    }
+}
