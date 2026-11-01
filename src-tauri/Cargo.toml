@@ -125,9 +125,8 @@ objc2-app-kit-03 = { package = "objc2-app-kit", version = "0.3", default-feature
 
 # Optimize release binary size to help reduce AppImage footprint
 [profile.release]
-# 主 crate 体量大，codegen-units = 1 时 LLVM 只能单线程跑，发布编译的大头都在它身上。
-# 16 让主 crate 编译快约 64%，代价是二进制体积增加约 17%（10-05 本机基准）。
-codegen-units = 16
+# 单编译单元给 LLVM 足够的跨函数优化空间：发布产物更小，运行时优化更完整。
+codegen-units = 1
 lto = "thin"
 opt-level = "s"
 # 使用 unwind 以便 panic hook 能捕获 backtrace（abort 会直接终止无法捕获）
