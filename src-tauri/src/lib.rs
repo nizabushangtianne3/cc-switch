@@ -1130,10 +1130,7 @@ pub fn run() {
                 }
             }
 
-            // 迁移旧的 app_config_dir 配置到 Store
-            if let Err(e) = app_store::migrate_app_config_dir_from_settings(app.handle()) {
-                log::warn!("迁移 app_config_dir 失败: {e}");
-            }
+            app_store::refresh_app_config_dir_override(app.handle());
 
             // 启动阶段不再无条件保存,避免意外覆盖用户配置。
 
