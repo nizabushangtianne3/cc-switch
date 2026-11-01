@@ -243,3 +243,216 @@ impl Database {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app_config::{McpApps, McpServer, MultiAppConfig, PromptConfig};
+    use crate::prompt::Prompt;
+    use crate::provider::{Provider, ProviderManager};
+    use crate::services::skill::SkillRepo;
+    use crate::settings::CustomEndpoint;
+    use indexmap::IndexMap;
+    use serde_json::json;
+
+    fn provider_row(id: &str) -> Provider {
+        let mut provider = Provider::with_id(
+            id.to_string(),
+            format!("{id} name"),
+            json!({"env": {"ANTHROPIC_AUTH_TOKEN": "sk-test"}}),
+            Some("https://example.com".to_string()),
+        );
+        provider.category = Some("official".to_string());
+        provider.created_at = Some(1_700_000_000);
+        provider.sort_index = Some(3);
+        provider.notes = Some("note".to_string());
+        provider.icon = Some("openai".to_string());
+        provider.icon_color = Some("#00A67E".to_string());
+        let meta = crate::provider::ProviderMeta {
+            custom_endpoints: std::collections::HashMap::from([(
+                "https://api.example.com/v1".to_string(),
+                CustomEndpoint {
+                    url: "https://api.example.com/v1".to_string(),
+                    added_at: 1_700_000_001,
+                    last_used: None,
+                },
+            )]),
+            ..Default::default()
+        };
+        provider.meta = Some(meta);
+        provider
+    }
+
+    fn one_provider_config(app_type: &str, id: &str) -> MultiAppConfig {
+        let mut config = MultiAppConfig::default();
+        config.apps.insert(
+            app_type.to_string(),
+            ProviderManager {
+                providers: IndexMap::from([(id.to_string(), provider_row(id))]),
+                current: id.to_string(),
+            },
+        );
+        config
+    }
+
+    #[test]
+    fn migration_moves_providers_their_endpoints_and_the_current_pointer() {
+        let db = Database::memory().expect("memory db");
+        db.migrate_from_json(&one_provider_config("claude", "p1"))
+            .unwrap();
+        db.migrate_from_json(&one_provider_config("codex", "p2"))
+            .unwrap();
+
+        let claude = db.get_all_providers("claude").unwrap();
+        assert_eq!(claude.len(), 1);
+        let stored = &claude["p1"];
+        assert_eq!(stored.name, "p1 name");
+        assert_eq!(
+            stored.settings_config["env"]["ANTHROPIC_AUTH_TOKEN"],
+            "sk-test"
+        );
+        assert_eq!(stored.category.as_deref(), Some("official"));
+        assert_eq!(stored.created_at, Some(1_700_000_000));
+        assert_eq!(stored.sort_index, Some(3));
+        assert_eq!(stored.notes.as_deref(), Some("note"));
+        assert_eq!(stored.icon.as_deref(), Some("openai"));
+        assert_eq!(stored.icon_color.as_deref(), Some("#00A67E"));
+        // 当前指针跟着搬过去，别的 app 不串门。
+        assert_eq!(
+            db.get_current_provider("claude").unwrap().as_deref(),
+            Some("p1")
+        );
+        assert_eq!(db.get_all_providers("codex").unwrap().len(), 1);
+        assert!(db.get_all_providers("gemini").unwrap().is_empty());
+
+        // 自定义端点落到自己的表：落库的 meta JSON 里不带一份。
+        let endpoints = db.get_custom_endpoints_by_provider("claude", "p1").unwrap();
+        assert_eq!(endpoints.len(), 1);
+        assert_eq!(endpoints[0].url, "https://api.example.com/v1");
+        assert_eq!(endpoints[0].added_at, 1_700_000_001);
+        {
+            let conn = db.conn.lock().unwrap();
+            let raw: String = conn
+                .query_row(
+                    "SELECT meta FROM providers WHERE id = 'p1' AND app_type = 'claude'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert!(!raw.contains("api.example.com"), "{raw}");
+        }
+        let meta = stored.meta.as_ref().expect("meta round trip");
+        // 读回时再把端点合进 meta（向前兼容的展示视图）。
+        assert_eq!(meta.custom_endpoints.len(), 1);
+        let restored = &meta.custom_endpoints["https://api.example.com/v1"];
+        assert_eq!(restored.added_at, 1_700_000_001);
+        assert_eq!(restored.last_used, None);
+    }
+
+    #[test]
+    fn migration_moves_mcp_servers_prompts_repos_and_snippets() {
+        let db = Database::memory().expect("memory db");
+        let mut config = MultiAppConfig::default();
+
+        config.mcp.servers = Some(std::collections::HashMap::from([(
+            "m1".to_string(),
+            McpServer {
+                id: "m1".to_string(),
+                name: "MCP One".to_string(),
+                server: json!({"type": "stdio", "command": "node"}),
+                apps: McpApps {
+                    claude: true,
+                    codex: true,
+                    ..Default::default()
+                },
+                description: Some("desc".to_string()),
+                homepage: Some("https://example.com".to_string()),
+                docs: Some("https://docs.example.com".to_string()),
+                tags: vec!["x".to_string()],
+            },
+        )]));
+        config.prompts.claude = PromptConfig {
+            prompts: std::collections::HashMap::from([(
+                "pr1".to_string(),
+                Prompt {
+                    id: "pr1".to_string(),
+                    name: "Prompt One".to_string(),
+                    content: "content".to_string(),
+                    description: Some("about".to_string()),
+                    enabled: true,
+                    created_at: Some(10),
+                    updated_at: Some(11),
+                },
+            )]),
+        };
+        config.skills.repos = vec![SkillRepo {
+            owner: "acme".to_string(),
+            name: "skills".to_string(),
+            branch: "main".to_string(),
+            enabled: true,
+        }];
+        config.common_config_snippets.claude = Some("env A=1".to_string());
+        config.common_config_snippets.codex = Some("model = \"x\"".to_string());
+
+        db.migrate_from_json(&config).unwrap();
+
+        let servers = db.get_all_mcp_servers().unwrap();
+        let stored = &servers["m1"];
+        assert_eq!(stored.name, "MCP One");
+        assert_eq!(stored.server["command"], "node");
+        assert!(stored.apps.claude);
+        assert!(stored.apps.codex);
+        assert!(!stored.apps.gemini);
+        assert_eq!(stored.description.as_deref(), Some("desc"));
+        assert_eq!(stored.homepage.as_deref(), Some("https://example.com"));
+        assert_eq!(stored.docs.as_deref(), Some("https://docs.example.com"));
+        assert_eq!(stored.tags, vec!["x".to_string()]);
+
+        let prompts = db.get_prompts("claude").unwrap();
+        assert_eq!(prompts["pr1"].name, "Prompt One");
+        assert_eq!(prompts["pr1"].content, "content");
+        assert!(prompts["pr1"].enabled);
+        assert_eq!(prompts["pr1"].created_at, Some(10));
+        assert_eq!(prompts["pr1"].updated_at, Some(11));
+
+        let repos = db.get_skill_repos().unwrap();
+        assert_eq!(repos.len(), 1);
+        assert_eq!(repos[0].owner, "acme");
+        assert_eq!(repos[0].name, "skills");
+        assert_eq!(repos[0].branch, "main");
+        assert!(repos[0].enabled);
+
+        assert_eq!(
+            db.get_config_snippet("claude").unwrap().as_deref(),
+            Some("env A=1")
+        );
+        assert_eq!(
+            db.get_config_snippet("codex").unwrap().as_deref(),
+            Some("model = \"x\"")
+        );
+        // 没写的片段不迁。
+        assert_eq!(db.get_config_snippet("gemini").unwrap(), None);
+    }
+
+    #[test]
+    fn dry_run_checks_the_payload_without_touching_a_database() {
+        // dry-run 用一次性内存库跑同一套迁移：Ok 即校验通过，不写任何落库文件。
+        Database::migrate_from_json_dry_run(&one_provider_config("claude", "p1")).unwrap();
+        Database::migrate_from_json_dry_run(&MultiAppConfig::default()).unwrap();
+    }
+
+    #[test]
+    fn migrating_twice_replaces_rows_instead_of_failing() {
+        let db = Database::memory().expect("memory db");
+        let config = one_provider_config("claude", "p1");
+        db.migrate_from_json(&config).unwrap();
+        db.migrate_from_json(&config).unwrap();
+
+        let claude = db.get_all_providers("claude").unwrap();
+        assert_eq!(claude.len(), 1);
+        assert_eq!(
+            db.get_current_provider("claude").unwrap().as_deref(),
+            Some("p1")
+        );
+    }
+}
