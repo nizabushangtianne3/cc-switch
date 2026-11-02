@@ -129,3 +129,199 @@ pub fn is_claude_config_applied() -> Result<bool, AppError> {
         None => Ok(false),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::test_home_lock;
+    use crate::settings::{get_settings, update_settings, AppSettings};
+    use serde_json::Value;
+    use serial_test::serial;
+    use std::ffi::OsString;
+
+    /// 把 Claude 配置目录指到临时现场的守卫：`claude_dir()` 优先读设置里的覆盖目录，
+    /// 所以换 settings 就够；顺带换 `CC_SWITCH_TEST_HOME`，让设置文件的读写也落进
+    /// 临时 HOME，不碰真实用户的 `~/.cc-switch`。
+    struct ClaudePluginHome {
+        _lock: tokio::sync::MutexGuard<'static, ()>,
+        dir: PathBuf,
+        _temp: tempfile::TempDir,
+        previous_home: Option<OsString>,
+        previous_settings: AppSettings,
+    }
+
+    impl ClaudePluginHome {
+        fn new() -> Self {
+            // 和 gemini_mcp / mcp::claude 共用一把 HOME 锁；#[serial] 挡住同样要换
+            // 全局设置的测试，两把一起拿才不会互相踩。
+            let lock = test_home_lock().blocking_lock();
+            let temp = tempfile::tempdir().expect("tempdir");
+            let previous_home = std::env::var_os("CC_SWITCH_TEST_HOME");
+            std::env::set_var("CC_SWITCH_TEST_HOME", temp.path());
+            let previous_settings = get_settings();
+            let dir = temp.path().join("claude-override");
+            fs::create_dir_all(&dir).expect("create the override dir");
+            update_settings(AppSettings {
+                claude_config_dir: Some(dir.to_string_lossy().into_owned()),
+                ..Default::default()
+            })
+            .expect("point claude at the test dir");
+            Self {
+                _lock: lock,
+                dir,
+                _temp: temp,
+                previous_home,
+                previous_settings,
+            }
+        }
+
+        fn config_path(&self) -> PathBuf {
+            self.dir.join(CLAUDE_CONFIG_FILE)
+        }
+
+        fn write_config(&self, content: &str) {
+            fs::write(self.config_path(), content).expect("write the config");
+        }
+
+        fn read_config(&self) -> String {
+            fs::read_to_string(self.config_path()).expect("the config exists")
+        }
+
+        fn parse_config(&self) -> Value {
+            serde_json::from_str(&self.read_config()).expect("valid json")
+        }
+    }
+
+    impl Drop for ClaudePluginHome {
+        fn drop(&mut self) {
+            // 先还原设置（此刻写入还指向临时 HOME），再恢复 HOME。
+            let _ = update_settings(self.previous_settings.clone());
+            match &self.previous_home {
+                Some(value) => std::env::set_var("CC_SWITCH_TEST_HOME", value),
+                None => std::env::remove_var("CC_SWITCH_TEST_HOME"),
+            }
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn write_creates_the_managed_key_and_keeps_the_other_fields() {
+        let home = ClaudePluginHome::new();
+        home.write_config(r#"{"model": "opus"}"#);
+
+        assert!(write_claude_config().unwrap(), "首次写入算改动");
+        let value = home.parse_config();
+        assert_eq!(value["primaryApiKey"], "any");
+        assert_eq!(value["model"], "opus", "别的字段原样保留");
+
+        // 已经托管：不再写，返回 false。
+        assert!(!write_claude_config().unwrap());
+    }
+
+    #[test]
+    #[serial]
+    fn write_creates_the_file_when_nothing_exists() {
+        let home = ClaudePluginHome::new();
+        assert!(write_claude_config().unwrap());
+        assert!(home.config_path().is_file());
+
+        let value = home.parse_config();
+        assert_eq!(value.as_object().expect("object").len(), 1);
+        assert_eq!(value["primaryApiKey"], "any");
+    }
+
+    #[test]
+    #[serial]
+    fn write_starts_over_when_the_existing_file_is_not_a_json_object() {
+        let home = ClaudePluginHome::new();
+        home.write_config("not json at all");
+        assert!(write_claude_config().unwrap());
+        let value = home.parse_config();
+        assert_eq!(value.as_object().expect("object").len(), 1);
+        assert_eq!(value["primaryApiKey"], "any");
+
+        // 根是数组也同理：整份重写。
+        home.write_config("[1, 2, 3]");
+        assert!(write_claude_config().unwrap());
+        assert_eq!(home.parse_config()["primaryApiKey"], "any");
+    }
+
+    #[test]
+    #[serial]
+    fn clear_removes_the_managed_key_and_keeps_the_rest() {
+        let home = ClaudePluginHome::new();
+        home.write_config(r#"{"primaryApiKey": "any", "model": "opus"}"#);
+
+        assert!(clear_claude_config().unwrap());
+        let value = home.parse_config();
+        assert!(value.get("primaryApiKey").is_none());
+        assert_eq!(value["model"], "opus");
+    }
+
+    #[test]
+    #[serial]
+    fn clear_reports_nothing_to_do_for_files_it_cannot_manage() {
+        let home = ClaudePluginHome::new();
+        // 没有文件。
+        assert!(!clear_claude_config().unwrap());
+        assert!(!home.config_path().exists());
+
+        // 没有 primaryApiKey：原样不动。
+        home.write_config(r#"{"model": "opus"}"#);
+        assert!(!clear_claude_config().unwrap());
+        assert_eq!(home.read_config(), r#"{"model": "opus"}"#);
+
+        // 解析不了 / 根不是对象：也不动。
+        home.write_config("not json");
+        assert!(!clear_claude_config().unwrap());
+        home.write_config("[1]");
+        assert!(!clear_claude_config().unwrap());
+    }
+
+    #[test]
+    #[serial]
+    fn is_managed_config_recognizes_only_our_marker() {
+        assert!(is_managed_config(r#"{"primaryApiKey": "any"}"#));
+        assert!(!is_managed_config(r#"{"primaryApiKey": "sk-something"}"#));
+        assert!(!is_managed_config(r#"{"model": "opus"}"#));
+        assert!(!is_managed_config(r#"{"primaryApiKey": 42}"#));
+        assert!(!is_managed_config("not json"));
+    }
+
+    #[test]
+    #[serial]
+    fn status_reports_the_overridden_path_and_whether_it_exists() {
+        let home = ClaudePluginHome::new();
+        assert_eq!(claude_config_status().unwrap(), (false, home.config_path()));
+
+        write_claude_config().unwrap();
+        assert_eq!(claude_config_status().unwrap(), (true, home.config_path()));
+    }
+
+    #[test]
+    #[serial]
+    fn is_applied_follows_the_write_and_clear_cycle() {
+        // 只为隔离现场，不断言具体路径。
+        let _home = ClaudePluginHome::new();
+        assert!(!is_claude_config_applied().unwrap());
+        assert!(read_claude_config().unwrap().is_none());
+
+        write_claude_config().unwrap();
+        assert!(is_claude_config_applied().unwrap());
+        assert!(read_claude_config().unwrap().is_some());
+
+        clear_claude_config().unwrap();
+        assert!(!is_claude_config_applied().unwrap());
+    }
+
+    #[test]
+    #[serial]
+    fn ensure_creates_the_override_directory_and_is_idempotent() {
+        let home = ClaudePluginHome::new();
+        fs::remove_dir_all(&home.dir).expect("remove the dir");
+
+        assert_eq!(ensure_claude_dir_exists().unwrap(), home.dir);
+        assert!(home.dir.is_dir());
+        assert_eq!(ensure_claude_dir_exists().unwrap(), home.dir);
+    }
+}
