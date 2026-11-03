@@ -96,3 +96,106 @@ fn contains_packycode_keyword(value: &str) -> bool {
 pub(crate) fn is_google_official_gemini(provider: &Provider) -> bool {
     detect_gemini_auth_type(provider) == GeminiAuthType::GoogleOfficial
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::provider::ProviderMeta;
+    use serde_json::json;
+
+    fn provider(name: &str) -> Provider {
+        Provider {
+            id: "gemini-provider".to_string(),
+            name: name.to_string(),
+            settings_config: json!({}),
+            website_url: None,
+            category: None,
+            created_at: None,
+            sort_index: None,
+            notes: None,
+            meta: None,
+            icon: None,
+            icon_color: None,
+            in_failover_queue: false,
+        }
+    }
+
+    fn with_partner_key(name: &str, key: &str) -> Provider {
+        let mut provider = provider(name);
+        provider.meta = Some(ProviderMeta {
+            partner_promotion_key: Some(key.to_string()),
+            ..Default::default()
+        });
+        provider
+    }
+
+    #[test]
+    fn the_partner_key_outranks_every_guess() {
+        // 名字看着像 PackyCode，合作标记说了算。
+        let official = with_partner_key("PackyCode Fast", "google-official");
+        assert_eq!(
+            detect_gemini_auth_type(&official),
+            GeminiAuthType::GoogleOfficial
+        );
+        assert!(is_google_official_gemini(&official));
+
+        // 大小写不敏感。
+        let packy = with_partner_key("Whatever", "PackyCode");
+        assert_eq!(detect_gemini_auth_type(&packy), GeminiAuthType::Packycode);
+        assert!(!is_google_official_gemini(&packy));
+
+        // 不认识的标记不参与判定，继续按名字认。
+        let other = with_partner_key("PackyCode Fast", "some-campaign");
+        assert_eq!(detect_gemini_auth_type(&other), GeminiAuthType::Packycode);
+    }
+
+    #[test]
+    fn the_name_marks_google_official_only_as_a_whole_word() {
+        for name in ["Google", "google", "Google Pro", "google vertex"] {
+            assert_eq!(
+                detect_gemini_auth_type(&provider(name)),
+                GeminiAuthType::GoogleOfficial,
+                "must treat {name:?} as the official card"
+            );
+        }
+
+        // 名字里带上 Google 但不是官方卡。
+        for name in ["MyGoogleProxy", "Proxy Google", "Googleish"] {
+            assert_eq!(
+                detect_gemini_auth_type(&provider(name)),
+                GeminiAuthType::Generic,
+                "must not treat {name:?} as the official card"
+            );
+        }
+    }
+
+    #[test]
+    fn packycode_keywords_are_found_in_the_name_site_and_base_url() {
+        assert_eq!(
+            detect_gemini_auth_type(&provider("PackyAPI Gateway")),
+            GeminiAuthType::Packycode
+        );
+
+        let mut by_site = provider("Fast Gemini");
+        by_site.website_url = Some("https://packycode.com".to_string());
+        assert_eq!(detect_gemini_auth_type(&by_site), GeminiAuthType::Packycode);
+
+        let mut by_base_url = provider("Fast Gemini");
+        by_base_url.settings_config = json!({
+            "env": {"GOOGLE_GEMINI_BASE_URL": "https://api.packy.cn/v1"}
+        });
+        assert_eq!(
+            detect_gemini_auth_type(&by_base_url),
+            GeminiAuthType::Packycode
+        );
+    }
+
+    #[test]
+    fn an_unremarkable_provider_is_generic() {
+        assert_eq!(
+            detect_gemini_auth_type(&provider("My Relay")),
+            GeminiAuthType::Generic
+        );
+        assert!(!is_google_official_gemini(&provider("My Relay")));
+    }
+}
