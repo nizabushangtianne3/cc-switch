@@ -165,3 +165,94 @@ pub(crate) fn run_with_edits(
         .collect();
     app_write.run(op, &changes, target)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn provider(name: &str) -> Provider {
+        Provider {
+            id: "grok-provider".to_string(),
+            name: name.to_string(),
+            settings_config: json!({}),
+            website_url: None,
+            category: None,
+            created_at: None,
+            sort_index: None,
+            notes: None,
+            meta: None,
+            icon: None,
+            icon_color: None,
+            in_failover_queue: false,
+        }
+    }
+
+    /// 一份空的设备状态：`written` 读不到记录，正好走到旧版推断那条分支。
+    fn fresh_store() -> (tempfile::TempDir, DeviceStore) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = DeviceStore::at(dir.path());
+        (dir, store)
+    }
+
+    #[test]
+    fn is_official_recognizes_only_the_official_category() {
+        let mut provider = provider("Grok Build");
+        assert!(!is_official(&provider));
+
+        provider.category = Some("official".to_string());
+        assert!(is_official(&provider));
+
+        provider.category = Some("third-party".to_string());
+        assert!(!is_official(&provider));
+    }
+
+    #[test]
+    fn retired_tables_stays_empty_without_an_owner() {
+        let (_dir, store) = fresh_store();
+        assert!(retired_tables(&store, None).unwrap().is_empty());
+    }
+
+    #[test]
+    fn retired_tables_ignores_an_official_owner() {
+        let (_dir, store) = fresh_store();
+        let mut owner = provider("Grok Build");
+        owner.category = Some("official".to_string());
+        owner.settings_config = json!({"config": "[models]\ndefault = \"grok-4-fast\"\n"});
+
+        // 官方卡不写模型表，没有可收回的表。
+        assert!(retired_tables(&store, Some(&owner)).unwrap().is_empty());
+    }
+
+    #[test]
+    fn retired_tables_reads_the_legacy_table_out_of_the_owner_config() {
+        let (_dir, store) = fresh_store();
+        let mut owner = provider("Legacy Grok");
+        // models.default 指向的表不存在，整份配置过不了投影校验，走旧版推断。
+        owner.settings_config = json!({"config": "[models]\ndefault = \"grok-4-fast\"\n"});
+
+        assert_eq!(
+            retired_tables(&store, Some(&owner)).unwrap(),
+            vec!["grok-4-fast".to_string()]
+        );
+    }
+
+    #[test]
+    fn retired_tables_ignores_a_blank_or_broken_legacy_config() {
+        let (_dir, store) = fresh_store();
+
+        let mut blank = provider("Blank Grok");
+        blank.settings_config = json!({"config": "[models]\ndefault = \"   \"\n"});
+        assert!(
+            retired_tables(&store, Some(&blank)).unwrap().is_empty(),
+            "空串表名不算数"
+        );
+
+        let mut broken = provider("Broken Grok");
+        broken.settings_config = json!({"config": "this is not toml {{{"});
+        assert!(
+            retired_tables(&store, Some(&broken)).unwrap().is_empty(),
+            "解析不了就不猜"
+        );
+    }
+}
