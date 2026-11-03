@@ -833,3 +833,54 @@ impl McpService {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn live_sync_apps_manages_everything_but_openclaw_and_desktop() {
+        let apps = McpService::live_sync_apps();
+        assert!(apps.contains(&AppType::Claude));
+        assert!(apps.contains(&AppType::Codex));
+        assert!(apps.contains(&AppType::Gemini));
+        assert!(!apps.contains(&AppType::OpenClaw));
+        assert!(!apps.contains(&AppType::ClaudeDesktop));
+        // 不重不漏：全量减去那两个。
+        assert_eq!(apps.len(), AppType::all().count() - 2);
+    }
+
+    #[test]
+    fn resync_targets_defaults_to_all_managed_apps() {
+        let managed = McpService::live_sync_apps();
+        assert_eq!(McpService::resync_targets(None).unwrap(), managed);
+        assert_eq!(McpService::resync_targets(Some(&[])).unwrap(), managed);
+    }
+
+    #[test]
+    fn resync_targets_parses_and_dedups_the_named_apps() {
+        let targets = McpService::resync_targets(Some(&[
+            "codex".to_string(),
+            "claude".to_string(),
+            "claude".to_string(),
+        ]))
+        .unwrap();
+        assert_eq!(targets, vec![AppType::Codex, AppType::Claude]);
+    }
+
+    #[test]
+    fn resync_targets_rejects_unmanaged_and_unknown_apps() {
+        // OpenClaw / Claude Desktop 存在，但不受 CC Switch 管 MCP。
+        for app in ["openclaw", "claude-desktop"] {
+            let error = McpService::resync_targets(Some(&[app.to_string()]))
+                .unwrap_err()
+                .to_string();
+            assert!(
+                error.contains("不支持由 CC Switch 管理 MCP"),
+                "{app} -> {error}"
+            );
+        }
+        // 不存在的应用名直接报错，不静默跳过。
+        assert!(McpService::resync_targets(Some(&["notepad".to_string()])).is_err());
+    }
+}

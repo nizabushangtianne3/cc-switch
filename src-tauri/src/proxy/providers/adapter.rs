@@ -53,7 +53,9 @@ pub trait ProviderAdapter: Send + Sync {
 /// Build an HTTP `HeaderValue` from a credential / token string.
 ///
 /// Returns `ProxyError::AuthError` when the string contains characters that
-/// cannot live in an HTTP header value (control bytes, CR/LF, non-ASCII).
+/// cannot live in an HTTP header value: control bytes below 32, DEL (127) and
+/// CR/LF (a header would end there). Bytes 128..=255 pass through as opaque
+/// values, which is what `http::HeaderValue` permits.
 /// Adapters call this for every header value derived from user-pasted
 /// material so a malformed key surfaces as a 401 instead of panicking
 /// the worker via `HeaderValue::from_str(...).unwrap()`.
@@ -81,4 +83,60 @@ pub fn google_oauth_headers(
             http::HeaderValue::from_static("GeminiCLI/1.0"),
         ),
     ])
+}
+
+#[cfg(test)]
+mod tests {
+    // 测试模块的 `super` 是 adapter，不是 providers：auth 要往上两级找。
+    use super::*;
+    use crate::proxy::providers::auth::AuthStrategy;
+
+    #[test]
+    fn auth_header_value_accepts_a_plain_token() {
+        let value = auth_header_value("sk-abc123").expect("a plain token is a valid header");
+        assert_eq!(value.to_str().unwrap(), "sk-abc123");
+    }
+
+    #[test]
+    fn auth_header_value_rejects_values_that_would_split_the_header() {
+        // CR/LF 是头部结束符：放过它就是响应注入。
+        for raw in [
+            "sk-abc\r\nX-Evil: 1",
+            "sk-abc\nX-Evil: 1",
+            "sk-abc\rX-Evil: 1",
+        ] {
+            assert!(auth_header_value(raw).is_err(), "{raw:?} must not pass");
+        }
+        // 控制字符同理。
+        assert!(auth_header_value("sk-abc\u{0}").is_err());
+        assert!(auth_header_value("sk-abc\u{7f}").is_err());
+        // `http::HeaderValue` accepts bytes 128..=255 as opaque values, so a
+        // non-ASCII key passes: the upstream decides whether it works.
+        let opaque = auth_header_value("sk-秘钥").expect("opaque bytes are valid");
+        assert_eq!(opaque.as_bytes(), "sk-秘钥".as_bytes());
+    }
+
+    #[test]
+    fn google_oauth_headers_prefers_the_access_token_and_falls_back_to_the_key() {
+        let with_token =
+            AuthInfo::with_access_token("sk-fallback".to_string(), "ya29-access".to_string());
+        let headers = google_oauth_headers(&with_token).expect("headers");
+        assert_eq!(headers.len(), 2);
+        assert_eq!(headers[0].0.as_str(), "authorization");
+        assert_eq!(headers[0].1.to_str().unwrap(), "Bearer ya29-access");
+        assert_eq!(headers[1].0.as_str(), "x-goog-api-client");
+        assert_eq!(headers[1].1.to_str().unwrap(), "GeminiCLI/1.0");
+
+        // 没有 access_token 时退回 api_key（上游把 OAuth token 放在 api_key 的配置）。
+        let fallback = AuthInfo::new("sk-fallback".to_string(), AuthStrategy::GoogleOAuth);
+        let headers = google_oauth_headers(&fallback).expect("headers");
+        assert_eq!(headers[0].1.to_str().unwrap(), "Bearer sk-fallback");
+    }
+
+    #[test]
+    fn google_oauth_headers_rejects_a_token_that_cannot_be_a_header() {
+        let broken =
+            AuthInfo::with_access_token("sk-fallback".to_string(), "ya29\r\nX-Evil: 1".to_string());
+        assert!(google_oauth_headers(&broken).is_err());
+    }
 }
