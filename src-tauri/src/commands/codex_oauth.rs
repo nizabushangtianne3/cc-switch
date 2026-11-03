@@ -131,3 +131,37 @@ pub async fn get_codex_oauth_models(
 
     crate::services::codex_oauth_models::fetch_models_with_token(&token, &chatgpt_account_id).await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transient_token_errors_are_the_retryable_ones() {
+        // 网络、取 token、IO 都是抖动：同一个号可以原地重试。
+        for error in [
+            CodexOAuthError::NetworkError("connection reset".to_string()),
+            CodexOAuthError::TokenFetchFailed("502 bad gateway".to_string()),
+            CodexOAuthError::IoError("file locked".to_string()),
+        ] {
+            assert!(is_transient_token_error(&error), "{error:?} should retry");
+        }
+
+        // 其余是终态：重试没有意义，直接让用户重新授权或改配置。
+        for error in [
+            CodexOAuthError::AuthorizationPending,
+            CodexOAuthError::AccessDenied,
+            CodexOAuthError::ExpiredToken,
+            CodexOAuthError::DuplicateAccount,
+            CodexOAuthError::RefreshTokenInvalid,
+            CodexOAuthError::ParseError("bad json".to_string()),
+            CodexOAuthError::AccountNotFound("a1".to_string()),
+            CodexOAuthError::AccountUnavailable("a1".to_string()),
+        ] {
+            assert!(
+                !is_transient_token_error(&error),
+                "{error:?} should not retry"
+            );
+        }
+    }
+}

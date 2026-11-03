@@ -81,3 +81,99 @@ pub async fn get_claude_login_switch() -> Result<ClaudeLoginSwitchStatus, String
         .await
         .map_err(|error| error.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::test_home_lock;
+    use crate::settings::{get_settings, update_settings, AppSettings};
+    use serde_json::json;
+    use serial_test::serial;
+    use std::ffi::OsString;
+    use std::path::PathBuf;
+
+    /// HOME 和全局设置换成测试现场：默认槽位的 `.claude.json` 落进临时目录，
+    /// 目录覆盖按需打开。
+    struct ClaudeAccountTestHome {
+        _lock: tokio::sync::MutexGuard<'static, ()>,
+        home: PathBuf,
+        _temp: tempfile::TempDir,
+        previous_home: Option<OsString>,
+        previous_settings: AppSettings,
+    }
+
+    impl ClaudeAccountTestHome {
+        fn new() -> Self {
+            // 和 gemini_mcp / mcp::claude 共用一把 HOME 锁；#[serial] 挡住同样要换
+            // 全局设置的测试。
+            let lock = test_home_lock().blocking_lock();
+            let temp = tempfile::tempdir().expect("tempdir");
+            let previous_home = std::env::var_os("CC_SWITCH_TEST_HOME");
+            std::env::set_var("CC_SWITCH_TEST_HOME", temp.path());
+            let previous_settings = get_settings();
+            update_settings(AppSettings::default()).expect("clear settings for the test");
+            Self {
+                _lock: lock,
+                home: temp.path().to_path_buf(),
+                _temp: temp,
+                previous_home,
+                previous_settings,
+            }
+        }
+
+        fn write_home_profile(&self, value: serde_json::Value) {
+            std::fs::write(
+                self.home.join(".claude.json"),
+                serde_json::to_string_pretty(&value).expect("serialize"),
+            )
+            .expect("write the home profile");
+        }
+
+        fn set_override_dir(&self) -> PathBuf {
+            let dir = self.home.join("claude-override");
+            std::fs::create_dir_all(&dir).expect("create the override dir");
+            update_settings(AppSettings {
+                claude_config_dir: Some(dir.to_string_lossy().into_owned()),
+                ..Default::default()
+            })
+            .expect("point claude at the override dir");
+            dir
+        }
+    }
+
+    impl Drop for ClaudeAccountTestHome {
+        fn drop(&mut self) {
+            let _ = update_settings(self.previous_settings.clone());
+            match &self.previous_home {
+                Some(value) => std::env::set_var("CC_SWITCH_TEST_HOME", value),
+                None => std::env::remove_var("CC_SWITCH_TEST_HOME"),
+            }
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn the_switch_is_active_with_nothing_blocking_it() {
+        // 只为隔离现场，不断言具体路径。
+        let _home = ClaudeAccountTestHome::new();
+
+        let status = login_switch_status();
+        assert!(status.active);
+        assert_eq!(status.blocked, None);
+        assert_eq!(status.live, None, "没有资料就不知道登的是谁");
+    }
+
+    #[test]
+    #[serial]
+    fn an_override_dir_blocks_the_switch_but_the_live_owner_still_comes_from_home() {
+        let home = ClaudeAccountTestHome::new();
+        home.set_override_dir();
+        home.write_home_profile(json!({"oauthAccount": {"accountUuid": "acct-1"}}));
+
+        let status = login_switch_status();
+        assert!(!status.active, "设了覆盖目录就不切登录");
+        assert_eq!(status.blocked.as_deref(), Some("overrideDir"));
+        // 账号 key 是 <accountUuid>:<organizationUuid>，没有组织时后半为空。
+        assert_eq!(status.live.as_deref(), Some("acct-1:"));
+    }
+}
