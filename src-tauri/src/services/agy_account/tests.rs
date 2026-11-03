@@ -303,3 +303,22 @@ async fn quota_token_is_refused_for_unknown_or_expired_accounts() {
         Err(AccountQuotaError::NeedsReauth)
     ));
 }
+
+#[test]
+fn label_falls_back_from_email_to_name_to_the_short_id() {
+    let mut account = AgyAccount {
+        id: "abcdef123456".to_string(),
+        email: Some("me@example.com".to_string()),
+        name: Some("Me".to_string()),
+        picture: None,
+        authenticated_at: 1,
+        requires_reauth: false,
+    };
+    assert_eq!(account.label(), "me@example.com");
+
+    account.email = None;
+    assert_eq!(account.label(), "Me", "没有邮箱时用名字");
+
+    account.name = None;
+    assert_eq!(account.label(), "Google (abcdef)", "只剩 id 时取前 6 位");
+}

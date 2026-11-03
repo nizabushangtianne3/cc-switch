@@ -558,3 +558,68 @@ pub async fn get_circuit_breaker_stats(
     let _ = (state, provider_id, app_type);
     Ok(None)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn require_proxy_app_accepts_the_four_routed_apps() {
+        for app in ["claude", "codex", "gemini", "grokbuild"] {
+            let parsed = require_proxy_app(app).expect("the routed four carry a local proxy");
+            assert_eq!(parsed.as_str(), app);
+        }
+    }
+
+    #[test]
+    fn require_proxy_app_rejects_apps_without_a_local_proxy() {
+        // Claude Desktop 有路由模式但没有 proxy_config 行，其余连路由模式都没有。
+        for app in [
+            "claude-desktop",
+            "opencode",
+            "openclaw",
+            "hermes",
+            "pi",
+            "mcode",
+            "kimi",
+            "dsh",
+            "agy",
+            "omp",
+        ] {
+            let error = require_proxy_app(app).unwrap_err();
+            assert!(error.contains("不支持本地路由"), "{app} -> {error}");
+        }
+    }
+
+    #[test]
+    fn require_mode_app_also_takes_claude_desktop() {
+        assert_eq!(
+            require_mode_app("claude-desktop").unwrap().as_str(),
+            "claude-desktop",
+            "Desktop 经同一个路由服务转发"
+        );
+        assert_eq!(require_mode_app("codex").unwrap().as_str(), "codex");
+
+        for app in [
+            "opencode", "openclaw", "hermes", "pi", "mcode", "kimi", "dsh", "agy", "omp",
+        ] {
+            let error = require_mode_app(app).unwrap_err();
+            assert!(error.contains("不支持本地路由"), "{app} -> {error}");
+        }
+    }
+
+    #[test]
+    fn a_garbage_app_type_is_rejected_by_both() {
+        for app in ["", "  ", "notepad"] {
+            assert!(
+                require_proxy_app(app)
+                    .unwrap_err()
+                    .contains("无效的应用类型"),
+                "{app:?} 两个入口都该报同一个错"
+            );
+            assert!(require_mode_app(app)
+                .unwrap_err()
+                .contains("无效的应用类型"));
+        }
+    }
+}

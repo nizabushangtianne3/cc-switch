@@ -370,6 +370,176 @@ pub async fn auth_start_login(
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn github_account() -> GitHubAccount {
+        GitHubAccount {
+            id: "u-1".to_string(),
+            login: "octocat".to_string(),
+            avatar_url: Some("https://avatars/octocat".to_string()),
+            authenticated_at: 1_700_000_000_000,
+            github_domain: "github.com".to_string(),
+            reauth_required: true,
+        }
+    }
+
+    fn xai_account() -> XaiOAuthAccount {
+        XaiOAuthAccount {
+            id: "x-1".to_string(),
+            login: "xAI (xai-1)".to_string(),
+            avatar_url: None,
+            authenticated_at: 1_700_000_000_001,
+            github_domain: "x.ai".to_string(),
+            requires_reauth: true,
+        }
+    }
+
+    fn agy_account() -> AgyAccount {
+        AgyAccount {
+            id: "a-1".to_string(),
+            email: Some("me@example.com".to_string()),
+            name: Some("Me".to_string()),
+            picture: Some("https://avatars/me".to_string()),
+            authenticated_at: 1_700_000_000_002,
+            requires_reauth: false,
+        }
+    }
+
+    fn claude_account() -> ClaudeAccount {
+        ClaudeAccount {
+            id: "acct-1:org-1".to_string(),
+            email: Some("me@example.com".to_string()),
+            org_name: Some("Org".to_string()),
+            plan: Some("max".to_string()),
+            rate_limit_tier: Some("default_claude_max_20x".to_string()),
+            authenticated_at: 1_700_000_000_003,
+            requires_reauth: false,
+            login_expires_at: Some(1_800_000_000_000),
+        }
+    }
+
+    #[test]
+    fn ensure_auth_provider_passes_the_five_known_names() {
+        for provider in [
+            AUTH_PROVIDER_GITHUB_COPILOT,
+            AUTH_PROVIDER_CODEX_OAUTH,
+            AUTH_PROVIDER_XAI_OAUTH,
+            AUTH_PROVIDER_AGY_OAUTH,
+            AUTH_PROVIDER_CLAUDE_OFFICIAL,
+        ] {
+            assert_eq!(ensure_auth_provider(provider).unwrap(), provider);
+        }
+
+        for unknown in ["", "github", "GitHub_Copilot"] {
+            let error = ensure_auth_provider(unknown).unwrap_err();
+            assert!(error.contains("Unsupported auth provider"), "{error}");
+        }
+    }
+
+    #[test]
+    fn map_account_carries_the_github_fields_and_marks_the_default() {
+        let account = map_account(AUTH_PROVIDER_GITHUB_COPILOT, github_account(), Some("u-1"));
+        assert!(account.is_default);
+        assert_eq!(account.provider, "github_copilot");
+        assert_eq!(account.id, "u-1");
+        assert_eq!(account.login, "octocat");
+        assert_eq!(
+            account.avatar_url.as_deref(),
+            Some("https://avatars/octocat")
+        );
+        assert_eq!(account.authenticated_at, 1_700_000_000_000);
+        assert_eq!(account.github_domain, "github.com");
+        assert!(account.reauth_required, "旧账号缺凭据的标记要透传");
+
+        // 别的供应商字段不属于 GitHub 账号。
+        assert!(!account.requires_reauth);
+        assert_eq!(account.login_expires_at, None);
+        assert_eq!(account.plan, None);
+        assert_eq!(account.rate_limit_tier, None);
+
+        // 默认号不匹配或没默认号时都不是默认。
+        assert!(!map_account("github_copilot", github_account(), Some("u-2")).is_default);
+        assert!(!map_account("github_copilot", github_account(), None).is_default);
+    }
+
+    #[test]
+    fn map_xai_account_fixes_the_provider_and_keeps_the_reauth_flag() {
+        let account = map_xai_account(xai_account(), Some("x-1"));
+        assert!(account.is_default);
+        assert_eq!(account.provider, AUTH_PROVIDER_XAI_OAUTH);
+        assert_eq!(account.login, "xAI (xai-1)");
+        assert_eq!(account.github_domain, "x.ai");
+        assert!(account.requires_reauth, "refresh token 丢了就不许再用");
+        assert!(!account.reauth_required);
+        assert!(!map_xai_account(xai_account(), Some("x-2")).is_default);
+    }
+
+    #[test]
+    fn map_agy_account_labels_by_the_account_and_marks_the_current_one() {
+        let account = map_agy_account(agy_account(), Some("a-1"));
+        assert!(account.is_default);
+        assert_eq!(account.provider, AUTH_PROVIDER_AGY_OAUTH);
+        assert_eq!(account.login, "me@example.com", "邮箱优先当显示名");
+        assert_eq!(account.avatar_url.as_deref(), Some("https://avatars/me"));
+        assert_eq!(account.authenticated_at, 1_700_000_000_002);
+        assert_eq!(account.github_domain, "google.com", "agy 走 Google 登录");
+        assert!(!account.requires_reauth);
+
+        let mut no_email = agy_account();
+        no_email.email = None;
+        assert_eq!(
+            map_agy_account(no_email, None).login,
+            "Me",
+            "没有邮箱用名字"
+        );
+    }
+
+    #[test]
+    fn map_claude_account_keeps_the_claude_only_fields() {
+        let account = map_claude_account(claude_account());
+        // Claude 官方号没有「默认号」概念：由绑它的卡片决定。
+        assert!(!account.is_default);
+        assert_eq!(account.provider, AUTH_PROVIDER_CLAUDE_OFFICIAL);
+        assert_eq!(account.login, "me@example.com");
+        assert_eq!(account.avatar_url, None, "没有头像");
+        assert_eq!(account.github_domain, "claude.ai");
+        assert_eq!(account.login_expires_at, Some(1_800_000_000_000));
+        assert_eq!(account.plan.as_deref(), Some("max"));
+        assert_eq!(
+            account.rate_limit_tier.as_deref(),
+            Some("default_claude_max_20x")
+        );
+        assert!(!account.reauth_required);
+        assert!(!account.requires_reauth);
+    }
+
+    #[test]
+    fn map_device_code_response_carries_the_flow_and_lands_browser_closed() {
+        let response = map_device_code_response(
+            AUTH_PROVIDER_GITHUB_COPILOT,
+            GitHubDeviceCodeResponse {
+                device_code: "dc-1".to_string(),
+                user_code: "ABCD-1234".to_string(),
+                verification_uri: "https://github.com/login/device".to_string(),
+                expires_in: 900,
+                interval: 5,
+            },
+        );
+        assert_eq!(response.provider, "github_copilot");
+        assert_eq!(response.device_code, "dc-1");
+        assert_eq!(response.user_code, "ABCD-1234");
+        assert_eq!(response.verification_uri, "https://github.com/login/device");
+        assert_eq!(response.expires_in, 900);
+        assert_eq!(response.interval, 5);
+        assert!(
+            !response.browser_opened,
+            "浏览器由 CLI 自己打开，这里只报没开"
+        );
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 #[tauri::command(rename_all = "camelCase")]
 pub async fn auth_poll_for_account(

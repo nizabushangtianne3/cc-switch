@@ -72,3 +72,80 @@ impl Database {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::provider::{UniversalProvider, UniversalProviderApps};
+
+    fn provider(id: &str, name: &str) -> UniversalProvider {
+        UniversalProvider {
+            id: id.to_string(),
+            name: name.to_string(),
+            provider_type: "newapi".to_string(),
+            apps: UniversalProviderApps {
+                claude: true,
+                codex: false,
+                gemini: false,
+            },
+            base_url: "https://api.example.com".to_string(),
+            api_key: "sk-test".to_string(),
+            models: Default::default(),
+            website_url: None,
+            notes: None,
+            icon: None,
+            icon_color: None,
+            meta: None,
+            created_at: None,
+            sort_index: None,
+        }
+    }
+
+    #[test]
+    fn the_store_round_trips_universal_providers() {
+        let db = Database::memory().expect("memory db");
+        assert!(db.get_all_universal_providers().unwrap().is_empty());
+
+        db.save_universal_provider(&provider("u-1", "One"))
+            .expect("save the provider");
+        let saved = db
+            .get_universal_provider("u-1")
+            .expect("read it back")
+            .expect("the provider is there");
+        assert_eq!(saved.name, "One");
+        assert_eq!(saved.provider_type, "newapi");
+        assert!(saved.apps.claude);
+
+        // 同一个 id 再存是覆盖，不是追加。
+        db.save_universal_provider(&provider("u-1", "Renamed"))
+            .expect("overwrite the provider");
+        let all = db.get_all_universal_providers().unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all["u-1"].name, "Renamed");
+    }
+
+    #[test]
+    fn delete_reports_whether_the_provider_was_there() {
+        let db = Database::memory().expect("memory db");
+        db.save_universal_provider(&provider("u-1", "One"))
+            .expect("save the provider");
+
+        assert!(
+            !db.delete_universal_provider("ghost").unwrap(),
+            "没有这个号不算删掉"
+        );
+        assert!(db.delete_universal_provider("u-1").unwrap());
+        assert!(db.get_all_universal_providers().unwrap().is_empty());
+    }
+
+    #[test]
+    fn corrupt_json_surfaces_as_an_error() {
+        let db = Database::memory().expect("memory db");
+        db.set_setting(UNIVERSAL_PROVIDERS_KEY, "not json")
+            .expect("seed the broken blob");
+        assert!(
+            db.get_all_universal_providers().is_err(),
+            "坏数据要报错，不能静默按空表处理"
+        );
+    }
+}

@@ -55,3 +55,64 @@ impl Database {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn icon(id: &str) -> CustomIconEntry {
+        CustomIconEntry {
+            id: id.to_string(),
+            name: format!("Icon {id}"),
+            data: "data:image/png;base64,AAAA".to_string(),
+            created_at: 1_700_000_000_000,
+            extra: Default::default(),
+        }
+    }
+
+    #[test]
+    fn icons_round_trip_in_order() {
+        let db = Database::memory().expect("memory db");
+        assert!(db.get_custom_icons().unwrap().is_empty());
+
+        db.save_custom_icons(&[icon("a"), icon("b")])
+            .expect("save the library");
+        let saved = db.get_custom_icons().unwrap();
+        assert_eq!(saved.len(), 2);
+        assert_eq!(saved[0].id, "a", "按存的顺序读回");
+        assert_eq!(saved[1].id, "b");
+        assert_eq!(saved[0].data, "data:image/png;base64,AAAA");
+    }
+
+    #[test]
+    fn unparseable_entries_are_skipped_but_the_library_survives() {
+        let db = Database::memory().expect("memory db");
+        // 一条好数据夹两条坏数据：坏的跳过，好的照常读出。
+        db.set_setting(
+            CUSTOM_ICONS_KEY,
+            &json!([
+                {"id": "good", "name": "Good", "data": "data:image/png;base64,AAAA"},
+                {"id": 42},
+                "not an object"
+            ])
+            .to_string(),
+        )
+        .expect("seed the mixed library");
+
+        let saved = db.get_custom_icons().unwrap();
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0].id, "good");
+    }
+
+    #[test]
+    fn a_corrupt_library_reads_back_empty() {
+        let db = Database::memory().expect("memory db");
+        db.set_setting(CUSTOM_ICONS_KEY, "{ not json")
+            .expect("seed the broken blob");
+        assert!(
+            db.get_custom_icons().unwrap().is_empty(),
+            "整库解析不了时按空库处理"
+        );
+    }
+}
