@@ -86,3 +86,110 @@ pub fn extract_server_spec(entry: &Value) -> Result<Value, AppError> {
 
     Ok(server.clone())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn validate_rejects_specs_that_are_not_objects() {
+        for value in [json!(42), json!("stdio"), json!([]), json!(null)] {
+            assert!(validate_server_spec(&value).is_err(), "{value} 不是对象");
+        }
+    }
+
+    #[test]
+    fn validate_accepts_the_three_transports_and_a_missing_type() {
+        // 省略 type 按 stdio 处理（与社区常见 .mcp.json 一致）。
+        assert!(validate_server_spec(&json!({"command": "python"})).is_ok());
+        assert!(validate_server_spec(&json!({"type": "stdio", "command": "python"})).is_ok());
+        assert!(validate_server_spec(&json!({"type": "http", "url": "https://x/mcp"})).is_ok());
+        assert!(validate_server_spec(&json!({"type": "sse", "url": "https://x/sse"})).is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_unknown_transports() {
+        let error = validate_server_spec(&json!({"type": "websocket", "url": "wss://x"}))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("stdio"), "{error}");
+    }
+
+    #[test]
+    fn validate_requires_the_transports_own_field() {
+        // stdio 要 command。
+        assert!(validate_server_spec(&json!({"type": "stdio"})).is_err());
+        assert!(
+            validate_server_spec(&json!({"command": "  "})).is_err(),
+            "空白 command 不算有"
+        );
+        // http / sse 要 url。
+        assert!(validate_server_spec(&json!({"type": "http"})).is_err());
+        assert!(validate_server_spec(&json!({"type": "http", "url": " "})).is_err());
+        assert!(validate_server_spec(&json!({"type": "sse"})).is_err());
+        assert!(validate_server_spec(&json!({"type": "sse", "url": "  "})).is_err());
+    }
+
+    #[test]
+    fn a_non_string_type_falls_back_to_the_stdio_rules() {
+        // type 不是字符串时 as_str 拿不到，按 stdio 规则走。
+        assert!(validate_server_spec(&json!({"type": 42, "command": "python"})).is_ok());
+        assert!(
+            validate_server_spec(&json!({"type": 42})).is_err(),
+            "没有 command 就过不去"
+        );
+    }
+
+    #[test]
+    fn transport_type_reads_the_spec_the_way_the_projections_write_it() {
+        // 显式类型原样保留。
+        assert_eq!(
+            spec_transport_type(&json!({"type": "http", "url": "https://x"})),
+            "http"
+        );
+        assert_eq!(
+            spec_transport_type(&json!({"type": "sse", "url": "https://x"})),
+            "sse"
+        );
+        assert_eq!(
+            spec_transport_type(&json!({"type": "stdio", "command": "py"})),
+            "stdio"
+        );
+
+        // 没写 type：按字段名判断，url 型不能落进 stdio。
+        assert_eq!(spec_transport_type(&json!({"url": "https://x"})), "http");
+        assert_eq!(spec_transport_type(&json!({"command": "py"})), "stdio");
+        assert_eq!(
+            spec_transport_type(&json!({"command": "py", "url": "https://x"})),
+            "stdio"
+        );
+
+        // 写了 stdio 却只有 url：仍按 http 投影，否则客户端整份配置加载失败。
+        assert_eq!(
+            spec_transport_type(&json!({"type": "stdio", "url": "https://x"})),
+            "http"
+        );
+
+        // 空串字段不算有。
+        assert_eq!(
+            spec_transport_type(&json!({"command": "  ", "url": "https://x"})),
+            "http"
+        );
+        assert_eq!(spec_transport_type(&json!({})), "stdio");
+    }
+
+    #[test]
+    fn extract_server_spec_unwraps_the_entry_around_the_spec() {
+        let spec = json!({"command": "python", "args": ["server.py"]});
+        let entry = json!({"enabled": true, "server": spec.clone(), "source": "ui"});
+        assert_eq!(extract_server_spec(&entry).unwrap(), spec);
+    }
+
+    #[test]
+    fn extract_server_spec_rejects_malformed_entries() {
+        assert!(extract_server_spec(&json!(["nope"])).is_err());
+        assert!(extract_server_spec(&json!({"enabled": true})).is_err());
+        assert!(extract_server_spec(&json!({"server": "python"})).is_err());
+    }
+}

@@ -123,3 +123,35 @@ fn resolve_path(raw: &str) -> PathBuf {
 
     PathBuf::from(raw)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_path_expands_the_home_shorthands() {
+        let home = dirs::home_dir().expect("the test machine has a home directory");
+
+        assert_eq!(resolve_path("~"), home);
+        assert_eq!(resolve_path("~/cc-switch"), home.join("cc-switch"));
+        assert_eq!(resolve_path("~\\cc-switch"), home.join("cc-switch"));
+        assert_eq!(resolve_path("~/a/b/c"), home.join("a").join("b").join("c"));
+    }
+
+    #[test]
+    fn resolve_path_keeps_other_paths_untouched() {
+        // 只有这三种形态是 home 简写，别的原样透传。
+        assert_eq!(resolve_path("~someone/cc"), PathBuf::from("~someone/cc"));
+
+        assert_eq!(
+            resolve_path("C:\\Users\\me\\.cc-switch"),
+            PathBuf::from("C:\\Users\\me\\.cc-switch")
+        );
+        assert_eq!(
+            resolve_path("data/cc-switch"),
+            PathBuf::from("data/cc-switch")
+        );
+        assert_eq!(resolve_path("./relative"), PathBuf::from("./relative"));
+        assert_eq!(resolve_path(""), PathBuf::from(""));
+    }
+}
