@@ -1923,7 +1923,7 @@ function ProviderFormFull({
       > = draftCustomEndpoints.reduce(
         (acc, url) => {
           const now = Date.now();
-          acc[url] = { url, addedAt: now, lastUsed: undefined };
+          acc[url] = { url, addedAt: now };
           return acc;
         },
         {} as Record<string, import("@/types").CustomEndpoint>,

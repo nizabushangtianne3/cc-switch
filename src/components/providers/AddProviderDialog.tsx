@@ -433,7 +433,6 @@ export function AddProviderDialog({
             customEndpoints[url] = {
               url,
               addedAt: now,
-              lastUsed: undefined,
             };
           });
 

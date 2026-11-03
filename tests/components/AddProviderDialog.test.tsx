@@ -289,7 +289,6 @@ describe("AddProviderDialog", () => {
       "https://claude.base": {
         url: "https://claude.base",
         addedAt: expect.any(Number),
-        lastUsed: undefined,
       },
     });
   });

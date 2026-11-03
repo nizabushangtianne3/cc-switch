@@ -40,7 +40,6 @@ export interface AppConfig {
 export interface CustomEndpoint {
   url: string;
   addedAt: number;
-  lastUsed?: number;
 }
 
 // 端点候选项（用于端点测速弹窗）

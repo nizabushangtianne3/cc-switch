@@ -274,7 +274,6 @@ mod tests {
                 CustomEndpoint {
                     url: "https://api.example.com/v1".to_string(),
                     added_at: 1_700_000_001,
-                    last_used: None,
                 },
             )]),
             ..Default::default()
@@ -346,7 +345,6 @@ mod tests {
         assert_eq!(meta.custom_endpoints.len(), 1);
         let restored = &meta.custom_endpoints["https://api.example.com/v1"];
         assert_eq!(restored.added_at, 1_700_000_001);
-        assert_eq!(restored.last_used, None);
     }
 
     #[test]

@@ -116,7 +116,6 @@ fn load_custom_endpoints(
                 CustomEndpoint {
                     url,
                     added_at: added_at.unwrap_or(0),
-                    last_used: None,
                 },
             );
     }
@@ -416,7 +415,6 @@ impl Database {
                 Ok(CustomEndpoint {
                     url: row.get(0)?,
                     added_at: row.get::<_, Option<i64>>(1)?.unwrap_or(0),
-                    last_used: None,
                 })
             })
             .map_err(|e| AppError::Database(e.to_string()))?;
@@ -787,12 +785,23 @@ impl Database {
         provider_id: &str,
         url: &str,
     ) -> Result<(), AppError> {
-        let conn = lock_conn!(self.conn);
+        let mut conn = lock_conn!(self.conn);
         let added_at = chrono::Utc::now().timestamp_millis();
-        conn.execute(
+        let tx = conn
+            .transaction()
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        // 同一个 URL 再测速/再添加只占一行：先删后插，别让列表里出现重复项。
+        tx.execute(
+            "DELETE FROM provider_endpoints WHERE provider_id = ?1 AND app_type = ?2 AND url = ?3",
+            params![provider_id, app_type, url],
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+        tx.execute(
             "INSERT INTO provider_endpoints (provider_id, app_type, url, added_at) VALUES (?1, ?2, ?3, ?4)",
             params![provider_id, app_type, url, added_at],
-        ).map_err(|e| AppError::Database(e.to_string()))?;
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+        tx.commit().map_err(|e| AppError::Database(e.to_string()))?;
         Ok(())
     }
 

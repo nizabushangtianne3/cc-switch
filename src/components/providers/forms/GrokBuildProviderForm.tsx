@@ -399,10 +399,7 @@ export function GrokBuildProviderForm({
     }
 
     const customEndpoints = Object.fromEntries(
-      draftCustomEndpoints.map((url) => [
-        url,
-        { url, addedAt: Date.now(), lastUsed: undefined },
-      ]),
+      draftCustomEndpoints.map((url) => [url, { url, addedAt: Date.now() }]),
     );
     const parsedMaxOutputTokens = Number.parseInt(maxOutputTokens, 10);
     const initialMeta = { ...(initialData?.meta ?? {}) };

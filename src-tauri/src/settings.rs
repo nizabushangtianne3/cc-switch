@@ -16,8 +16,6 @@ use crate::services::skill::{SkillStorageLocation, SyncMethod};
 pub struct CustomEndpoint {
     pub url: String,
     pub added_at: i64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub last_used: Option<i64>,
 }
 
 fn default_true() -> bool {

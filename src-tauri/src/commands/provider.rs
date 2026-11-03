@@ -977,18 +977,6 @@ pub fn remove_custom_endpoint(
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-pub fn update_endpoint_last_used(
-    state: State<'_, AppState>,
-    app: String,
-    #[allow(non_snake_case)] providerId: String,
-    url: String,
-) -> Result<(), String> {
-    let app_type = AppType::from_str(&app).map_err(|e| e.to_string())?;
-    ProviderService::update_endpoint_last_used(state.inner(), app_type, &providerId, url)
-        .map_err(|e| e.to_string())
-}
-
 /// 排序就是故障转移队列的优先级，托盘按它列队列：改完重建托盘。聚合名单也跟着重排，
 /// 客户端看到的聚合模型顺序才和界面一致。
 ///
