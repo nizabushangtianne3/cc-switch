@@ -79,3 +79,20 @@ thread_local! {
 pub(crate) fn take_test_notify_count() -> u32 {
     TEST_NOTIFY_COUNT.with(|count| count.replace(0))
 }
+
+#[cfg(test)]
+mod notify_tests {
+    use super::*;
+
+    #[test]
+    fn notify_counts_every_call_even_without_an_app_handle() {
+        // 没有注入 AppHandle（单测常态）：通知直接放弃，但计数缝照旧走完。
+        notify_log_recorded();
+        assert_eq!(take_test_notify_count(), 1);
+
+        notify_log_recorded();
+        notify_log_recorded();
+        assert_eq!(take_test_notify_count(), 2);
+        assert_eq!(take_test_notify_count(), 0, "取走即归零");
+    }
+}

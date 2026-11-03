@@ -179,3 +179,49 @@ pub fn apply_profile(
     emit_profile_apply_events(&app, &state, &id, scope);
     Ok(warnings)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn profile(payload: &str) -> Profile {
+        Profile {
+            id: "p1".to_string(),
+            name: "Work".to_string(),
+            payload: payload.to_string(),
+            sort_order: Some(3),
+            created_at: Some(1_700_000_000_000),
+            updated_at: Some(1_700_000_001_000),
+        }
+    }
+
+    #[test]
+    fn a_valid_payload_becomes_the_dto_fields() {
+        let dto = ProfileDto::from(profile(
+            r#"{"providers":{"claude":"prov-1"},"prompts":{"claude":"pr-1"}}"#,
+        ));
+        assert_eq!(dto.id, "p1");
+        assert_eq!(dto.name, "Work");
+        assert_eq!(dto.created_at, Some(1_700_000_000_000));
+        assert_eq!(dto.updated_at, Some(1_700_000_001_000));
+        assert_eq!(
+            dto.payload
+                .providers
+                .get(&crate::app_config::AppType::Claude),
+            Some(&Some("prov-1".to_string()))
+        );
+        assert_eq!(
+            dto.payload.prompts.get(&crate::app_config::AppType::Claude),
+            Some(&Some("pr-1".to_string()))
+        );
+    }
+
+    #[test]
+    fn a_broken_payload_degrades_to_the_default_instead_of_failing_the_list() {
+        // 单条 payload 损坏不该让整个列表打不开：降级成默认载荷，其余字段照常带出。
+        let dto = ProfileDto::from(profile("{ not json"));
+        assert_eq!(dto.id, "p1");
+        assert_eq!(dto.name, "Work");
+        assert_eq!(dto.payload, ProfilePayload::default());
+    }
+}
