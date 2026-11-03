@@ -18,10 +18,13 @@ struct Fixture {
     config_path: PathBuf,
     state: AppState,
     _dir: tempfile::TempDir,
+    // 放最后：字段按声明序析构，锁要覆盖整个 Drop（设置和环境的还原都在里面）。
+    _home_lock: tokio::sync::MutexGuard<'static, ()>,
 }
 
 impl Fixture {
     fn new() -> Self {
+        let _home_lock = crate::config::test_home_lock().blocking_lock();
         let dir = tempfile::tempdir().unwrap();
         let previous_env = ["CC_SWITCH_TEST_HOME", "OPENCODE_DB"]
             .into_iter()
@@ -43,6 +46,7 @@ impl Fixture {
             config_path: config_dir.join("opencode.json"),
             state: AppState::new(Arc::new(Database::memory().unwrap())),
             _dir: dir,
+            _home_lock,
         }
     }
 

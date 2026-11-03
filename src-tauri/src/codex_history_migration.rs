@@ -2859,10 +2859,13 @@ model_provider = "aihubmix"
     struct IsolatedHome {
         dir: tempfile::TempDir,
         original_test_home: Option<OsString>,
+        // 和 hermes/openclaw/workspace 共用一把 HOME 锁，别让并行测试互换临时主目录。
+        _home_lock: tokio::sync::MutexGuard<'static, ()>,
     }
 
     impl IsolatedHome {
         fn new() -> Self {
+            let _home_lock = crate::config::test_home_lock().blocking_lock();
             let dir = tempdir().expect("tempdir");
             let original_test_home = std::env::var_os("CC_SWITCH_TEST_HOME");
             std::env::set_var("CC_SWITCH_TEST_HOME", dir.path());
@@ -2870,6 +2873,7 @@ model_provider = "aihubmix"
             Self {
                 dir,
                 original_test_home,
+                _home_lock,
             }
         }
 

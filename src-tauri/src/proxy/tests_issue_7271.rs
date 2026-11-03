@@ -171,10 +171,13 @@ mod tests {
         original_home: Option<String>,
         original_userprofile: Option<String>,
         original_test_home: Option<String>,
+        // 和 hermes/openclaw/workspace 共用一把 HOME 锁；异步测试里只能 await 拿锁。
+        _home_lock: tokio::sync::MutexGuard<'static, ()>,
     }
 
     impl TempHome {
-        fn new() -> Self {
+        async fn new() -> Self {
+            let _home_lock = crate::config::test_home_lock().lock().await;
             let dir = TempDir::new().expect("failed to create temp home");
             let original_home = env::var("HOME").ok();
             let original_userprofile = env::var("USERPROFILE").ok();
@@ -190,6 +193,7 @@ mod tests {
                 original_home,
                 original_userprofile,
                 original_test_home,
+                _home_lock,
             }
         }
     }
@@ -215,7 +219,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn proxy_converts_inline_think_to_thinking_block_non_streaming() {
-        let _home = TempHome::new();
+        let _home = TempHome::new().await;
         let (mock_base_url, captured) = start_inline_think_upstream().await;
         let (_proxy, proxy_url) = start_proxy_with_inline_think_provider(mock_base_url).await;
 
@@ -264,7 +268,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn proxy_converts_inline_think_to_thinking_block_streaming() {
-        let _home = TempHome::new();
+        let _home = TempHome::new().await;
         let (mock_base_url, captured) = start_inline_think_upstream().await;
         let (_proxy, proxy_url) = start_proxy_with_inline_think_provider(mock_base_url).await;
 

@@ -202,7 +202,7 @@ mod tests {
     };
     use crate::commands::sync_support::map_sync_result;
     use crate::error::AppError;
-    use crate::settings::{AppSettings, WebDavSyncSettings};
+    use crate::settings::WebDavSyncSettings;
     use serial_test::serial;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
@@ -336,12 +336,7 @@ mod tests {
     #[test]
     #[serial]
     fn persist_sync_error_updates_status_without_overwriting_credentials() {
-        let test_home = std::env::temp_dir().join("cc-switch-sync-error-status-test");
-        let _ = std::fs::remove_dir_all(&test_home);
-        std::fs::create_dir_all(&test_home).expect("create test home");
-        std::env::set_var("CC_SWITCH_TEST_HOME", &test_home);
-
-        crate::settings::update_settings(AppSettings::default()).expect("reset settings");
+        let _test_home = crate::config::TestHomeScope::new("sync-error-status-test");
         let mut current = WebDavSyncSettings {
             enabled: true,
             base_url: "https://dav.example.com/dav/".to_string(),
@@ -381,12 +376,7 @@ mod tests {
     #[test]
     #[serial]
     fn require_enabled_webdav_settings_rejects_disabled_config() {
-        let test_home = std::env::temp_dir().join("cc-switch-sync-enabled-disabled-test");
-        let _ = std::fs::remove_dir_all(&test_home);
-        std::fs::create_dir_all(&test_home).expect("create test home");
-        std::env::set_var("CC_SWITCH_TEST_HOME", &test_home);
-
-        crate::settings::update_settings(AppSettings::default()).expect("reset settings");
+        let _test_home = crate::config::TestHomeScope::new("sync-enabled-disabled-test");
         crate::settings::set_webdav_sync_settings(Some(WebDavSyncSettings {
             enabled: false,
             base_url: "https://dav.example.com/dav/".to_string(),
@@ -406,12 +396,7 @@ mod tests {
     #[test]
     #[serial]
     fn require_enabled_webdav_settings_returns_settings_when_enabled() {
-        let test_home = std::env::temp_dir().join("cc-switch-sync-enabled-ok-test");
-        let _ = std::fs::remove_dir_all(&test_home);
-        std::fs::create_dir_all(&test_home).expect("create test home");
-        std::env::set_var("CC_SWITCH_TEST_HOME", &test_home);
-
-        crate::settings::update_settings(AppSettings::default()).expect("reset settings");
+        let _test_home = crate::config::TestHomeScope::new("sync-enabled-ok-test");
         crate::settings::set_webdav_sync_settings(Some(WebDavSyncSettings {
             enabled: true,
             base_url: "https://dav.example.com/dav/".to_string(),

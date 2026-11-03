@@ -44,6 +44,49 @@ pub(crate) fn test_home_lock() -> &'static tokio::sync::Mutex<()> {
     LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
 }
 
+/// 测试共用的 HOME 作用域：拿共享锁、把 `CC_SWITCH_TEST_HOME` 指到临时目录、
+/// 把全局设置换成默认值，三样都在 drop 时还原。各模块以前各写各的私有 guard，
+/// 并行跑时会互相换掉临时主目录；新测试一律用这个，别再造私有轮子。
+#[cfg(test)]
+pub(crate) struct TestHomeScope {
+    _lock: tokio::sync::MutexGuard<'static, ()>,
+    previous_test_home: Option<std::ffi::OsString>,
+    previous_settings: crate::settings::AppSettings,
+}
+
+#[cfg(test)]
+impl TestHomeScope {
+    /// 在系统临时目录下建一个固定名字的测试主目录（先清后建）并切换过去。
+    pub(crate) fn new(name: &str) -> Self {
+        let _lock = test_home_lock().blocking_lock();
+        let path = std::env::temp_dir().join(format!("cc-switch-{name}"));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).expect("create the test home");
+        let previous_test_home = std::env::var_os("CC_SWITCH_TEST_HOME");
+        std::env::set_var("CC_SWITCH_TEST_HOME", &path);
+        let previous_settings = crate::settings::get_settings();
+        crate::settings::update_settings(crate::settings::AppSettings::default())
+            .expect("reset settings for the test");
+        Self {
+            _lock,
+            previous_test_home,
+            previous_settings,
+        }
+    }
+}
+
+#[cfg(test)]
+impl Drop for TestHomeScope {
+    fn drop(&mut self) {
+        // 先还原设置（此刻 HOME 还指向测试目录，设置文件的写回落在临时侧），再还原 HOME。
+        let _ = crate::settings::update_settings(self.previous_settings.clone());
+        match &self.previous_test_home {
+            Some(value) => std::env::set_var("CC_SWITCH_TEST_HOME", value),
+            None => std::env::remove_var("CC_SWITCH_TEST_HOME"),
+        }
+    }
+}
+
 /// 检测路径是否为 WSL 网络路径（如 \\wsl$\Ubuntu\... 或 \\wsl.localhost\Ubuntu\...）
 /// 注意：仅检测直接 UNC 路径，映射磁盘符（如 Z: -> \\wsl$\...）无法检测
 #[cfg(windows)]

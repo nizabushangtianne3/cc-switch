@@ -17,10 +17,14 @@ struct TestHomeGuard {
     original_home: Option<OsString>,
     original_userprofile: Option<OsString>,
     original_test_home: Option<OsString>,
+    // 和 hermes/openclaw/workspace 共用一把 HOME 锁：私有 guard 各换各的临时
+    // 主目录，并行跑会读到别人的目录。
+    _home_lock: tokio::sync::MutexGuard<'static, ()>,
 }
 
 impl TestHomeGuard {
     fn new() -> Self {
+        let _home_lock = crate::config::test_home_lock().blocking_lock();
         let dir = tempfile::tempdir().expect("create isolated test home");
         let original_home = env::var_os("HOME");
         let original_userprofile = env::var_os("USERPROFILE");
@@ -35,6 +39,7 @@ impl TestHomeGuard {
             original_home,
             original_userprofile,
             original_test_home,
+            _home_lock,
         }
     }
 }

@@ -5990,6 +5990,8 @@ mod tests {
 
         // 临时 HOME 里只放一个指向真实语料的只读 symlink，避免测试
         // 触碰真实 ~/.cc-switch / ~/.codex 下的任何其他内容。
+        // 手动跑（--ignored）时也可能和别的测试并行：拿共享 HOME 锁再换环境。
+        let _home_lock = crate::config::test_home_lock().blocking_lock();
         let temp = tempfile::tempdir().expect("create temp home");
         fs::create_dir_all(temp.path().join(".codex")).expect("mkdir .codex");
         #[cfg(unix)]

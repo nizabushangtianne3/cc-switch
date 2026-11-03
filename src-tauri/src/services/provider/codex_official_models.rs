@@ -930,14 +930,21 @@ mod tests {
     struct Scope {
         _dir: tempfile::TempDir,
         saved: Option<std::ffi::OsString>,
+        // 和 hermes/openclaw/workspace 共用一把 HOME 锁，别让并行测试互换临时主目录。
+        _lock: tokio::sync::MutexGuard<'static, ()>,
     }
 
     impl Scope {
         fn new() -> Self {
+            let _lock = crate::config::test_home_lock().blocking_lock();
             let dir = tempfile::TempDir::new().unwrap();
             let saved = std::env::var_os("CC_SWITCH_TEST_HOME");
             std::env::set_var("CC_SWITCH_TEST_HOME", dir.path());
-            Self { _dir: dir, saved }
+            Self {
+                _dir: dir,
+                saved,
+                _lock,
+            }
         }
     }
 

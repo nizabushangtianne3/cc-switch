@@ -194,10 +194,24 @@ mod tests {
         original_test_home: Option<String>,
         #[cfg(target_os = "linux")]
         original_xdg_config_home: Option<std::ffi::OsString>,
+        // 和 hermes/openclaw/workspace 共用一把 HOME 锁；异步测试里只能 await 拿锁。
+        _home_lock: tokio::sync::MutexGuard<'static, ()>,
     }
 
     impl TempHome {
-        fn new() -> Self {
+        async fn new() -> Self {
+            let _home_lock = crate::config::test_home_lock().lock().await;
+            Self::build(_home_lock)
+        }
+
+        /// 同步测试用：调用方不在 async runtime 里，可以阻塞拿锁（测试体内接着
+        /// 自己 `block_on` 的场合走这里，别把它变成 async fn）。
+        fn new_sync() -> Self {
+            let _home_lock = crate::config::test_home_lock().blocking_lock();
+            Self::build(_home_lock)
+        }
+
+        fn build(_home_lock: tokio::sync::MutexGuard<'static, ()>) -> Self {
             let dir = TempDir::new().expect("failed to create temp home");
             let original_home = env::var("HOME").ok();
             #[cfg(windows)]
@@ -225,6 +239,7 @@ mod tests {
                 original_test_home,
                 #[cfg(target_os = "linux")]
                 original_xdg_config_home,
+                _home_lock,
             }
         }
     }
@@ -299,6 +314,9 @@ mod tests {
 
     fn with_test_home<T>(test: impl FnOnce(&AppState, &Path) -> T) -> T {
         let _guard = test_guard();
+        // 私有 test_guard 只挡本文件的测试；再拿共享 HOME 锁，才不会和
+        // hermes/openclaw/workspace 等模块的测试互换临时主目录。
+        let _home_lock = crate::config::test_home_lock().blocking_lock();
         let temp = tempfile::tempdir().expect("tempdir");
         let old_test_home = std::env::var_os("CC_SWITCH_TEST_HOME");
         let old_home = std::env::var_os("HOME");
@@ -1245,7 +1263,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn update_current_claude_provider_writes_live_when_proxy_never_enabled() {
-        let _home = TempHome::new();
+        let _home = TempHome::new().await;
         crate::settings::reload_settings().expect("reload settings");
 
         let db = Arc::new(Database::memory().expect("init db"));
@@ -1287,7 +1305,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn update_current_claude_provider_drops_the_compat_switch_it_no_longer_has() {
-        let _home = TempHome::new();
+        let _home = TempHome::new().await;
         crate::settings::reload_settings().expect("reload settings");
 
         let db = Arc::new(Database::memory().expect("init db"));
@@ -1332,7 +1350,7 @@ mod tests {
     async fn claude_switch_interrupted_before_the_pointer_rolls_forward() {
         use crate::mode::operation::failpoint;
 
-        let _home = TempHome::new();
+        let _home = TempHome::new().await;
         crate::settings::reload_settings().expect("reload settings");
 
         let db = Arc::new(Database::memory().expect("init db"));
@@ -1384,7 +1402,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn update_current_claude_provider_writes_live_when_backup_row_is_stale() {
-        let _home = TempHome::new();
+        let _home = TempHome::new().await;
         crate::settings::reload_settings().expect("reload settings");
 
         let db = Arc::new(Database::memory().expect("init db"));
@@ -1434,7 +1452,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn update_current_claude_provider_ignores_enabled_flag_without_evidence() {
-        let _home = TempHome::new();
+        let _home = TempHome::new().await;
         crate::settings::reload_settings().expect("reload settings");
 
         let db = Arc::new(Database::memory().expect("init db"));
@@ -1483,7 +1501,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn scrub_gemini_removes_leaked_credentials_from_snippet_and_providers() {
-        let _home = TempHome::new();
+        let _home = TempHome::new().await;
         crate::settings::reload_settings().expect("reload settings");
         let db = Arc::new(Database::memory().expect("init db"));
         let state = AppState::new(db.clone());
@@ -1524,7 +1542,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn scrub_gemini_keeps_a_providers_own_differently_valued_key() {
-        let _home = TempHome::new();
+        let _home = TempHome::new().await;
         crate::settings::reload_settings().expect("reload settings");
         let db = Arc::new(Database::memory().expect("init db"));
         let state = AppState::new(db.clone());
@@ -1548,7 +1566,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn scrub_gemini_audit_records_key_names_but_never_values() {
-        let _home = TempHome::new();
+        let _home = TempHome::new().await;
         crate::settings::reload_settings().expect("reload settings");
         let db = Arc::new(Database::memory().expect("init db"));
         let state = AppState::new(db.clone());
@@ -1598,7 +1616,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn scrub_gemini_never_overwrites_an_existing_audit_record() {
-        let _home = TempHome::new();
+        let _home = TempHome::new().await;
         crate::settings::reload_settings().expect("reload settings");
         let db = Arc::new(Database::memory().expect("init db"));
         let state = AppState::new(db.clone());
@@ -1628,7 +1646,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn scrub_gemini_cleans_the_live_env_without_a_current_provider() {
-        let _home = TempHome::new();
+        let _home = TempHome::new().await;
         crate::settings::reload_settings().expect("reload settings");
         let db = Arc::new(Database::memory().expect("init db"));
         let state = AppState::new(db.clone());
@@ -1667,7 +1685,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn scrub_gemini_live_cleanup_preserves_the_rest_of_the_env_file() {
-        let _home = TempHome::new();
+        let _home = TempHome::new().await;
         crate::settings::reload_settings().expect("reload settings");
         let db = Arc::new(Database::memory().expect("init db"));
         let state = AppState::new(db.clone());
@@ -1717,7 +1735,7 @@ GEMINI_TIMEOUT_MS=30000
     #[tokio::test]
     #[serial]
     async fn scrub_gemini_aborts_before_clearing_the_snippet_when_the_live_backup_fails() {
-        let _home = TempHome::new();
+        let _home = TempHome::new().await;
         crate::settings::reload_settings().expect("reload settings");
         let db = Arc::new(Database::memory().expect("init db"));
         let state = AppState::new(db.clone());
@@ -1756,7 +1774,7 @@ GEMINI_TIMEOUT_MS=30000
     #[tokio::test]
     #[serial]
     async fn scrub_gemini_leaves_no_residue_for_backfill_to_persist() {
-        let _home = TempHome::new();
+        let _home = TempHome::new().await;
         crate::settings::reload_settings().expect("reload settings");
         let db = Arc::new(Database::memory().expect("init db"));
         let state = AppState::new(db.clone());
@@ -1789,7 +1807,7 @@ GEMINI_TIMEOUT_MS=30000
     #[tokio::test]
     #[serial]
     async fn scrub_gemini_is_idempotent_and_skips_on_second_run() {
-        let _home = TempHome::new();
+        let _home = TempHome::new().await;
         crate::settings::reload_settings().expect("reload settings");
         let db = Arc::new(Database::memory().expect("init db"));
         let state = AppState::new(db.clone());
@@ -2124,7 +2142,7 @@ command = "legacy-cmd"
     #[tokio::test]
     #[serial]
     async fn editing_the_routed_claude_provider_rewrites_the_proxy_contract() {
-        let _home = TempHome::new();
+        let _home = TempHome::new().await;
         crate::settings::reload_settings().expect("reload settings");
 
         let db = Arc::new(Database::memory().expect("init db"));
@@ -2217,7 +2235,7 @@ command = "legacy-cmd"
     #[tokio::test]
     #[serial]
     async fn update_current_codex_provider_refreshes_and_clears_catalog_during_takeover() {
-        let _home = TempHome::new();
+        let _home = TempHome::new().await;
         crate::settings::reload_settings().expect("reload settings");
 
         let db = Arc::new(Database::memory().expect("init db"));
@@ -2322,7 +2340,7 @@ requires_openai_auth = true
     #[tokio::test]
     #[serial]
     async fn update_claude_desktop_route_provider_rewrites_profile_in_route_mode() {
-        let home = TempHome::new();
+        let home = TempHome::new().await;
         crate::settings::reload_settings().expect("reload settings");
 
         let db = Arc::new(Database::memory().expect("init db"));
@@ -3625,7 +3643,7 @@ wire_api = "responses"
     fn deleted_codex_account_recovers_after_persisted_startup() {
         for exit_state in ["detached", "crashed"] {
             let _guard = test_guard();
-            let _home = TempHome::new();
+            let _home = TempHome::new_sync();
             crate::settings::reload_settings().unwrap();
             let runtime = tauri::async_runtime::handle();
             let db = Arc::new(Database::memory().unwrap());

@@ -523,10 +523,13 @@ mod tests {
         original_home: Option<String>,
         original_userprofile: Option<String>,
         original_test_home: Option<String>,
+        // 和 hermes/openclaw/workspace 共用一把 HOME 锁；异步测试里只能 await 拿锁。
+        _home_lock: tokio::sync::MutexGuard<'static, ()>,
     }
 
     impl TempHome {
-        fn new() -> Self {
+        async fn new() -> Self {
+            let _home_lock = crate::config::test_home_lock().lock().await;
             let dir = TempDir::new().expect("failed to create temp home");
             let original_home = env::var("HOME").ok();
             let original_userprofile = env::var("USERPROFILE").ok();
@@ -542,6 +545,7 @@ mod tests {
                 original_home,
                 original_userprofile,
                 original_test_home,
+                _home_lock,
             }
         }
     }
@@ -568,7 +572,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_provider_router_creation() {
-        let _home = TempHome::new();
+        let _home = TempHome::new().await;
         let db = Arc::new(Database::memory().unwrap());
         let router = ProviderRouter::new(db);
 
@@ -579,7 +583,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_failover_disabled_uses_current_provider() {
-        let _home = TempHome::new();
+        let _home = TempHome::new().await;
         let db = Arc::new(Database::memory().unwrap());
 
         let provider_a =
@@ -602,7 +606,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_failover_enabled_uses_queue_order_ignoring_current() {
-        let _home = TempHome::new();
+        let _home = TempHome::new().await;
         let db = Arc::new(Database::memory().unwrap());
 
         // 设置 sort_index 来控制顺序：b=1, a=2
@@ -643,7 +647,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_failover_enabled_uses_queue_only_even_if_current_not_in_queue() {
-        let _home = TempHome::new();
+        let _home = TempHome::new().await;
         let db = Arc::new(Database::memory().unwrap());
 
         let provider_a =
@@ -673,7 +677,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn codex_official_current_stays_single_route_when_failover_is_stale() {
-        let _home = TempHome::new();
+        let _home = TempHome::new().await;
         let db = Arc::new(Database::memory().unwrap());
         let official = managed_codex_official("official-a", "account-a");
         let fallback = Provider::with_id(
@@ -702,7 +706,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn stale_codex_official_queue_entries_are_not_retry_targets() {
-        let _home = TempHome::new();
+        let _home = TempHome::new().await;
         let db = Arc::new(Database::memory().unwrap());
         let current = Provider::with_id(
             "third-party".to_string(),
@@ -744,7 +748,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_select_providers_does_not_consume_half_open_permit() {
-        let _home = TempHome::new();
+        let _home = TempHome::new().await;
         let db = Arc::new(Database::memory().unwrap());
 
         db.update_circuit_breaker_config(&CircuitBreakerConfig {
@@ -787,7 +791,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_release_permit_neutral_frees_half_open_slot() {
-        let _home = TempHome::new();
+        let _home = TempHome::new().await;
         let db = Arc::new(Database::memory().unwrap());
 
         // 配置熔断器：1 次失败即熔断，0 秒超时立即进入 HalfOpen

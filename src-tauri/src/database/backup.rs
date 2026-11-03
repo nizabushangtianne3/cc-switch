@@ -1193,10 +1193,14 @@ mod tests {
     struct TestHomeGuard {
         previous_test_home: Option<std::ffi::OsString>,
         temp_dir: tempfile::TempDir,
+        // 和 hermes/openclaw/workspace 共用一把 HOME 锁；同测试里后建的
+        // SettingsGuard 逆序先析构，设置还原发生在锁内。
+        _home_lock: tokio::sync::MutexGuard<'static, ()>,
     }
 
     impl TestHomeGuard {
         fn new() -> Self {
+            let _home_lock = crate::config::test_home_lock().blocking_lock();
             let temp_dir = tempfile::tempdir().expect("create isolated test home");
             let previous_test_home = std::env::var_os("CC_SWITCH_TEST_HOME");
             std::env::set_var("CC_SWITCH_TEST_HOME", temp_dir.path());
@@ -1210,6 +1214,7 @@ mod tests {
             let guard = Self {
                 previous_test_home,
                 temp_dir,
+                _home_lock,
             };
             let resolved = crate::config::get_app_config_dir();
             assert!(

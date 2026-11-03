@@ -6350,7 +6350,7 @@ mod tests {
     #[serial_test::serial]
     async fn mcode_copy_updates_and_disables_without_losing_external_changes() {
         let temp = tempdir().unwrap();
-        let _home = TestHomeGuard::set(temp.path());
+        let _home = TestHomeGuard::set_async(temp.path()).await;
         let _location = StorageLocationGuard::set(&_home, SkillStorageLocation::CcSwitch);
         let db = Arc::new(Database::memory().unwrap());
         let mut skill = poisoned_skill("anthropics/skills:algorithmic-art", "algorithmic-art");
@@ -6903,14 +6903,30 @@ mod tests {
         previous: Option<std::ffi::OsString>,
         previous_kimi_home: Option<std::ffi::OsString>,
         previous_dsh_home: Option<std::ffi::OsString>,
+        // #[serial] 只挡住本进程的 serial 测试；和 hermes/openclaw/workspace 共用
+        // 一把 HOME 锁，才不会和它们互换临时主目录。
+        _home_lock: tokio::sync::MutexGuard<'static, ()>,
     }
     impl TestHomeGuard {
         fn set(home: &Path) -> Self {
+            let _home_lock = crate::config::test_home_lock().blocking_lock();
+            Self::build(home, _home_lock)
+        }
+
+        /// 异步测试用：调用方在 async runtime 里，只能 await 拿锁（blocking_lock
+        /// 在 runtime 线程上会直接 panic）。
+        async fn set_async(home: &Path) -> Self {
+            let _home_lock = crate::config::test_home_lock().lock().await;
+            Self::build(home, _home_lock)
+        }
+
+        fn build(home: &Path, _home_lock: tokio::sync::MutexGuard<'static, ()>) -> Self {
             let guard = Self {
                 home: home.to_path_buf(),
                 previous: std::env::var_os("CC_SWITCH_TEST_HOME"),
                 previous_kimi_home: std::env::var_os("KIMI_CODE_HOME"),
                 previous_dsh_home: std::env::var_os("DSH_HOME"),
+                _home_lock,
             };
             std::env::set_var("DSH_HOME", home.join(".dsh"));
             std::env::set_var("CC_SWITCH_TEST_HOME", home);
@@ -7478,10 +7494,11 @@ mod tests {
     }
 
     #[test]
-    // serial：与 backup/s3_sync/deeplink 等同样读写进程级 CC_SWITCH_TEST_HOME 的测试互斥，
-    // EnvGuard 只负责恢复不提供互斥。
+    // 共享 HOME 锁：与 hermes/openclaw/workspace 等所有换 CC_SWITCH_TEST_HOME 的
+    // 测试互斥；serial 只在本进程的 serial 测试之间有效，挡不住它们。
     #[serial_test::serial]
     fn get_app_skills_dir_honors_test_home_override() {
+        let _home_lock = crate::config::test_home_lock().blocking_lock();
         // 回归：曾直呼 dirs::home_dir() 绕过 CC_SWITCH_TEST_HOME——Unix 上碰巧跟 $HOME
         // 一致所以测试能过，Windows 上 dirs 走 Known Folder API，测试隔离整体失效
         // （tests/skill_sync.rs 扫到 runner 真实用户目录）。
@@ -7669,7 +7686,7 @@ mod tests {
                 // Keep Windows' legacy-HOME fallback out of this destructive test.
                 fs::File::create(config_dir.join("cc-switch.db"))
                     .expect("isolated database sentinel");
-                let _home = TestHomeGuard::set(home.path());
+                let _home = TestHomeGuard::set_async(home.path()).await;
                 assert_eq!(crate::config::get_app_config_dir(), config_dir);
                 let _storage = StorageLocationGuard::set(&_home, location);
                 let _pi_dir = crate::pi_config::test_support::TestAgentDir::new();
@@ -8038,7 +8055,7 @@ mod tests {
     #[serial_test::serial]
     async fn check_updates_report_lists_unreadable_repos() {
         let home = tempdir().expect("home");
-        let _home = TestHomeGuard::set(home.path());
+        let _home = TestHomeGuard::set_async(home.path()).await;
         let db = Arc::new(Database::memory().expect("memory db"));
         let mut installed = poisoned_skill("bad owner!/broken:skill", "skill");
         installed.repo_owner = Some("bad owner!".to_string());

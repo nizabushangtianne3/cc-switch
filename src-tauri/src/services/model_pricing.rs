@@ -477,6 +477,9 @@ mod tests {
     use serial_test::serial;
 
     fn with_test_home(test: impl FnOnce(&Database, &PathBuf)) {
+        // 和 hermes/openclaw/workspace 共用一把 HOME 锁：各模块的私有 guard 并行
+        // 互换 CC_SWITCH_TEST_HOME 时，别的测试会读到别人的临时主目录。
+        let _lock = crate::config::test_home_lock().blocking_lock();
         let temp = tempfile::tempdir().expect("tempdir");
         let previous = std::env::var_os("CC_SWITCH_TEST_HOME");
         std::env::set_var("CC_SWITCH_TEST_HOME", temp.path());

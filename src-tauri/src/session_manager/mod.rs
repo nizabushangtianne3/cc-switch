@@ -417,6 +417,10 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn scan_sessions_includes_mcode_runtime_sessions() {
+        // 和 hermes/openclaw/workspace 共用一把 HOME 锁：私有 guard 并行互换
+        // CC_SWITCH_TEST_HOME 时，扫描会落到别人的临时主目录。
+        let _home_lock = crate::config::test_home_lock().blocking_lock();
+
         let home = tempdir().expect("test home");
         let data_dir = tempdir().expect("mcode data dir");
         let database = data_dir.path().join("v2/sqlite/runtime-state.sqlite");

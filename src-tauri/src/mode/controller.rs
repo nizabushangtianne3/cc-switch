@@ -2556,10 +2556,13 @@ mod mode_tests {
     struct Home {
         dir: TempDir,
         saved: Vec<(&'static str, Option<OsString>)>,
+        // 和 hermes/openclaw/workspace 共用一把 HOME 锁；异步测试里只能 await 拿锁。
+        _home_lock: tokio::sync::MutexGuard<'static, ()>,
     }
 
     impl Home {
-        fn new() -> Self {
+        async fn new() -> Self {
+            let _home_lock = crate::config::test_home_lock().lock().await;
             let dir = TempDir::new().expect("temp home");
             let saved = ["HOME", "USERPROFILE", "CC_SWITCH_TEST_HOME"]
                 .into_iter()
@@ -2570,7 +2573,11 @@ mod mode_tests {
                 })
                 .collect();
             crate::settings::reload_settings().expect("reload settings");
-            Self { dir, saved }
+            Self {
+                dir,
+                saved,
+                _home_lock,
+            }
         }
     }
 
@@ -2687,7 +2694,7 @@ mod mode_tests {
     #[tokio::test]
     #[serial]
     async fn entering_and_leaving_proxy_mode_only_touches_key_and_exclusive_fields() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_settings(USER_SETTINGS);
         let state = state_with(
             AppType::Claude,
@@ -2761,7 +2768,7 @@ mod mode_tests {
     #[tokio::test]
     #[serial]
     async fn route_switch_results_follow_the_applied_mode_not_the_viewed_tab() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_settings(USER_SETTINGS);
         let state = state_with(
             AppType::Claude,
@@ -2817,7 +2824,7 @@ mod mode_tests {
     #[tokio::test]
     #[serial]
     async fn a_route_switch_with_the_same_contract_leaves_the_client_file_alone() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_settings(USER_SETTINGS);
         let state = state_with(
             AppType::Claude,
@@ -2860,7 +2867,7 @@ mod mode_tests {
     #[tokio::test]
     #[serial]
     async fn the_route_providers_exclusive_fields_follow_the_contract() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_settings(USER_SETTINGS);
         let state = state_with(
             AppType::Claude,
@@ -2896,7 +2903,7 @@ mod mode_tests {
     #[tokio::test]
     #[serial]
     async fn the_proxy_route_is_independent_of_the_direct_pointer() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_settings(USER_SETTINGS);
         let state = state_with(
             AppType::Claude,
@@ -2937,7 +2944,7 @@ mod mode_tests {
     #[tokio::test(flavor = "multi_thread")]
     #[serial]
     async fn saving_the_current_provider_waits_for_entering_proxy_mode() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_settings(USER_SETTINGS);
         let state: &'static AppState = Box::leak(Box::new(
             state_with(
@@ -3012,7 +3019,7 @@ mod mode_tests {
     #[tokio::test]
     #[serial]
     async fn nothing_is_saved_while_the_previous_write_cannot_be_finished() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_settings(USER_SETTINGS);
         let state = state_with(
             AppType::Claude,
@@ -3070,7 +3077,7 @@ mod mode_tests {
     #[tokio::test]
     #[serial]
     async fn failover_moves_the_route_without_writing_client_files() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_settings(USER_SETTINGS);
         let state = state_with(
             AppType::Claude,
@@ -3101,7 +3108,7 @@ mod mode_tests {
     #[serial]
     async fn a_crash_at_any_step_is_finished_or_discarded_on_startup() {
         for (point, expect_proxy) in [("pending", false), ("published:0", true), ("target", true)] {
-            let _home = Home::new();
+            let _home = Home::new().await;
             seed_settings(USER_SETTINGS);
             let state = state_with(
                 AppType::Claude,
@@ -3141,7 +3148,7 @@ mod mode_tests {
     #[tokio::test]
     #[serial]
     async fn a_crash_while_leaving_proxy_mode_is_finished_on_startup() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_settings(USER_SETTINGS);
         let state = state_with(
             AppType::Claude,
@@ -3167,7 +3174,7 @@ mod mode_tests {
     #[serial]
     async fn startup_moves_legacy_takeover_state_over_to_the_modes() {
         for enabled in [true, false] {
-            let home = Home::new();
+            let home = Home::new().await;
             seed_settings(
                 r#"{"env":{"ANTHROPIC_BASE_URL":"http://127.0.0.1:15721","ANTHROPIC_AUTH_TOKEN":"PROXY_MANAGED"},"hooks":{}}"#,
             );
@@ -3222,7 +3229,7 @@ mod mode_tests {
     #[tokio::test]
     #[serial]
     async fn gemini_proxy_contract_keeps_the_other_env_lines() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         let env_path = crate::gemini_config::get_gemini_env_path();
         fs::create_dir_all(env_path.parent().unwrap()).unwrap();
         fs::write(
@@ -3260,7 +3267,7 @@ mod mode_tests {
     #[tokio::test]
     #[serial]
     async fn a_new_proxy_address_reaches_every_app_even_if_one_fails() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_settings(USER_SETTINGS);
         seed_gemini(
             "GEMINI_API_KEY=real-key\nGOOGLE_GEMINI_BASE_URL=https://g.example\n",
@@ -3314,7 +3321,7 @@ mod mode_tests {
     #[tokio::test]
     #[serial]
     async fn saving_the_client_host_rewrites_routed_clients_and_retries_on_the_same_value() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_settings(USER_SETTINGS);
         let state = state_with(
             AppType::Claude,
@@ -3362,7 +3369,7 @@ mod mode_tests {
     #[tokio::test]
     #[serial]
     async fn codex_routes_between_official_and_third_party_contracts() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         let native_auth = json!({
             "auth_mode": "chatgpt",
             "OPENAI_API_KEY": null,
@@ -3472,7 +3479,7 @@ mod mode_tests {
     #[serial]
     async fn codex_official_route_keeps_the_direct_session_bucket() {
         for unified in [false, true] {
-            let _home = Home::new();
+            let _home = Home::new().await;
             let native_auth = json!({
                 "auth_mode": "chatgpt",
                 "OPENAI_API_KEY": null,
@@ -3691,7 +3698,7 @@ command = "fs-server"
     #[tokio::test]
     #[serial]
     async fn codex_direct_switch_replaces_only_key_fields_and_round_trips() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         set_preservation(true);
         seed_codex(CODEX_USER_LIVE, None);
         let state = state_with(AppType::Codex, &codex_a_b(), "a").await;
@@ -3735,7 +3742,7 @@ command = "fs-server"
     #[tokio::test]
     #[serial]
     async fn codex_a_row_catalog_pointer_leaves_with_its_provider() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         set_preservation(true);
         seed_codex(CODEX_USER_LIVE, None);
         let a = codex_row(
@@ -3786,7 +3793,7 @@ command = "fs-server"
     #[tokio::test]
     #[serial]
     async fn codex_exclusive_fields_the_user_changed_stay() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         set_preservation(true);
         seed_codex(CODEX_USER_LIVE, None);
         let state = state_with(AppType::Codex, &codex_a_b(), "a").await;
@@ -3807,7 +3814,7 @@ command = "fs-server"
     #[tokio::test]
     #[serial]
     async fn codex_official_switch_leaves_a_dormant_route_table() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         set_preservation(true);
         seed_codex(CODEX_USER_LIVE, Some(&chatgpt_login("acct")));
         let [a, b] = codex_a_b();
@@ -3845,7 +3852,7 @@ command = "fs-server"
     #[tokio::test]
     #[serial]
     async fn codex_an_active_profile_overriding_the_route_is_refused_without_side_effects() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         set_preservation(true);
         let live = format!(
             "profile = \"work\"\n{CODEX_USER_LIVE}\n[profiles.work]\nmodel_provider = \"ollama_local\"\n"
@@ -3875,7 +3882,7 @@ command = "fs-server"
     #[tokio::test]
     #[serial]
     async fn codex_a_profile_selecting_the_built_in_openai_allows_the_official_card() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         set_preservation(true);
         let live = format!(
             "profile = \"work\"\n{CODEX_USER_LIVE}\n[profiles.work]\nmodel_provider = \"openai\"\n"
@@ -3904,7 +3911,7 @@ command = "fs-server"
     #[tokio::test]
     #[serial]
     async fn codex_migration_retires_only_tables_cc_switch_wrote() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         set_preservation(true);
         // 旧版按行的 id 整份写进来的表：a（id 和地址都对得上 a 的行）、b 的地址被用户改过、
         // 被 profile 引用的 c、代理占位残留、用户自己的 ollama_local。
@@ -3964,7 +3971,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_switch_crash_rolls_every_file_forward() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         set_preservation(false);
         seed_codex(CODEX_USER_LIVE, Some(&chatgpt_login("acct")));
         let [a, mut b] = codex_a_b();
@@ -4009,7 +4016,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_preservation_off_gives_the_login_back_on_the_way_to_official() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         set_preservation(false);
         seed_codex("", Some(&chatgpt_login("acct")));
         let [a, b] = codex_a_b();
@@ -4059,7 +4066,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_detaching_and_attaching_keep_the_login_next_to_a_third_party_route() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         set_preservation(false);
         seed_codex("", Some(&chatgpt_login("acct")));
         let state = state_with(AppType::Codex, &codex_a_b(), "a").await;
@@ -4093,7 +4100,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_entering_the_proxy_gives_back_a_stashed_login() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         set_preservation(false);
         seed_codex("", Some(&chatgpt_login("acct")));
         let [a, b] = codex_a_b();
@@ -4150,7 +4157,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_a_retry_after_a_failed_switch_finishes_it_first() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         let (state, official) = codex_switch_interrupted_after_auth_json().await;
 
         // 重试切到 b：先补完到 a，再按补完后的 auth.json 和暂存从 a 切到 b。
@@ -4164,7 +4171,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_an_interrupted_switch_keeps_the_login_when_codex_changed_config_toml() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         let (state, official) = codex_switch_interrupted_after_auth_json().await;
         // 补完之前 Codex 自己改了 config.toml（信任了一个新项目）。
         let mut text = codex_text();
@@ -4192,7 +4199,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_an_interrupted_switch_keeps_the_stash_when_the_published_file_changed_again() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         let (state, _official) = codex_switch_interrupted_after_auth_json().await;
         fs::write(codex_auth_path(), chatgpt_login("other").to_string()).unwrap();
 
@@ -4211,7 +4218,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_an_unreadable_login_stash_is_never_overwritten() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         set_preservation(false);
         seed_codex(CODEX_USER_LIVE, Some(&chatgpt_login("acct")));
         let stash = DeviceStore::for_device().file("codex-login-stash.json");
@@ -4238,7 +4245,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_official_routes_for_different_accounts_swap_the_login() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         set_preservation(true);
         seed_codex("", Some(&chatgpt_login("acct-a")));
         // 两张没绑托管账号的官方卡，行里各存着一个账号（旧版回填的，暂存第一次建立时
@@ -4294,7 +4301,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn claude_a_retry_after_a_failed_switch_removes_the_failed_targets_exclusive_fields() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_settings(USER_SETTINGS);
         let a = claude("a", "https://a.example", json!({}));
         let b = claude(
@@ -4324,7 +4331,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_keyring_logins_keep_requires_openai_auth_on_the_preservation_setting() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         for preserve in [true, false] {
             set_preservation(preserve);
             seed_codex("cli_auth_credentials_store = \"keyring\"\n", None);
@@ -4343,7 +4350,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_route_switch_with_the_same_contract_leaves_the_client_files_alone() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         set_preservation(true);
         seed_codex(CODEX_USER_LIVE, None);
         // b、c 在客户端看来一样（同一个模型名，没有独有字段），只是上游和 Key 不同。
@@ -4421,7 +4428,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_editor_saves_key_fields_to_the_row_and_global_edits_to_live() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         set_preservation(true);
         seed_codex(CODEX_USER_LIVE, None);
         let state = state_with(AppType::Codex, &codex_a_b(), "a").await;
@@ -4521,7 +4528,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_editor_leaves_exclusive_fields_from_live_to_the_user() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         set_preservation(true);
         seed_codex(
             &CODEX_USER_LIVE.replace(
@@ -4613,7 +4620,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_editor_leaves_what_the_user_did_not_touch_to_the_client() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         set_preservation(true);
         let live = CODEX_USER_LIVE.replace(
             "model = \"gpt-a\"\n",
@@ -4683,7 +4690,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_add_dialog_leaves_a_live_field_changed_after_opening_to_the_client() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         set_preservation(true);
         seed_codex(
             &CODEX_USER_LIVE.replace(
@@ -4770,7 +4777,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_editor_route_table_renamed_in_the_editor_stays_with_the_provider() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         set_preservation(true);
         seed_codex(CODEX_USER_LIVE, None);
         let state = state_with(AppType::Codex, &codex_a_b(), "a").await;
@@ -4818,7 +4825,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_a_login_refreshed_during_the_switch_is_never_overwritten() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         set_preservation(false);
         seed_codex("", Some(&chatgpt_login("acct")));
         let [a, _] = codex_a_b();
@@ -4947,7 +4954,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn gemini_switch_replaces_only_key_fields_and_round_trips() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_gemini(GEMINI_USER_ENV, GEMINI_USER_SETTINGS);
         let state = state_with(AppType::Gemini, &gemini_a_vertex(), "a").await;
 
@@ -4986,7 +4993,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn gemini_official_switch_selects_the_google_login() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_gemini(GEMINI_USER_ENV, GEMINI_USER_SETTINGS);
         let [a, _] = gemini_a_vertex();
         let mut official = gemini("google", json!({}), json!({}));
@@ -5005,7 +5012,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn gemini_proxy_contract_follows_the_route_model_and_skips_same_contract_routes() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_gemini(GEMINI_USER_ENV, GEMINI_USER_SETTINGS);
         let [a, _] = gemini_a_vertex();
         let mut b = a.clone();
@@ -5071,7 +5078,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn gemini_editor_saves_key_fields_to_the_row_and_global_edits_to_live() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_gemini(GEMINI_USER_ENV, GEMINI_USER_SETTINGS);
         let state = state_with(AppType::Gemini, &gemini_a_vertex(), "a").await;
 
@@ -5216,7 +5223,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn grok_switch_deletes_the_written_table_even_after_the_client_changed_the_default() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_grok(GROK_USER_LIVE);
         let state = state_with(
             AppType::GrokBuild,
@@ -5246,7 +5253,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn grok_table_keys_follow_the_provider_and_renames_replace_the_old_table() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_grok(GROK_USER_LIVE);
         let state = state_with(
             AppType::GrokBuild,
@@ -5286,7 +5293,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn grok_without_a_write_record_infers_the_table_an_older_version_wrote() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         // 旧版把 a 的行整份写进了 live：新版没有写入记录。
         let a = grok_row("a", "grok-4.5", "");
         let old = format!(
@@ -5311,7 +5318,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn grok_proxy_writes_the_route_table_through_the_engine() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_grok(GROK_USER_LIVE);
         let state = state_with(
             AppType::GrokBuild,
@@ -5367,7 +5374,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn grok_switch_crash_rolls_forward_with_the_write_record() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_grok(GROK_USER_LIVE);
         let state = state_with(
             AppType::GrokBuild,
@@ -5401,7 +5408,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn grok_editor_saves_the_table_to_the_row_and_global_edits_to_live() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_grok(GROK_USER_LIVE);
         let state = state_with(
             AppType::GrokBuild,
@@ -5500,7 +5507,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_add_dialog_saves_key_fields_to_the_row_and_global_edits_to_live() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         set_preservation(true);
         seed_codex(CODEX_USER_LIVE, None);
         let state = state_with(AppType::Codex, &codex_a_b(), "a").await;
@@ -5538,7 +5545,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_add_dialog_keeps_the_users_exclusive_fields_out_of_the_new_row() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         set_preservation(true);
         seed_codex(
             &CODEX_USER_LIVE.replace(
@@ -5583,7 +5590,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn gemini_add_dialog_first_provider_writes_key_fields_and_sets_the_pointer() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_gemini(GEMINI_USER_ENV, GEMINI_USER_SETTINGS);
         let state = state_without_providers().await;
 
@@ -5633,7 +5640,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn grok_add_dialog_first_provider_records_the_written_table() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_grok(GROK_USER_LIVE);
         let state = state_without_providers().await;
 
@@ -5731,7 +5738,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn stack_models_join_the_claude_contract_and_leave_with_it() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_settings(USER_SETTINGS);
         let state = state_with(AppType::Claude, &stack_rows(), "a").await;
         enter(&state, &AppType::Claude, true).await.expect("enter");
@@ -5818,7 +5825,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn a_users_own_model_discovery_switch_survives_switches_and_proxy_mode() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         let mut user: Value = serde_json::from_str(USER_SETTINGS).unwrap();
         user["env"][DISCOVERY_ENV] = json!("1");
         seed_settings(&serde_json::to_string_pretty(&user).unwrap());
@@ -5837,7 +5844,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn the_stack_model_picker_replaces_a_users_own_and_leaves_with_stack_mode() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         let mut user: Value = serde_json::from_str(USER_SETTINGS).unwrap();
         user[CLAUDE_MODEL_PICKER] = json!({ "options": [{ "model": "mine" }] });
         seed_settings(&serde_json::to_string_pretty(&user).unwrap());
@@ -5857,7 +5864,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn stack_models_leave_the_client_file_on_exit_and_come_back_on_enter() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_settings(USER_SETTINGS);
         let state = state_with(AppType::Claude, &stack_rows(), "a").await;
 
@@ -5881,7 +5888,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn the_default_leads_the_aliases_and_repeating_a_target_changes_nothing() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_settings(USER_SETTINGS);
         let state = state_with(AppType::Claude, &stack_rows(), "a").await;
         enter(&state, &AppType::Claude, true).await.expect("enter");
@@ -5919,7 +5926,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn routing_mode_and_stack_mode_share_the_list() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_settings(USER_SETTINGS);
         let state = state_with(AppType::Claude, &stack_rows(), "a").await;
         set_member(&state, "kimi", true).await;
@@ -5960,7 +5967,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn entering_with_a_picked_route_changes_target_and_mode_in_one_step() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_settings(USER_SETTINGS);
         let state = state_with(AppType::Claude, &stack_rows(), "a").await;
         let view = || app_mode_view(&state, &AppType::Claude).expect("mode view");
@@ -6000,7 +6007,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn setting_the_route_in_direct_mode_only_records_it() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_settings(USER_SETTINGS);
         let mut official = claude("official", "https://api.anthropic.com", json!({}));
         official.category = Some("official".to_string());
@@ -6047,7 +6054,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn the_default_cannot_be_removed_and_a_new_default_joins_the_list() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_settings(USER_SETTINGS);
         let state = state_with(AppType::Claude, &stack_rows(), "a").await;
         enter(&state, &AppType::Claude, true).await.expect("enter");
@@ -6086,7 +6093,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn changing_the_main_page_switch_sends_apps_in_the_other_mode_back_to_direct() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_settings(USER_SETTINGS);
         let state = state_with(AppType::Claude, &stack_rows(), "a").await;
         set_member(&state, "kimi", true).await;
@@ -6181,7 +6188,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn claude_desktop_route_mode_writes_the_gateway_and_keeps_the_server_running() {
-        let home = Home::new();
+        let home = Home::new().await;
         let _dirs = DesktopDirs::under(&home);
         seed_settings(USER_SETTINGS);
         let state = state_with(
@@ -6275,7 +6282,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn claude_desktop_native_direct_card_can_enter_routing_before_becoming_a_mapping_card() {
-        let home = Home::new();
+        let home = Home::new().await;
         let _dirs = DesktopDirs::under(&home);
         seed_settings(USER_SETTINGS);
         let desktop = AppType::ClaudeDesktop;
@@ -6386,7 +6393,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn claude_desktop_stack_mode_lists_the_members_after_the_default() {
-        let home = Home::new();
+        let home = Home::new().await;
         let _dirs = DesktopDirs::under(&home);
         seed_settings(USER_SETTINGS);
         let state = state_with(
@@ -6473,7 +6480,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn claude_desktop_on_a_mapping_card_starts_in_route_mode_after_upgrade() {
-        let home = Home::new();
+        let home = Home::new().await;
         let _dirs = DesktopDirs::under(&home);
         seed_settings(USER_SETTINGS);
         let state = state_with(
@@ -6517,7 +6524,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn claude_desktop_old_mapping_card_can_be_deleted_after_routing_elsewhere() {
-        let home = Home::new();
+        let home = Home::new().await;
         let _dirs = DesktopDirs::under(&home);
         seed_settings(USER_SETTINGS);
         let state = state_with(
@@ -6568,7 +6575,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn claude_desktop_upgrade_that_cannot_attach_points_desktop_back_at_official() {
-        let home = Home::new();
+        let home = Home::new().await;
         let _dirs = DesktopDirs::under(&home);
         seed_settings(USER_SETTINGS);
         let state = state_with(
@@ -6630,7 +6637,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn changing_the_main_page_switch_with_nothing_to_exit_keeps_the_server() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_settings(USER_SETTINGS);
         let state = state_with(AppType::Claude, &stack_rows(), "a").await;
         // 各应用都直连，服务是用户手动开的（或者 Claude Desktop 的模型映射在用）。
@@ -6644,7 +6651,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn a_failover_finishing_after_entering_stack_mode_is_dropped() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_settings(USER_SETTINGS);
         let state = state_with(AppType::Claude, &stack_rows(), "a").await;
         enter(&state, &AppType::Claude, true).await.expect("enter");
@@ -6662,7 +6669,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn enabling_failover_cannot_move_the_default_in_stack_mode() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_settings(USER_SETTINGS);
         let state = state_with(AppType::Claude, &stack_rows(), "a").await;
         enter(&state, &AppType::Claude, false)
@@ -6698,7 +6705,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn stack_mode_sends_default_requests_to_the_default_only() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_settings(USER_SETTINGS);
         let state = state_with(AppType::Claude, &stack_rows(), "a").await;
         // 故障转移开着，队列里还有别家。
@@ -6749,7 +6756,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn official_accounts_cannot_be_stacked() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_settings(USER_SETTINGS);
         let mut official = claude("official", "https://api.anthropic.com", json!({}));
         official.category = Some("official".to_string());
@@ -6775,7 +6782,7 @@ model_provider = "c"
             ("published:0", true),
             ("target", true),
         ] {
-            let _home = Home::new();
+            let _home = Home::new().await;
             seed_settings(USER_SETTINGS);
             let state = state_with(AppType::Claude, &stack_rows(), "a").await;
             enter(&state, &AppType::Claude, true).await.expect("enter");
@@ -6807,7 +6814,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn operations_that_do_not_touch_the_list_keep_it() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_settings(USER_SETTINGS);
         let state = state_with(AppType::Claude, &stack_rows(), "a").await;
         set_member(&state, "kimi", true).await;
@@ -6828,7 +6835,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn editing_or_deleting_an_stacked_provider_rewrites_the_contract() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_settings(USER_SETTINGS);
         let state = state_with(AppType::Claude, &stack_rows(), "a").await;
         enter(&state, &AppType::Claude, true).await.expect("enter");
@@ -6864,7 +6871,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn the_first_model_of_the_defaults_list_leads_the_aliases() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_settings(USER_SETTINGS);
         let state = state_with(AppType::Claude, &stack_rows(), "a").await;
         enter(&state, &AppType::Claude, true).await.expect("enter");
@@ -6918,7 +6925,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn routing_mode_keeps_the_claude_aliases() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_settings(USER_SETTINGS);
         let state = state_with(AppType::Claude, &stack_rows(), "a").await;
         set_member(&state, "kimi", true).await;
@@ -6976,7 +6983,7 @@ model_provider = "c"
 
     async fn check_codex_proxy_compaction_preference(name: &str, capability: Option<&str>) {
         for stack in [false, true] {
-            let _home = Home::new();
+            let _home = Home::new().await;
             seed_codex("[features]\ngoals = true\n", None);
             let mut relay = codex_native(
                 "relay",
@@ -7111,7 +7118,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_stack_models_join_the_catalog_and_leave_with_it() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_codex("approval_policy = \"on-request\"\n", None);
         let state = state_with(AppType::Codex, &codex_stack_rows(), "a").await;
         enter(&state, &AppType::Codex, true).await.expect("enter");
@@ -7196,7 +7203,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_custom_context_windows_survive_updates_and_restart() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_codex("", None);
         let mut relay = codex_native(
             "relay",
@@ -7256,7 +7263,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_stack_mode_leaves_the_subagent_model_to_the_main_model() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_codex("[agents]\nmax_threads = 4\n", None);
         let [_, deepseek, zhipu] = codex_stack_rows();
         let route = codex_native(
@@ -7308,7 +7315,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_stack_subagent_setting_follows_the_merged_catalog() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_codex("[agents]\nmax_threads = 4\n", None);
         let [_, deepseek, zhipu] = codex_stack_rows();
         let route = codex_native(
@@ -7439,7 +7446,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_stack_auto_review_setting_follows_the_merged_catalog() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_codex("approval_policy = \"on-request\"\n", None);
         let [_, deepseek, zhipu] = codex_stack_rows();
         let route = codex_native(
@@ -7519,7 +7526,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn classic_subagents_toggle_rewrites_the_stack_catalog() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_codex("approval_policy = \"on-request\"\n", None);
         let state = state_with(AppType::Codex, &codex_stack_rows(), "a").await;
 
@@ -7561,7 +7568,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_route_with_its_own_catalog_reports_stack_models_unpublished() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_codex("", None);
         let [_, deepseek, zhipu] = codex_stack_rows();
         let route = codex_native(
@@ -7644,7 +7651,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_direct_account_switch_reports_the_cached_login() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         let clients = FakeClients::install();
         seed_codex("", Some(&chatgpt_login("acct-a")));
         let official = |id: &str| {
@@ -7681,7 +7688,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_stack_view_reports_clients_on_an_old_catalog() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         let clients = FakeClients::install();
         seed_codex("", None);
         clients.desktop_running_for("10:00");
@@ -7732,7 +7739,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_leaving_route_reports_clients_still_on_the_route_catalog() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         let clients = FakeClients::install();
         seed_codex("", None);
         let route = codex_native(
@@ -7781,7 +7788,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_route_view_reports_clients_stale_after_a_mode_switch() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         let clients = FakeClients::install();
         seed_codex("", None);
         let route = codex_native(
@@ -7828,7 +7835,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_route_mode_with_its_own_catalog_does_not_report_clients() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         let clients = FakeClients::install();
         seed_codex("", None);
         clients.desktop_running_for("10:00");
@@ -7852,7 +7859,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_route_with_its_own_catalog_skips_the_client_check() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         let clients = FakeClients::install();
         seed_codex("", None);
         clients.desktop_running_for("10:00");
@@ -7878,7 +7885,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_a_hand_written_catalog_pointer_gives_way_to_the_stack_catalog() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_codex("model_catalog_json = \"/work/global-models.json\"\n", None);
         let state = state_with(AppType::Codex, &codex_stack_rows(), "a").await;
         enter(&state, &AppType::Codex, true).await.expect("enter");
@@ -7903,7 +7910,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_adopting_the_catalog_drops_the_route_rows_own_pointer() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_codex("", None);
         let [_, deepseek, zhipu] = codex_stack_rows();
         let route = codex_native(
@@ -7950,7 +7957,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_editor_catalog_pointer_belongs_to_the_card() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         set_preservation(true);
         seed_codex(
             &format!("model_catalog_json = \"/work/mine.json\"\n{CODEX_USER_LIVE}"),
@@ -8041,7 +8048,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn editing_an_stacked_codex_provider_rewrites_the_catalog() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_codex("", None);
         let state = state_with(AppType::Codex, &codex_stack_rows(), "a").await;
         enter(&state, &AppType::Codex, true).await.expect("enter");
@@ -8069,7 +8076,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn reordering_providers_reorders_the_codex_stack_catalog() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_codex("", None);
         let state = state_with(AppType::Codex, &codex_stack_rows(), "a").await;
         enter(&state, &AppType::Codex, true).await.expect("enter");
@@ -8133,7 +8140,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn reordering_providers_in_direct_mode_only_settles_the_stack() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_codex("", None);
         let state = state_with(AppType::Codex, &codex_stack_rows(), "a").await;
         set_codex_member(&state, "deepseek", true).await;
@@ -8180,7 +8187,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn sort_order_update_does_not_resurrect_a_deleted_provider() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_codex("", None);
         let state = state_with(AppType::Codex, &codex_stack_rows(), "a").await;
         state.db.delete_provider("codex", "zhipu").unwrap();
@@ -8212,7 +8219,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_a_broken_stacked_provider_is_skipped_and_cannot_be_stacked() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_codex("", None);
         let mut rows = codex_stack_rows().to_vec();
         let mut broken = codex_native("broken", "https://b.example/v1", "", None);
@@ -8265,7 +8272,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn failure_logs_drop_the_config_line_a_broken_row_quotes() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_codex("", None);
         let secret = "sk-review-only-secret";
         let mut rows = codex_stack_rows().to_vec();
@@ -8292,7 +8299,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_official_accounts_cannot_be_stacked() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_codex("", None);
         let mut rows = codex_stack_rows().to_vec();
         rows.push(codex_official());
@@ -8407,7 +8414,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_a_fallback_recovers_from_a_fresh_entry_once_the_login_is_back() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_codex(
             "cli_auth_credentials_store = \"auto\"\n",
             Some(&chatgpt("ws", "alice")),
@@ -8440,7 +8447,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_official_route_lists_every_official_model_before_the_stacked_ones() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         let alice = chatgpt("ws", "alice");
         seed_codex("", Some(&alice));
         let auth_bytes = fs::read(codex_auth_path()).unwrap();
@@ -8503,7 +8510,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_official_list_without_a_listed_model_is_not_published() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_codex("", Some(&chatgpt("ws", "alice")));
         let mut models = native_models(&[("gpt-5.5", 1), ("codex-auto-review", 2)]);
         for model in &mut models {
@@ -8530,7 +8537,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_a_failed_rewrite_after_a_refresh_is_retried_at_the_next_check() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_codex("", Some(&chatgpt("ws", "alice")));
         let fetches = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let break_config: Box<dyn Fn() + Send + Sync> = {
@@ -8572,7 +8579,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_a_login_that_changes_before_the_write_stops_it() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_codex("", Some(&chatgpt("ws", "alice")));
         // 拿锁前按 alice 取了列表，之后 Codex 恰好换成同一工作区的 bob 登录。
         let _fake = fake_models(
@@ -8601,7 +8608,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_a_keychain_login_that_changes_during_the_fetch_stops_the_write() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         seed_codex("cli_auth_credentials_store = \"keyring\"\n", None);
         let keychain = Arc::new(std::sync::Mutex::new(CodexKeychainLogin::Found(chatgpt(
             "ws", "alice",
@@ -8638,7 +8645,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_the_login_comes_from_where_codex_keeps_it() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         let official = crate::database::CODEX_OFFICIAL_PROVIDER_ID;
 
         // keyring：auth.json 里残留 alice，Codex 用的是钥匙串里的 bob。
@@ -8729,7 +8736,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_switching_back_to_official_uses_the_login_it_will_restore() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         set_preservation(false);
         seed_codex("", Some(&chatgpt("ws", "alice")));
         let fake = fake_models(vec![official_list(&[])], CodexKeychainLogin::Missing, None);
@@ -8764,7 +8771,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_keyless_draft_is_shown_and_saved_but_never_written_to_live() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         set_preservation(true);
         seed_codex("model = \"gpt-5.4\"\n", Some(&chatgpt_login("acct")));
         let [a, b] = codex_a_b();
@@ -8842,7 +8849,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_editing_the_current_provider_into_a_keyless_row_is_refused() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         set_preservation(true);
         seed_codex(CODEX_USER_LIVE, Some(&chatgpt_login("acct")));
         let state = state_with(AppType::Codex, &codex_a_b(), "a").await;
@@ -8889,7 +8896,7 @@ model_provider = "c"
     #[tokio::test]
     #[serial]
     async fn codex_adding_a_keyless_first_provider_is_refused() {
-        let _home = Home::new();
+        let _home = Home::new().await;
         set_preservation(true);
         seed_codex("model = \"gpt-5.4\"\n", Some(&chatgpt_login("acct")));
         let state = state_without_providers().await;
