@@ -182,3 +182,24 @@ fn show_native_menu(hwnd: isize, x: i32, y: i32) {
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serial_test::serial;
+    use std::time::Duration;
+
+    #[test]
+    #[serial]
+    fn a_second_right_click_inside_the_dedup_window_is_swallowed() {
+        // 先让更早的调用走出窗口，别让上一位的状态影响本测试。
+        std::thread::sleep(RIGHT_CLICK_DEDUP + Duration::from_millis(20));
+
+        assert!(claim_right_click(), "第一次右键算数");
+        assert!(!claim_right_click(), "300ms 内的第二次被合并");
+        assert!(!claim_right_click(), "窗口内的第三遍同样不算");
+
+        std::thread::sleep(RIGHT_CLICK_DEDUP + Duration::from_millis(20));
+        assert!(claim_right_click(), "窗口过去之后又算数");
+    }
+}
