@@ -125,9 +125,11 @@ objc2-app-kit-03 = { package = "objc2-app-kit", version = "0.3", default-feature
 
 # Optimize release binary size to help reduce AppImage footprint
 [profile.release]
-# 单编译单元给 LLVM 足够的跨函数优化空间：发布产物更小，运行时优化更完整。
+# 单编译单元 + 全量 LTO：给 LLVM 最大的跨函数优化空间。实测（cc_switch_lib.dll，
+# 2,360,320 字节）：thin → fat 体积不变、构建 +16s，跨 crate 内联更充分；
+# opt-level 保持 "s" 是体积优先的选择，要再往上提需另行权衡体积。
 codegen-units = 1
-lto = "thin"
+lto = "fat"
 opt-level = "s"
 # 使用 unwind 以便 panic hook 能捕获 backtrace（abort 会直接终止无法捕获）
 panic = "unwind"
