@@ -412,3 +412,44 @@ pub fn install_skills_from_zip(
 
     SkillService::install_from_zip(&app_state.db, path, &app_type).map_err(|e| e.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serial_test::serial;
+
+    #[test]
+    #[serial]
+    fn cc_switch_skills_dir_lands_under_the_app_config_dir() {
+        // 和 openclaw_config / workspace 共用一把 HOME 锁，别让并行测试互换临时主目录。
+        let _lock = crate::config::test_home_lock().blocking_lock();
+        let temp = tempfile::tempdir().expect("tempdir");
+        let other = tempfile::tempdir().expect("another tempdir");
+        let previous = std::env::var_os("CC_SWITCH_TEST_HOME");
+        std::env::set_var("CC_SWITCH_TEST_HOME", temp.path());
+
+        let dir = cc_switch_skills_dir();
+        assert_eq!(
+            dir,
+            crate::config::get_app_config_dir().join("skills"),
+            "Skills 目录只能是 app_config_dir 下的 skills"
+        );
+        assert!(
+            dir.starts_with(temp.path()),
+            "必须跟着 CC_SWITCH_TEST_HOME 走，实际: {}",
+            dir.display()
+        );
+
+        // 换了 home，目录必须跟着换：否则「存储与同步」会把用户指到别的盘。
+        std::env::set_var("CC_SWITCH_TEST_HOME", other.path());
+        assert_eq!(
+            cc_switch_skills_dir(),
+            other.path().join(".cc-switch").join("skills")
+        );
+
+        match previous {
+            Some(value) => std::env::set_var("CC_SWITCH_TEST_HOME", value),
+            None => std::env::remove_var("CC_SWITCH_TEST_HOME"),
+        }
+    }
+}
