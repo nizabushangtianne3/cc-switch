@@ -127,10 +127,13 @@ objc2-app-kit-03 = { package = "objc2-app-kit", version = "0.3", default-feature
 [profile.release]
 # 单编译单元 + 全量 LTO：给 LLVM 最大的跨函数优化空间。实测（cc_switch_lib.dll，
 # 2,360,320 字节）：thin → fat 体积不变、构建 +16s，跨 crate 内联更充分；
-# opt-level 保持 "s" 是体积优先的选择，要再往上提需另行权衡体积。
+# opt-level 3 的实测依据：同一份 SSE 热路径（透传流每分片都要跑），201 个事件 /
+# 45,817 字节跑 15 次取最优，"s" 29.5~29.7us、"3" 23.6~24.4us，快约 19%，且各自的
+# 两次测量都稳定在 0.8% 以内。代理每请求的 CPU 主要耗在 SSE 扫描与 JSON 解析，这
+# 19% 直接落到每个流式请求上，按「极致性能」取 3。
 codegen-units = 1
 lto = "fat"
-opt-level = "s"
+opt-level = 3
 # 使用 unwind 以便 panic hook 能捕获 backtrace（abort 会直接终止无法捕获）
 panic = "unwind"
 strip = "symbols"
