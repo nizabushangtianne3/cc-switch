@@ -20,6 +20,7 @@ use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
 use serde::Deserialize;
 use serde_json::Value;
+use smallvec::SmallVec;
 use std::sync::Mutex;
 use std::{
     sync::{
@@ -620,6 +621,124 @@ async fn parse_and_log_non_streaming_usage(
     }
 }
 
+/// 上游分块 → SSE 事件的切分与分发状态。
+///
+/// 从透传流的 `async_stream` 里抽出来：分片字节喂进 [`SseEventScanner::feed`]，
+/// UTF-8 补齐、事件切分、字段剥离、用量收集全在这里完成。抽出来之后透传流只剩
+/// 超时守时与透传本身，扫描逻辑可以用赤裸的分块序列直接驱动做单元测试，不必
+/// 再搭一个流。
+struct SseEventScanner {
+    /// 尚未构成完整事件的字节（UTF-8 文本）。
+    buffer: String,
+    /// 跨分片的多字节字符补齐器。
+    utf8_tail: Utf8TailDecoder,
+    tag: &'static str,
+    collector: Option<SseUsageCollector>,
+    /// 没有收集器且没开 Debug 日志时整条链都不跑：透传流这时只是转发字节。
+    inspect: bool,
+}
+
+impl SseEventScanner {
+    fn new(tag: &'static str, collector: Option<SseUsageCollector>) -> Self {
+        let inspect = collector.is_some() || log::log_enabled!(log::Level::Debug);
+        // 上游分片常在几千字节量级，一次给够 16 KiB：长流式响应里省掉 String
+        // 倍增时的反复拷贝（那是每个响应常数次、每次拷全缓冲的动作）。
+        Self {
+            buffer: String::with_capacity(if inspect { 16 * 1024 } else { 0 }),
+            utf8_tail: Utf8TailDecoder::default(),
+            tag,
+            collector,
+            inspect,
+        }
+    }
+
+    /// 喂入一个上游分片：解码成 UTF-8，切出完整事件并逐个分发。
+    fn feed(&mut self, bytes: &[u8]) {
+        if !self.inspect {
+            return;
+        }
+        self.utf8_tail.append(&mut self.buffer, bytes);
+
+        let collector = self.collector.as_ref();
+        let mut consumed = 0;
+        while let Some((end, delim)) = next_sse_block_range(&self.buffer[consumed..]) {
+            let end = consumed + end;
+            dispatch_sse_event(self.tag, collector, &self.buffer[consumed..end]);
+            consumed = end + delim;
+        }
+        if consumed == self.buffer.len() {
+            self.buffer.clear();
+        } else if consumed > 0 {
+            self.buffer.drain(..consumed);
+        }
+    }
+
+    /// 流结束（正常或中断都要走到）：交回收集器并触发用量回调。
+    fn finish(&mut self) {
+        if let Some(collector) = self.collector.take() {
+            collector.finish();
+        }
+    }
+
+    /// 仅供测试：已经被缓冲但还没构成完整事件的尾部。
+    #[cfg(test)]
+    fn pending(&self) -> &str {
+        &self.buffer
+    }
+}
+
+/// 分发一个完整 SSE 事件。
+///
+/// 行只扫一遍：先同时认 `event` 与 `data`，data 行收进 SmallVec（通常一个事件
+/// 只有一行，全部落在内联存储里）再按行序处理。这样比「先扫一遍找 event、再扫
+/// 一遍找 data」少一遍迭代，且 event 名无论写在 data 之前还是之后都同样可见，
+/// 语义与原先的两遍扫描完全一致。
+fn dispatch_sse_event(tag: &'static str, collector: Option<&SseUsageCollector>, event_text: &str) {
+    if event_text.trim().is_empty() {
+        return;
+    }
+
+    let mut event_name: Option<&str> = None;
+    let mut data_lines: SmallVec<[&str; 4]> = SmallVec::new();
+    for line in event_text.lines() {
+        if let Some(name) = strip_sse_field(line, "event") {
+            if event_name.is_none() {
+                event_name = Some(name);
+            }
+        } else if let Some(data) = strip_sse_field(line, "data") {
+            data_lines.push(data);
+        }
+    }
+
+    for data in data_lines {
+        if let Some(collector) = collector {
+            collector.observe_data(event_name, data);
+        }
+        if data.trim() != "[DONE]" {
+            // 只有 usage collector 存在时才解析 JSON；过滤器先用子串把与用量
+            // 无关的事件挡掉，省下整棵 Value 树。
+            let collected = match collector {
+                Some(collector) if collector.should_collect(data) => {
+                    match serde_json::from_str::<Value>(data) {
+                        Ok(json_value) => {
+                            collector.push(json_value);
+                            true
+                        }
+                        Err(_) => false,
+                    }
+                }
+                _ => false,
+            };
+            log::trace!(
+                "[{tag}] <<< SSE data: bytes={}, usage_collected={collected} (content omitted)",
+                data.len()
+            );
+        } else {
+            log::debug!("[{tag}] <<< SSE: [DONE]");
+        }
+    }
+}
+
 /// 创建带日志记录和超时控制的透传流
 pub fn create_logged_passthrough_stream(
     stream: impl Stream<Item = Result<Bytes, std::io::Error>> + Send + 'static,
@@ -630,12 +749,8 @@ pub fn create_logged_passthrough_stream(
 ) -> impl Stream<Item = Result<Bytes, std::io::Error>> + Send {
     async_stream::stream! {
         let _conn_guard = connection_guard;
-        let mut buffer = String::new();
-        let mut utf8_tail = Utf8TailDecoder::default();
-        let mut collector = usage_collector;
-        let mut finish_guard = collector.clone().map(SseUsageFinishGuard::new);
-        let inspect_sse_events =
-            collector.is_some() || log::log_enabled!(log::Level::Debug);
+        let mut finish_guard = usage_collector.clone().map(SseUsageFinishGuard::new);
+        let mut scanner = SseEventScanner::new(tag, usage_collector);
         let mut is_first_chunk = true;
 
         // 超时配置
@@ -686,56 +801,7 @@ pub fn create_logged_passthrough_stream(
                         );
                     }
                     is_first_chunk = false;
-                    if inspect_sse_events {
-                        utf8_tail.append(&mut buffer, &bytes);
-
-                        // 尝试解析并记录完整的 SSE 事件
-                        let mut consumed = 0;
-                        while let Some((end, delim)) = next_sse_block_range(&buffer[consumed..]) {
-                            let end = consumed + end;
-                            let event_text = &buffer[consumed..end];
-                            if !event_text.trim().is_empty() {
-                                let event_name = event_text
-                                    .lines()
-                                    .find_map(|line| strip_sse_field(line, "event"));
-                                // 提取 data 部分；只有 usage collector 存在时才解析 JSON。
-                                for line in event_text.lines() {
-                                    if let Some(data) = strip_sse_field(line, "data") {
-                                        if let Some(c) = &collector {
-                                            c.observe_data(event_name, data);
-                                        }
-                                        if data.trim() != "[DONE]" {
-                                            let collected = match &collector {
-                                                Some(c) if c.should_collect(data) => {
-                                                    match serde_json::from_str::<Value>(data) {
-                                                        Ok(json_value) => {
-                                                            c.push(json_value);
-                                                            true
-                                                        }
-                                                        Err(_) => false,
-                                                    }
-                                                }
-                                                _ => false,
-                                            };
-                                            log::trace!(
-                                                "[{tag}] <<< SSE data: bytes={}, usage_collected={collected} (content omitted)",
-                                                data.len()
-                                            );
-                                        } else {
-                                            log::debug!("[{tag}] <<< SSE: [DONE]");
-                                        }
-                                    }
-                                }
-                            }
-                            consumed = end + delim;
-                        }
-                        if consumed == buffer.len() {
-                            buffer.clear();
-                        } else if consumed > 0 {
-                            buffer.drain(..consumed);
-                        }
-                    }
-
+                    scanner.feed(&bytes);
                     yield Ok(bytes);
                 }
                 Some(Err(e)) => {
@@ -750,9 +816,7 @@ pub fn create_logged_passthrough_stream(
             }
         }
 
-        if let Some(c) = collector.take() {
-            c.finish();
-        }
+        scanner.finish();
         if let Some(guard) = &mut finish_guard {
             guard.disarm();
         }
@@ -1581,5 +1645,140 @@ mod tests {
             .map_err(|e| AppError::Database(e.to_string()))?;
         assert_eq!(count, 1);
         Ok(())
+    }
+    // ------------------------------------------------------------------
+    // SseEventScanner
+    // ------------------------------------------------------------------
+
+    type UsageFilteredRecording = Arc<std::sync::Mutex<(usize, Option<u64>)>>;
+
+    /// 收集每一个完整事件（`None` 过滤器 = 全部收下），回调按行序回灌。
+    fn counting_collector() -> (SseUsageCollector, Arc<std::sync::Mutex<Vec<String>>>) {
+        let recorded = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let recorded_in_cb = recorded.clone();
+        let collector =
+            SseUsageCollector::new(std::time::Instant::now(), None, move |events, _| {
+                *recorded_in_cb.lock().unwrap() =
+                    events.iter().map(Value::to_string).collect::<Vec<_>>();
+            });
+        (collector, recorded)
+    }
+
+    /// Codex 用量过滤器：只有带 `usage` / `response.completed` 的事件被收下。
+    fn usage_filtered_collector() -> (SseUsageCollector, UsageFilteredRecording) {
+        let recorded = Arc::new(std::sync::Mutex::new((0usize, None)));
+        let recorded_in_cb = recorded.clone();
+        let collector = SseUsageCollector::new(
+            std::time::Instant::now(),
+            Some(super::super::handler_config::codex_stream_usage_event_filter),
+            move |events, first_token_ms| {
+                *recorded_in_cb.lock().unwrap() = (events.len(), first_token_ms);
+            },
+        );
+        (collector, recorded)
+    }
+
+    /// 混合 CRLF / LF 分隔的多个事件，一个分片里必须全部切出来。
+    #[test]
+    fn scanner_splits_every_event_in_one_chunk() {
+        let (collector, recorded) = counting_collector();
+        let mut scanner = SseEventScanner::new("test", Some(collector));
+        scanner.feed(
+            b"data: {\"i\":0}\n\n\
+              data: {\"i\":1}\r\n\r\n\
+              data: {\"i\":2}\n\r\n",
+        );
+        scanner.finish();
+
+        assert_eq!(
+            *recorded.lock().unwrap(),
+            ["{\"i\":0}", "{\"i\":1}", "{\"i\":2}"]
+        );
+        assert!(
+            scanner.pending().is_empty(),
+            "pending={}",
+            scanner.pending()
+        );
+    }
+
+    /// 逐字节喂入与整块喂入必须给出同一个事件序列：切分只认完整事件，与分片
+    /// 边界落在哪里无关。
+    #[test]
+    fn scanner_is_independent_of_chunk_boundaries() {
+        let events_text = "data: {\"i\":0}\n\ndata: {\"i\":1}\r\n\r\ndata: {\"i\":2}\n\r\n";
+
+        let (whole_collector, whole_recorded) = counting_collector();
+        let mut whole = SseEventScanner::new("test", Some(whole_collector));
+        whole.feed(events_text.as_bytes());
+        whole.finish();
+
+        let (byte_collector, byte_recorded) = counting_collector();
+        let mut by_byte = SseEventScanner::new("test", Some(byte_collector));
+        for byte in events_text.as_bytes() {
+            by_byte.feed(std::slice::from_ref(byte));
+        }
+        by_byte.finish();
+
+        assert_eq!(
+            *byte_recorded.lock().unwrap(),
+            *whole_recorded.lock().unwrap(),
+            "逐字节喂入改变了事件序列"
+        );
+        assert_eq!(whole_recorded.lock().unwrap().len(), 3);
+    }
+
+    /// 尚未收到完整事件的字节必须留在 pending 里，等下一个分片补齐。
+    #[test]
+    fn scanner_keeps_incomplete_event_pending() {
+        let (collector, recorded) = usage_filtered_collector();
+        let mut scanner = SseEventScanner::new("test", Some(collector));
+        scanner.feed(b"data: {\"type\":\"a\"}\n\ndata: {\"type\":\"resp");
+        assert_eq!(scanner.pending(), "data: {\"type\":\"resp");
+
+        scanner.feed(b"onse.completed\",\"response\":{\"usage\":{}}}\n\n");
+        scanner.finish();
+        assert!(scanner.pending().is_empty());
+        assert_eq!(recorded.lock().unwrap().0, 1);
+    }
+
+    /// UTF-8 多字节字符被分片从中间切断时，事件文本必须完整无损。
+    #[test]
+    fn scanner_stitches_multi_byte_characters_across_chunks() {
+        let (collector, recorded) = counting_collector();
+        let mut scanner = SseEventScanner::new("test", Some(collector));
+        let text = "data: {\"text\":\"\u{4f60}\u{597d}\u{4e16}\u{754c}\"}\n\n";
+        let bytes = text.as_bytes();
+        // 第一个汉字占 3 字节（15..18），喂到 16 正好把它切成两半。
+        scanner.feed(&bytes[..16]);
+        assert_eq!(scanner.pending(), "data: {\"text\":\"");
+        scanner.feed(&bytes[16..]);
+        scanner.finish();
+
+        assert_eq!(
+            *recorded.lock().unwrap(),
+            [concat!(
+                "{\"text\":\"",
+                "\u{4f60}\u{597d}\u{4e16}\u{754c}",
+                "\"}"
+            )]
+        );
+        assert!(scanner.pending().is_empty());
+    }
+
+    /// 把 event 名写在 data 之后（畸形但可能出现）时，data 行仍要看到已解析的
+    /// event 名，与原先「先扫一遍找 event、再扫一遍找 data」的语义一致。
+    #[test]
+    fn scanner_event_name_wins_over_payload_type_for_first_output() {
+        let (collector, recorded) = usage_filtered_collector();
+        let mut scanner = SseEventScanner::new("test", Some(collector));
+        // payload 的 type 是 ping（按 payload 判定不算输出），event 名是
+        // message_start：event 名优先，首个输出时间必须被记下。
+        scanner.feed(b"event: message_start\ndata: {\"type\":\"ping\"}\n\n");
+        scanner.finish();
+
+        assert!(
+            recorded.lock().unwrap().1.is_some(),
+            "event 名未被用于首个输出判定"
+        );
     }
 }
