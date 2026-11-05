@@ -1,4 +1,5 @@
 use bytes::Bytes;
+use serde::Deserialize;
 use serde_json::Value;
 use smallvec::SmallVec;
 use std::borrow::Cow;
@@ -11,6 +12,40 @@ pub(crate) fn strip_sse_field<'a>(line: &'a str, field: &str) -> Option<&'a str>
     let rest = line.strip_prefix(field)?;
     let rest = rest.strip_prefix(':')?;
     Some(rest.strip_prefix(' ').unwrap_or(rest))
+}
+
+/// 一个 SSE 块里的 `data:` 载荷，直接借用块文本。
+///
+/// 没有 data 行、或载荷按 SSE 规范摊在多行上时返回 `None`：调用方据此走自己的
+/// 慢路径（那边才会拼出 owned 的连接结果）。Responses / Chat Completions /
+/// Anthropic 的载荷都是单行，这才是每事件都要过的路，因此这里既不分配，也不
+/// 顺手去构造用不上的 `event:` 名字。
+pub(crate) fn sse_block_payload(block: &str) -> Option<&str> {
+    let mut payload: Option<&str> = None;
+    for line in block.lines() {
+        if let Some(data) = strip_sse_field(line, "data") {
+            if payload.is_some() {
+                return None;
+            }
+            payload = Some(data);
+        }
+    }
+    payload
+}
+
+/// 只读顶层 `type` 的探针：借用反序列化，其余字段由 serde 跳过。
+#[derive(Deserialize)]
+struct SseTypeProbe<'a> {
+    #[serde(rename = "type", borrow)]
+    r#type: Option<&'a str>,
+}
+
+/// 取 SSE 载荷的顶层 `type`，不建整棵 JSON `Value`。
+///
+/// 只为判断事件类型的调用方准备：解析失败（非 JSON，或 `type` 不是字符串）时
+/// 返回 `None`，与解析成 `Value` 后取不到字符串类型完全一致。
+pub(crate) fn sse_data_type(data: &str) -> Option<&str> {
+    serde_json::from_str::<SseTypeProbe<'_>>(data).ok()?.r#type
 }
 
 #[inline]
@@ -254,7 +289,10 @@ fn utf8_char_len(lead: u8) -> usize {
 #[cfg(test)]
 mod tests {
     use super::scan_sse_block;
-    use super::{frame_sse_event, next_sse_block_range, strip_sse_field, Utf8TailDecoder};
+    use super::{
+        frame_sse_event, next_sse_block_range, sse_block_payload, sse_data_type, strip_sse_field,
+        Utf8TailDecoder,
+    };
     use bytes::Bytes;
     use std::borrow::Cow;
 
@@ -599,6 +637,49 @@ mod tests {
         let payload = payload.expect("data line");
         assert!(matches!(payload, Cow::Borrowed(_)), "单行 data 不该分配");
         assert_eq!(&*payload, "{\"delta\":\"hi\"}");
+    }
+
+    #[test]
+    fn sse_block_payload_borrows_a_single_data_line() {
+        assert_eq!(
+            sse_block_payload("event: message\ndata: {\"a\":1}"),
+            Some("{\"a\":1}")
+        );
+        assert_eq!(
+            sse_block_payload("data:{\"a\":1}"),
+            Some("{\"a\":1}"),
+            "data 后面没空格也认"
+        );
+        assert_eq!(sse_block_payload("event: ping"), None, "没有 data 行");
+        assert_eq!(sse_block_payload(": comment only"), None);
+        assert_eq!(
+            sse_block_payload("data: {\"a\":1,\ndata: \"b\":2}"),
+            None,
+            "多行 data 交给调用方的慢路径去拼"
+        );
+    }
+
+    #[test]
+    fn sse_data_type_reads_only_the_top_level_type() {
+        assert_eq!(
+            sse_data_type("{\"type\":\"response.completed\"}"),
+            Some("response.completed")
+        );
+        assert_eq!(
+            sse_data_type("{\"type\":\"x\",\"nested\":{\"type\":\"y\"}}"),
+            Some("x"),
+            "只取顶层 type"
+        );
+        assert_eq!(
+            sse_data_type(
+                "{\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":1}}}"
+            ),
+            Some("response.completed"),
+            "长载荷也只读 type"
+        );
+        assert_eq!(sse_data_type("[DONE]"), None);
+        assert_eq!(sse_data_type("{\"type\":7}"), None, "type 不是字符串");
+        assert_eq!(sse_data_type("not json"), None);
     }
 
     #[test]

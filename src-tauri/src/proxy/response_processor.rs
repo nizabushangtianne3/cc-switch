@@ -9,7 +9,7 @@ use super::{
     handler_context::{RequestContext, StreamingTimeoutConfig},
     hyper_client::{ProxyResponse, MAX_RESPONSE_BODY_BYTES},
     server::ProxyState,
-    sse::{next_sse_block_range, strip_sse_field, Utf8TailDecoder},
+    sse::{next_sse_block_range, sse_data_type, strip_sse_field, Utf8TailDecoder},
     usage::logger::{spawn_usage_record, usage_logging_enabled, write_usage_record, UsageRecord},
     usage::parser::TokenUsage,
     ProxyError,
@@ -18,7 +18,6 @@ use axum::http::{header::HeaderMap, HeaderName};
 use axum::response::Response;
 use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
-use serde::Deserialize;
 use serde_json::Value;
 use smallvec::SmallVec;
 use std::sync::Mutex;
@@ -423,17 +422,6 @@ impl SseUsageCollector {
 
         (self.inner.on_complete)(events, first_token_ms);
     }
-}
-
-#[derive(Deserialize)]
-struct SseTypeProbe<'a> {
-    #[serde(rename = "type", borrow)]
-    r#type: Option<&'a str>,
-}
-
-/// 只读取顶层 `type`，避免高频 chunk 构建完整 JSON Value。
-fn sse_data_type(data: &str) -> Option<&str> {
-    serde_json::from_str::<SseTypeProbe<'_>>(data).ok()?.r#type
 }
 
 /// 判断一行 SSE data 是否标志着模型开始输出（口径同 Sub2API 的 semantic TTFT）：

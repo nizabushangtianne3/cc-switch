@@ -16,7 +16,20 @@ use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
 use serde_json::Value;
 
-use crate::proxy::sse::{next_sse_block_range, scan_sse_block, Utf8TailDecoder};
+use crate::proxy::sse::{
+    next_sse_block_range, scan_sse_block, sse_block_payload, sse_data_type, Utf8TailDecoder,
+};
+
+/// 会参与参数补齐的事件类型。
+///
+/// 其余事件（文本/推理增量、生命周期事件、注释行……）只是原样透传，没有必要
+/// 为它们解析整棵 JSON 树、复制块文本、再造一个 `event:` 名字。
+const REPAIR_EVENT_TYPES: [&str; 4] = [
+    "response.function_call_arguments.delta",
+    "response.function_call_arguments.done",
+    "response.output_item.done",
+    "response.completed",
+];
 
 /// 一个 SSE 块，解析出的事件（不是 JSON 的块为 None）。
 struct Block {
@@ -108,8 +121,16 @@ impl Block {
     }
 
     fn into_bytes(self) -> Bytes {
-        Bytes::from(format!("{}\n\n", self.raw))
+        passthrough_block(&self.raw)
     }
+}
+
+/// 原样放行一个块：块文本加一个空行，与逐字节重发完全一致。
+fn passthrough_block(raw: &str) -> Bytes {
+    let mut out = Vec::with_capacity(raw.len() + 2);
+    out.extend_from_slice(raw.as_bytes());
+    out.extend_from_slice(b"\n\n");
+    Bytes::from(out)
 }
 
 #[derive(Default)]
@@ -122,9 +143,23 @@ struct Repair {
 
 impl Repair {
     fn push(&mut self, raw: &str) -> Vec<Bytes> {
-        let block = Block::parse(raw);
         let mut out = Vec::new();
 
+        // 与补齐无关的事件才是流的绝大多数：借用的 data 载荷加一个借用的 type
+        // 探针就够判定，不解析 JSON、不复制块文本。没有 data 行、载荷摊在多行、
+        // 或者类型命中候选的事件，才走下面的完整解析。
+        let repair_candidate = sse_block_payload(raw)
+            .and_then(sse_data_type)
+            .is_some_and(|event_type| REPAIR_EVENT_TYPES.contains(&event_type));
+        if !repair_candidate {
+            // 语义与完整路径一致：任何「不是参数增量」的事件都会放行此前扣住的
+            // 结束事件，然后自己原样发出。
+            out.extend(self.flush(None));
+            out.push(passthrough_block(raw));
+            return out;
+        }
+
+        let block = Block::parse(raw);
         if let Some((item_id, delta)) = block.arguments_delta() {
             self.arguments.entry(item_id).or_default().push_str(delta);
             // 增量一律照发，不触发放行：并行调用时几个条目的结束事件可能都先到，各自的增量
@@ -390,6 +425,52 @@ mod tests {
             assert_eq!(out.len(), 1);
             assert_eq!(out[0], Bytes::from(format!("{raw}\n\n")));
         }
+    }
+
+    /// 与参数补齐无关的事件：逐字节原样发出，一个字节都不改。
+    #[test]
+    fn passes_unrelated_events_through_byte_for_byte() {
+        let unrelated = [
+            "event: response.created\ndata: {\"type\":\"response.created\"}",
+            "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"hi\"}",
+            "event: message\ndata: [DONE]",
+            ": keep-alive comment",
+            "event: response.reasoning_summary_text.delta\ndata: {\"type\":\"response.reasoning_summary_text.delta\"}",
+        ];
+        let mut repair = Repair::default();
+        for raw in unrelated {
+            let out = repair.push(raw);
+            assert_eq!(out, vec![Bytes::from(format!("{raw}\n\n"))], "{raw}");
+        }
+    }
+
+    /// 载荷按 SSE 规范摊在多行上：慢路径照旧接管，字节同样不变。
+    #[test]
+    fn multi_line_payloads_are_also_untouched() {
+        let raw = "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\ndata: \"delta\":\"hi\"}";
+        let mut repair = Repair::default();
+        assert_eq!(repair.push(raw), vec![Bytes::from(format!("{raw}\n\n"))]);
+    }
+
+    /// 没有 data 行的块（纯注释/纯 event）也走快路径，但扣住的结束事件必须放行。
+    #[test]
+    fn data_less_blocks_release_held_events() {
+        let mut repair = Repair::default();
+        repair.push(&sse(json!({
+            "type": "response.output_item.done",
+            "item": call_item("")
+        })));
+        let out = repair.push("event: ping");
+        assert_eq!(
+            out,
+            vec![
+                Bytes::from(format!(
+                    "event: response.output_item.done\ndata: {}\n\n",
+                    json!({ "type": "response.output_item.done", "item": call_item("") })
+                )),
+                Bytes::from("event: ping\n\n")
+            ]
+        );
     }
 
     /// 真没有参数的调用：扣住的事件在下一个事件前原样补发，不丢。
