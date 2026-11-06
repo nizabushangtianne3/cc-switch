@@ -15,7 +15,9 @@ permissions:
 
 concurrency:
   group: release-fork-${{ inputs.tag }}
-  cancel-in-progress: true
+  # 不再取消在飞的发布：实测取消旧运行会把同组里新排上的 macOS 任务一起带走，
+  # 表现为任务跑了十几分钟后 conclusion=cancelled、日志都拿不到。
+  cancel-in-progress: false
 
 jobs:
   build:
