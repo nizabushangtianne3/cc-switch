@@ -33,7 +33,9 @@ jobs:
             bundles: appimage,deb,rpm
             platform: desktop
           - name: macOS Universal
-            os: macos-14
+            # GitHub 已下线 macos-14 镜像（runner label 直接报 not supported），
+            # 与上游 release.yml 同步到 macos-15。
+            os: macos-15
             bundles: dmg
             rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
             tauri_target: universal-apple-darwin
