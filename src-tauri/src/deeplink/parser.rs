@@ -89,20 +89,11 @@ fn parse_provider_deeplink(
         .clone();
 
     // Validate app type.
-    //
-    // Oh My Pi is refused with the same guidance as the import path
-    // (`deeplink/provider.rs`): a models.yml entry needs its models listed, which
-    // the Oh My Pi provider form composes. Accepting the link here would only
-    // fail later with a generic "invalid app" error.
-    if matches!(app.as_str(), "omp" | "ohmypi" | "oh-my-pi" | "oh_my_pi") {
-        return Err(AppError::InvalidInput(
-            "Oh My Pi providers must be added from the Oh My Pi provider page".to_string(),
-        ));
-    }
     if !matches!(
         app.as_str(),
         "agy"
             | "claude"
+            | "claude-desktop"
             | "codex"
             | "gemini"
             | "grokbuild"
@@ -110,6 +101,10 @@ fn parse_provider_deeplink(
             | "openclaw"
             | "hermes"
             | "pi"
+            | "mcode"
+            | "kimi"
+            | "dsh"
+            | "omp"
     ) {
         return Err(AppError::InvalidInput(format!(
             "Invalid provider app type: '{app}'"
@@ -144,11 +139,13 @@ fn parse_provider_deeplink(
 
     // Extract optional fields
     let model = params.get("model").cloned();
-    // Pi 的节点没有模型就选不到任何模型（见 `provider::build_pi_settings`）
-    if app == "pi" && model.as_deref().is_none_or(|model| model.trim().is_empty()) {
-        return Err(AppError::InvalidInput(
-            "Pi providers need a model; add 'model' to the link".to_string(),
-        ));
+    // 这几家的节点没有模型就选不到任何模型（见 `provider::build_pi_family_settings`）
+    if matches!(app.as_str(), "pi" | "mcode" | "kimi" | "dsh" | "omp")
+        && model.as_deref().is_none_or(|model| model.trim().is_empty())
+    {
+        return Err(AppError::InvalidInput(format!(
+            "{app} providers need a model; add 'model' to the link"
+        )));
     }
     let notes = params.get("notes").cloned();
     let haiku_model = params.get("haikuModel").cloned();
@@ -350,14 +347,14 @@ fn parse_mcp_deeplink(
                 | "opencode"
                 | "openclaw"
                 | "hermes"
-                | "pi"
                 | "mcode"
+                | "pi"
                 | "kimi"
                 | "dsh"
                 | "omp"
         ) {
             return Err(AppError::InvalidInput(format!(
-                "Invalid app in 'apps': must be 'claude', 'codex', 'gemini', 'agy', 'grokbuild', 'opencode', 'hermes', 'pi', 'kimi', 'dsh', 'mcode', or 'omp', got '{trimmed}'"
+                "Invalid app in 'apps': must be 'claude', 'codex', 'gemini', 'agy', 'grokbuild', 'opencode', 'openclaw', 'hermes', 'pi', 'kimi', 'dsh', 'mcode', or 'omp', got '{trimmed}'"
             )));
         }
     }
@@ -535,12 +532,13 @@ mod tests {
 
     #[test]
     fn refuses_the_oh_my_pi_aliases_with_guidance() {
-        for app in ["omp", "ohmypi", "oh-my-pi", "oh_my_pi"] {
+        // `omp` 是与 pi 同級的正式应用；其余写法只是它的拼法变体，链接里不认，
+        // 要让用户去 Oh My Pi 供应商页添加。
+        for app in ["ohmypi", "oh-my-pi", "oh_my_pi"] {
             let url = format!("ccswitch://v1/import?resource=provider&app={app}&name=Pi");
-            let message = rejection(&url);
             assert!(
-                message.contains("Oh My Pi provider page"),
-                "unexpected for {app}: {message}"
+                rejection(&url).contains("Invalid provider app type"),
+                "unexpected for {app}"
             );
         }
     }
@@ -549,10 +547,6 @@ mod tests {
     fn rejects_an_unknown_provider_app() {
         assert!(
             rejection("ccswitch://v1/import?resource=provider&app=widget&name=Relay")
-                .contains("Invalid provider app type")
-        );
-        assert!(
-            rejection("ccswitch://v1/import?resource=provider&app=mcode&name=Relay")
                 .contains("Invalid provider app type")
         );
     }
@@ -582,7 +576,7 @@ mod tests {
     #[test]
     fn pi_links_need_a_model() {
         let message = rejection("ccswitch://v1/import?resource=provider&app=pi&name=Pi");
-        assert!(message.contains("Pi providers need a model"), "{message}");
+        assert!(message.contains("pi providers need a model"), "{message}");
     }
 
     #[test]

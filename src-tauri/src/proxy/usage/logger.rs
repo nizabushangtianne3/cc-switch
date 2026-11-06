@@ -9,6 +9,20 @@ use crate::services::usage_stats::{find_model_pricing_row, is_placeholder_pricin
 use rusqlite::OptionalExtension;
 use rust_decimal::Decimal;
 
+/// `proxy_request_logs.error_message` 的字符数上限。上游错误体（中转站整页
+/// HTML、长 JSON）原样入库时，高频报错能把库撑到数 GB（#6706）。按字符而非
+/// 字节截断，不会切坏 UTF-8；取值与 Pi 会话导入的 errorMessage 上限一致。
+pub(crate) const MAX_ERROR_MESSAGE_CHARS: usize = 4096;
+
+/// 保留错误信息的前 `MAX_ERROR_MESSAGE_CHARS` 个字符：状态行、错误码和
+/// 错误描述都在开头，定位问题足够。
+fn bound_error_message(message: &str) -> &str {
+    match message.char_indices().nth(MAX_ERROR_MESSAGE_CHARS) {
+        Some((byte_index, _)) => &message[..byte_index],
+        None => message,
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 struct UsageSemantic {
     app_type: String,
@@ -173,6 +187,7 @@ impl<'a> UsageLogger<'a> {
         } else {
             "INSERT OR IGNORE"
         };
+        let error_message = log.error_message.as_deref().map(bound_error_message);
         let sql = format!(
             "{insert_verb} INTO proxy_request_logs (
                 request_id, provider_id, api_key_id, app_type, model, request_model, pricing_model,
@@ -207,7 +222,7 @@ impl<'a> UsageLogger<'a> {
                     log.latency_ms as i64,
                     log.first_token_ms.map(|v| v as i64),
                     log.status_code as i64,
-                    log.error_message,
+                    error_message,
                     log.session_id,
                     log.provider_type,
                     log.is_streaming as i64,
@@ -303,7 +318,8 @@ impl<'a> UsageLogger<'a> {
 
     /// 记录失败的请求（带更多上下文信息）
     ///
-    /// 相比 log_error，这个方法接受更多参数以提供完整的请求上下文
+    /// 相比 log_error，这个方法接受更多参数以提供完整的请求上下文。
+    /// `model` 是发往上游的模型名，`request_model` 是客户端请求里的原名（没映射时两者相同）。
     #[allow(clippy::too_many_arguments)]
     pub fn log_error_with_context(
         &self,
@@ -311,6 +327,7 @@ impl<'a> UsageLogger<'a> {
         provider_id: String,
         app_type: String,
         model: String,
+        request_model: String,
         status_code: u16,
         error_message: String,
         latency_ms: u64,
@@ -318,7 +335,6 @@ impl<'a> UsageLogger<'a> {
         session_id: Option<String>,
         provider_type: Option<String>,
     ) -> Result<(), AppError> {
-        let request_model = model.clone();
         let log = RequestLog {
             request_id,
             provider_id,
@@ -565,6 +581,8 @@ pub(crate) struct UsageErrorRecord {
     pub provider_id: String,
     pub app_type: &'static str,
     pub request_model: String,
+    /// 实际发往上游的模型名（映射之后）。错误行记这个，不记客户端别名。
+    pub outbound_model: Option<String>,
     pub status_code: u16,
     pub error_message: String,
     pub latency_ms: u64,
@@ -587,6 +605,7 @@ pub(crate) async fn write_usage_error_record(record: UsageErrorRecord) {
         provider_id,
         app_type,
         request_model,
+        outbound_model,
         status_code,
         error_message,
         latency_ms,
@@ -601,6 +620,7 @@ pub(crate) async fn write_usage_error_record(record: UsageErrorRecord) {
             request_id,
             provider_id,
             app_type.to_string(),
+            outbound_model.unwrap_or_else(|| request_model.clone()),
             request_model,
             status_code,
             error_message,
@@ -960,6 +980,52 @@ mod tests {
             .unwrap();
         assert_eq!(status, 500);
         assert_eq!(error, Some("Internal Server Error".to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn bound_error_message_keeps_char_boundaries() {
+        assert_eq!(bound_error_message(""), "");
+        assert_eq!(bound_error_message("short"), "short");
+
+        let exact = "e".repeat(MAX_ERROR_MESSAGE_CHARS);
+        assert_eq!(bound_error_message(&exact), exact);
+
+        // 3 字节（汉）与 4 字节（emoji）字符：按字符计数，截断点落在字符边界
+        for unit in ["汉", "🦀"] {
+            let long = unit.repeat(MAX_ERROR_MESSAGE_CHARS + 1);
+            let bounded = bound_error_message(&long);
+            assert_eq!(bounded.chars().count(), MAX_ERROR_MESSAGE_CHARS);
+            assert_eq!(bounded, unit.repeat(MAX_ERROR_MESSAGE_CHARS));
+        }
+    }
+
+    #[test]
+    fn log_error_bounds_oversized_error_message() -> Result<(), AppError> {
+        let db = Database::memory()?;
+        let logger = UsageLogger::new(&db);
+
+        // #6706：中转站返回数 MB 的整页 HTML 报错，不能原样入库
+        let prefix = "HTTP 502 Bad Gateway: <html><title>上游错误</title>";
+        let body = format!("{prefix}{}", "🦀".repeat(MAX_ERROR_MESSAGE_CHARS * 100));
+        logger.log_error(
+            "req-huge-error".to_string(),
+            "provider-1".to_string(),
+            "claude".to_string(),
+            "claude-sonnet-4-5".to_string(),
+            502,
+            body,
+            50,
+        )?;
+
+        let conn = crate::database::lock_conn!(db.conn);
+        let stored: String = conn.query_row(
+            "SELECT error_message FROM proxy_request_logs WHERE request_id = 'req-huge-error'",
+            [],
+            |row| row.get(0),
+        )?;
+        assert_eq!(stored.chars().count(), MAX_ERROR_MESSAGE_CHARS);
+        assert!(stored.starts_with(prefix));
         Ok(())
     }
 

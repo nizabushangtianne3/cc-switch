@@ -69,6 +69,22 @@ pub(crate) struct NativeSource {
     pub unify: for<'a> fn(&'a Value) -> Value,
     /// 比对传输时只看哪些字段。
     pub transport_fields: &'static [&'static str],
+    /// 条目级拒绝规则（Pi 的服务器名 / SSE / 重名）：返回 `Some(原因)` 表示
+    /// 该条目不导入，原因照常累进错误信息。四家里只有 Pi 有。
+    pub reject_entry: Option<fn(&EntryContext<'_>) -> Option<String>>,
+}
+
+/// 各家条目级拒绝规则能看到的一切。
+pub(crate) struct EntryContext<'a> {
+    pub id: &'a str,
+    /// 归一化后的连接定义。
+    pub spec: &'a Value,
+    /// 整个 `mcpServers` 映射，查文件内重名用。
+    pub natives: &'a serde_json::Map<String, Value>,
+    /// 数据库里已有的服务器，查与已勾选条目的重名用。
+    pub existing: &'a indexmap::IndexMap<String, McpServer>,
+    /// 文件里的原始条目，读启用位用。
+    pub native: &'a Value,
 }
 
 /// 导入一家原生配置里的 MCP 服务器。
@@ -76,11 +92,26 @@ pub(crate) struct NativeSource {
 /// 重复导入同一条目时：传输定义一致就只更新启用位，冲突则跳过并累进错误信息。
 pub(crate) fn import(state: &AppState, source: &NativeSource) -> Result<usize, AppError> {
     let document = read_native(&source.path, source.label, source.tolerate_empty)?;
+    let natives = document["mcpServers"].as_object();
+    let empty_natives = serde_json::Map::new();
+    let natives = natives.unwrap_or(&empty_natives);
     let mut existing = state.db.get_all_mcp_servers()?;
     let mut count = 0;
     let mut skipped = Vec::new();
-    for (id, native) in document["mcpServers"].as_object().into_iter().flatten() {
+    for (id, native) in natives.into_iter() {
         let mut spec = (source.unify)(native);
+        if let Some(reject) = source.reject_entry {
+            if let Some(reason) = reject(&EntryContext {
+                id: id.as_str(),
+                spec: &spec,
+                natives,
+                existing: &existing,
+                native,
+            }) {
+                skipped.push(reason);
+                continue;
+            }
+        }
         if super::validation::validate_server_spec(&spec).is_err() {
             skipped.push(format!("'{id}': invalid transport configuration"));
             continue;

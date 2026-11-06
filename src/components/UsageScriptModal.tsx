@@ -319,6 +319,13 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
             apiKey: config.api_key,
             baseUrl: config.base_url,
           };
+        } else if (appId === "kimi") {
+          // Kimi Code: 凭据在 provider.{base_url, api_key}（snake_case，对应 config.toml）
+          const kimiProvider = (config as any).provider || {};
+          return {
+            apiKey: kimiProvider.api_key,
+            baseUrl: kimiProvider.base_url,
+          };
         } else if (appId === "pi" || appId === "omp") {
           // Pi / Oh My Pi: provider values are camelCase; a model may override baseUrl.
           const firstModel = Array.isArray(config.models)
@@ -334,9 +341,13 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
             apiKey: config.apiKey,
             baseUrl: config.baseUrl,
           };
-        } else if (appId === "opencode") {
-          // OpenCode (OMO): 凭据嵌在 options.{baseURL, apiKey}（SDK options 对象）
-          const options = config.options || {};
+        } else if (
+          appId === "opencode" ||
+          appId === "dsh" ||
+          appId === "mcode"
+        ) {
+          // OpenCode / DeepSeek Harness / MiniMax Code: 凭据嵌在 options.{baseURL, apiKey}。
+          const options = (config as any).options || {};
           return {
             apiKey: options.apiKey,
             baseUrl: options.baseURL,

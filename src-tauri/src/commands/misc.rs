@@ -449,12 +449,52 @@ fn finish_lifecycle_output(output: &std::process::Output) -> Result<(), String> 
     } else {
         stderr.trim()
     };
-    let detail = last_lines(raw, 8);
+    let detail = npm_bin_collision_detail(raw).unwrap_or_else(|| last_lines(raw, 8));
     Err(if detail.is_empty() {
         format!("命令执行失败 (exit code: {:?})", output.status.code())
     } else {
-        detail
+        append_npm_bin_collision_hint(detail, raw)
     })
+}
+
+/// npm 全局安装在链接可执行文件时若目标路径已被其他安装方式留下的启动器
+/// 占用，会以 EEXIST 失败，原始输出只建议 `--force` 覆盖（#9173）。识别这种
+/// bin 路径冲突后在原始输出后追加可执行提示：指出冲突文件、给出安全的
+/// 备份改名/改用原安装方式两条路，并明确提醒不要盲目 `--force`。
+/// 非此类失败原样返回，不改变既有错误文案。
+fn append_npm_bin_collision_hint(detail: String, raw: &str) -> String {
+    let Some(path) = npm_bin_collision_path(raw) else {
+        return detail;
+    };
+    format!(
+        "{detail}\n\nHint: npm could not create the executable because {path} already exists. \
+         If it is a launcher from another installation, back it up or rename it \
+         (for example to {path}.bak) and try again, or update the tool with the \
+         installation method that created it. Do not use npm --force unless you \
+         mean to overwrite the existing file."
+    )
+}
+
+/// 从 npm 输出里提取 bin 冲突路径：要求同时出现 `EEXIST` 与
+/// `File exists: <path>` 行，避免把其他含 EEXIST 字样的失败误判为路径冲突。
+fn npm_bin_collision_path(raw: &str) -> Option<&str> {
+    if !raw.contains("EEXIST") {
+        return None;
+    }
+    raw.lines().find_map(|line| {
+        line.split_once("File exists:")
+            .map(|(_, path)| path.trim())
+            .filter(|path| !path.is_empty())
+    })
+}
+
+/// npm 链接可执行文件撞上不归它管的同名文件时以 EEXIST 退出（#9173）。关键的两行
+/// 可能被尾部的 `--force` 建议、更新通知和日志路径挤出最后 8 行，这里单独保留，
+/// 前端据此换成可操作的提示。
+fn npm_bin_collision_detail(text: &str) -> Option<String> {
+    let code = text.lines().find(|line| line.contains("EEXIST"))?;
+    let exists = text.lines().find(|line| line.contains("File exists:"))?;
+    Some(format!("{}\n{}", code.trim(), exists.trim()))
 }
 
 /// 取文本末尾最多 `n` 行（npm / pip 的关键错误通常出现在输出尾部）。
@@ -782,6 +822,29 @@ fn mcode_installer_update_command(install_root: &str) -> String {
     );
     format!(
         "powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand {}",
+        powershell_encoded_command(&script)
+    )
+}
+
+/// 重跑 Kimi Code 官方 installer 升级原生安装那一处。显式传 `KIMI_INSTALL_DIR`，
+/// 保证写回探测到的目录（installer 覆盖 `<dir>/bin/kimi`），而不是默认的 `~/.kimi-code`。
+#[cfg(not(target_os = "windows"))]
+fn kimi_installer_update_command(install_root: &str) -> String {
+    format!(
+        "KIMI_INSTALL_DIR={} {KIMI_INSTALL_UNIX}",
+        shell_single_quote(install_root)
+    )
+}
+
+#[cfg(target_os = "windows")]
+fn kimi_installer_update_command(install_root: &str) -> String {
+    // PowerShell 单引号字面量里 `'` 写作 `''`；整段经 EncodedCommand 传入，不经 cmd 解析。
+    let script = format!(
+        "$env:KIMI_INSTALL_DIR = '{}'; {KIMI_INSTALL_WINDOWS_SCRIPT}",
+        install_root.replace('\'', "''")
+    );
+    format!(
+        "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand {}",
         powershell_encoded_command(&script)
     )
 }
@@ -2315,10 +2378,11 @@ fn tool_executable_candidates(tool: &str, dir: &Path) -> Vec<std::path::PathBuf>
     #[cfg(target_os = "windows")]
     {
         let extensionless = dir.join(tool);
-        let mut candidates = vec![
-            dir.join(format!("{tool}.cmd")),
-            dir.join(format!("{tool}.exe")),
-        ];
+        let exe = dir.join(format!("{tool}.exe"));
+        let mut candidates = vec![dir.join(format!("{tool}.cmd"))];
+        if let Some(exe) = windows_preferred_tool_executable(tool, &exe) {
+            candidates.push(exe);
+        }
         if windows_runnable_sibling_for_extensionless_tool(&extensionless).is_none() {
             candidates.push(extensionless);
         }
@@ -2803,6 +2867,52 @@ fn windows_runnable_sibling_for_extensionless_tool(path: &Path) -> Option<std::p
         .find(|candidate| candidate.is_file())
 }
 
+/// OpenCode Desktop has shipped both root-level and Electron `resources/` CLI sidecars.
+/// Some Electron releases omitted the sidecar; `resources/app.asar` still identifies the
+/// Desktop bundle, so skip its GUI instead of probing `opencode.exe` with `--version`.
+/// A standalone OpenCode CLI install remains valid when no Desktop marker is present.
+#[cfg(target_os = "windows")]
+fn windows_preferred_tool_executable(tool: &str, path: &Path) -> Option<std::path::PathBuf> {
+    if tool == "opencode"
+        && path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.eq_ignore_ascii_case("opencode.exe"))
+    {
+        if let Some(parent) = path.parent() {
+            let sidecar = parent.join("opencode-cli.exe");
+            if sidecar.is_file() {
+                return Some(sidecar);
+            }
+
+            let resources = parent.join("resources");
+            let bundled_sidecar = resources.join("opencode-cli.exe");
+            if bundled_sidecar.is_file() {
+                return Some(bundled_sidecar);
+            }
+
+            if resources.join("app.asar").is_file() {
+                return None;
+            }
+        }
+    }
+
+    Some(
+        windows_runnable_sibling_for_extensionless_tool(path).unwrap_or_else(|| path.to_path_buf()),
+    )
+}
+
+#[cfg(target_os = "windows")]
+fn windows_preferred_path_default(tool: &str, raw: &str) -> Option<std::path::PathBuf> {
+    raw.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .filter(|line| {
+            !is_windows_app_execution_alias_dir(Path::new(line).parent().unwrap_or(Path::new("")))
+        })
+        .find_map(|line| windows_preferred_tool_executable(tool, Path::new(line)))
+}
+
 #[cfg(target_os = "windows")]
 fn build_windows_tool_command(
     tool_path: &Path,
@@ -3099,7 +3209,7 @@ fn path_line_from_env_output(raw: &str) -> Option<&str> {
 /// 合并两段 PATH：`primary` 全部保留在前，`extra` 中未出现过的段按序追加。
 /// 空段直接丢弃（`a::b` 里的空段在 POSIX 下语义是"当前目录"，注入时不该带上）。
 #[cfg(not(target_os = "windows"))]
-fn merge_path_segments(primary: &str, extra: &str) -> String {
+pub(crate) fn merge_path_segments(primary: &str, extra: &str) -> String {
     let mut seen = std::collections::HashSet::new();
     let mut merged: Vec<&str> = Vec::new();
     for segment in primary.split(':').chain(extra.split(':')) {
@@ -3136,7 +3246,7 @@ fn merge_path_segments(primary: &str, extra: &str) -> String {
 /// 解析不到（含超过 `deadline`）时返回 `None`，调用方保持原有行为（不注入），
 /// 不引入新的失败模式。
 #[cfg(not(target_os = "windows"))]
-fn login_shell_path(deadline: Option<CommandDeadline>) -> Option<String> {
+pub(crate) fn login_shell_path(deadline: Option<CommandDeadline>) -> Option<String> {
     use std::process::{Command, Stdio};
     let shell = std::env::var("SHELL")
         .ok()
@@ -3250,23 +3360,12 @@ fn resolve_path_default(
         return Ok(None);
     }
     let raw = decode_command_output(&out.stdout);
-    // `where` lists every match on PATH in order; the first is what the user
-    // actually runs. Skip App Execution Aliases (reparse points under
-    // `Microsoft\WindowsApps`) — they launch the Store / a protocol handler,
-    // are not CLIs we can `--version`-probe, and must not be treated as the
-    // PATH default. Take the first remaining real entry.
-    let resolved = raw.lines().map(str::trim).find(|line| {
-        !line.is_empty()
-            && !is_windows_app_execution_alias_dir(
-                Path::new(line).parent().unwrap_or(Path::new("")),
-            )
-    });
-    let Some(first) = resolved else {
+    // `where` lists every match on PATH in order. Skip entries that cannot be
+    // safely probed (App Execution Aliases and Desktop GUI executables) and keep
+    // looking so a later real CLI can still be the PATH default.
+    let Some(preferred) = windows_preferred_path_default(tool, &raw) else {
         return Ok(None);
     };
-    let path = Path::new(first);
-    let preferred =
-        windows_runnable_sibling_for_extensionless_tool(path).unwrap_or_else(|| path.to_path_buf());
     Ok(std::fs::canonicalize(preferred).ok())
 }
 
@@ -3557,6 +3656,68 @@ fn mcode_script_install_root(
     [bin_path, real_target].iter().find_map(|path| {
         let root = mcode_install_root_candidate(path, layout);
         (last_path_segment_lower(&root) == ".minimax-code").then_some(root)
+    })
+}
+
+/// Kimi Code 的 `upgrade` 子命令 0.43.0 起才有 `-y, --yes`。更早的版本把 `--yes` 当成主命令
+/// 的全局选项吞掉，非 TTY（静默 lifecycle 正是如此）下只打印手动升级提示就 exit 0，
+/// `kimi upgrade --yes || <fallback>` 的兜底永不触发，用户看到「版本没有变化」（#9032）。
+const KIMI_UPGRADE_YES_MIN_VERSION: &str = "0.43.0";
+
+fn kimi_upgrade_ignores_yes(version: Option<&str>) -> bool {
+    version.and_then(|v| compare_semver(v, KIMI_UPGRADE_YES_MIN_VERSION))
+        == Some(std::cmp::Ordering::Less)
+}
+
+/// Kimi Code 官方 installer 的布局：两平台都是 `<KIMI_INSTALL_DIR>/bin/kimi[.exe]`
+/// 原生二进制。npm 版的真身在 `node_modules` 下（Windows 入口是 `kimi.cmd`），不算。
+/// 先看真身：POSIX 用户自建的软链（如 `~/.local/bin/kimi`）指回安装目录时，installer
+/// 必须写回真身所在的那处；Windows 的真身是 canonicalize 出的 `\\?\` verbatim 路径，
+/// 交给 installer 前还原。纯字符串、不碰 fs。
+fn kimi_native_install_root(bin_path: &str, real_target: &str) -> Option<String> {
+    let normalized_real = real_target.replace('\\', "/").to_ascii_lowercase();
+    if normalized_real.contains("/node_modules/") {
+        return None;
+    }
+    #[cfg(not(target_os = "windows"))]
+    if is_brew_managed_path(real_target) {
+        return None;
+    }
+    let real = match real_target.strip_prefix(r"\\?\UNC\") {
+        Some(unc) => format!(r"\\{unc}"),
+        None => real_target
+            .strip_prefix(r"\\?\")
+            .unwrap_or(real_target)
+            .to_string(),
+    };
+    let root = [real.as_str(), bin_path].into_iter().find_map(|path| {
+        if !matches!(last_path_segment_lower(path).as_str(), "kimi" | "kimi.exe") {
+            return None;
+        }
+        let bin_dir = parent_dir(path);
+        if last_path_segment_lower(&bin_dir) != "bin" {
+            return None;
+        }
+        let root = parent_dir(&bin_dir);
+        (!root.is_empty()).then_some(root)
+    });
+    root
+}
+
+/// 旧版 Kimi Code（见 `KIMI_UPGRADE_YES_MIN_VERSION`）的升级命令：跳过会假成功的
+/// `kimi upgrade --yes`。包管理器认得的安装（npm / Volta / bun / Homebrew）走锚定的包管理器；
+/// 先查它，因为 Volta 的 `bin/kimi[.exe]` shim 不解析到 `node_modules`，会被误认成原生
+/// 布局、让 installer 覆盖 shim。其余原生安装重跑官方 installer。都认不出时返回 None，
+/// 交回普通锚定。
+fn kimi_legacy_update_command(bin_path: &str, real_target: &str) -> Option<String> {
+    #[cfg(not(target_os = "windows"))]
+    let package_command =
+        package_manager_anchored_command_from_paths("kimi", bin_path, real_target);
+    #[cfg(target_os = "windows")]
+    let package_command = package_manager_anchored_command_from_paths("kimi", bin_path);
+    package_command.or_else(|| {
+        kimi_native_install_root(bin_path, real_target)
+            .map(|root| kimi_installer_update_command(&root))
     })
 }
 
@@ -4166,8 +4327,8 @@ fn locate_default_tool(
             if path_default.as_ref() == Some(&real) {
                 return Ok(candidate);
             }
-            if seen.insert(real) {
-                candidates.push(candidate);
+            if seen.insert(real.clone()) {
+                candidates.push((candidate, real));
             }
         }
     }
@@ -4176,8 +4337,18 @@ fn locate_default_tool(
         return Ok(path);
     }
 
+    #[cfg(not(target_os = "windows"))]
+    if candidates.len() > 1 {
+        if let Some(target) = candidates
+            .iter()
+            .find_map(|(candidate, real)| mise_shim_target(tool, candidate, real, deadline))
+        {
+            return Ok(target);
+        }
+    }
+
     match candidates.as_slice() {
-        [only] => Ok(only.clone()),
+        [(only, _)] => Ok(only.clone()),
         [] => Err(format!("{tool} is not installed")),
         _ => Err(format!(
             "{tool} is installed but its default installation is ambiguous"
@@ -4185,14 +4356,53 @@ fn locate_default_tool(
     }
 }
 
+/// mise 的 shim 是指向 mise 本体的软链，canonicalize 后和它调度的真身不是同一个文件，
+/// 按真身去重时 shim 与 `installs/node/<版本>/bin/<tool>` 会被算成两处安装。登录 shell
+/// 问不出默认入口时，让 mise 自己说 shim 现在指向哪个文件（按用户的 mise 配置选版本，
+/// 与终端里跑这个 shim 的结果一致），直接用那个真身。不是 mise shim 或解析失败返回 None。
+#[cfg(not(target_os = "windows"))]
+fn mise_shim_target(
+    tool: &str,
+    candidate: &Path,
+    real: &Path,
+    deadline: Option<CommandDeadline>,
+) -> Option<std::path::PathBuf> {
+    use std::ffi::OsStr;
+    use std::process::{Command, Stdio};
+
+    let is_mise_shim = candidate.parent().and_then(Path::file_name) == Some(OsStr::new("shims"))
+        && real.file_name() == Some(OsStr::new("mise"));
+    if !is_mise_shim {
+        return None;
+    }
+
+    let mut cmd = Command::new(real);
+    cmd.args(["which", tool])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    // GUI 进程的工作目录是 `/`；在 home 下解析，与新开终端看到的 mise 配置一致。
+    if let Some(home) = dirs::home_dir() {
+        cmd.current_dir(home);
+    }
+    isolate_child_process_group(&mut cmd);
+    let out = wait_child_output(cmd.spawn().ok()?, deadline).ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let raw = decode_command_output(&out.stdout);
+    let target = std::path::PathBuf::from(first_abs_path_line(&raw)?);
+    target.is_file().then_some(target)
+}
+
 #[derive(Clone, Copy)]
-struct CommandDeadline {
+pub(crate) struct CommandDeadline {
     expires_at: std::time::Instant,
     limit: std::time::Duration,
 }
 
 impl CommandDeadline {
-    fn from_timeout(timeout: Option<std::time::Duration>) -> Option<Self> {
+    pub(crate) fn from_timeout(timeout: Option<std::time::Duration>) -> Option<Self> {
         timeout.map(|limit| Self {
             expires_at: std::time::Instant::now() + limit,
             limit,
@@ -4691,6 +4901,12 @@ fn installs_anchored_command(tool: &str, installs: &[ToolInstallation]) -> Optio
             return Some(mcode_installer_update_command(&root));
         }
     }
+    // 版本号来自 `--version` 探测，所以放在这里而不是纯路径的 `anchored_command_from_paths`。
+    if tool == "kimi" && kimi_upgrade_ignores_yes(inst.version.as_deref()) {
+        if let Some(cmd) = kimi_legacy_update_command(&inst.path, &real) {
+            return Some(cmd);
+        }
+    }
     anchored_command_from_paths(tool, &inst.path, &real)
 }
 
@@ -4959,6 +5175,7 @@ fn wsl_distro_for_tool(tool: &str) -> Option<String> {
         "hermes" => crate::settings::get_hermes_override_dir(),
         "pi" => crate::settings::get_pi_override_dir(),
         "omp" => crate::settings::get_omp_override_dir(),
+        "dsh" => crate::settings::get_dsh_override_dir(),
         _ => None,
     }?;
 
@@ -5071,13 +5288,21 @@ pub async fn open_provider_terminal(
                 None => {
                     let env_vars =
                         extract_env_vars_from_config(&provider.settings_config, &app_type);
-                    claude_terminal_launch(&env_vars, &providerId)?
+                    let drops = crate::services::provider::claude_switch_drops(
+                        state.inner(),
+                        &provider.settings_config,
+                    )
+                    .unwrap_or_else(|e| {
+                        log::warn!("计算终端要挡住的 live 键失败，按原样启动: {e}");
+                        Default::default()
+                    });
+                    claude_terminal_launch(&env_vars, &providerId, &provider.name, &drops)?
                 }
             }
         }
         _ => {
             let env_vars = extract_env_vars_from_config(&provider.settings_config, &app_type);
-            claude_terminal_launch(&env_vars, &providerId)?
+            claude_terminal_launch(&env_vars, &providerId, &provider.name, &Default::default())?
         }
     };
     if skipPermissions == Some(true) {
@@ -5392,13 +5617,17 @@ fn codex_launch(
     })
 }
 
-/// Claude Code：把卡上的 env 写进临时 settings 文件，`claude --settings <文件>` 启动。
+/// Claude Code：把卡上的 env 和 `/model` 菜单写进临时 settings 文件，
+/// `claude --settings <文件>` 启动。`drops` 是切到这张卡时会从 live 清掉的键，在临时文件里
+/// 挡住（见 [`write_claude_config`]）。
 fn claude_terminal_launch(
     env_vars: &[(String, String)],
     provider_id: &str,
+    provider_name: &str,
+    drops: &crate::services::provider::SwitchDrops,
 ) -> Result<ProviderLaunch, String> {
     let config_file = unique_temp_path(&format!("claude_{provider_id}"), "json");
-    write_claude_config(&config_file, env_vars)?;
+    write_claude_config(&config_file, env_vars, provider_name, drops)?;
     let config_name = config_file
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
@@ -5770,18 +5999,43 @@ fn write_unix_launcher(
 }
 
 /// 写入 claude 配置文件（含凭据，0600）
+///
+/// 这个文件叠在用户级 `settings.json` 上：`env` 按键合并、顶层按键覆盖。所以：
+/// - `modelPicker` 一定要写：它按层级整个胜出，不写的话路由 / 聚合模式的菜单会漏进这个
+///   终端，选了就把别家的模型发给这张卡；
+/// - 切换会清掉、卡上又没有的键（`drops`）写成空值挡住：Claude Code 把空串当没设（2.1.314
+///   实测：代理的占位凭据不再随请求发出，没配的档位回到内置模型）。
 fn write_claude_config(
     config_file: &std::path::Path,
     env_vars: &[(String, String)],
+    provider_name: &str,
+    drops: &crate::services::provider::SwitchDrops,
 ) -> Result<(), String> {
+    use serde_json::Value;
     let mut config_obj = serde_json::Map::new();
     let mut env_obj = serde_json::Map::new();
 
     for (key, value) in env_vars {
-        env_obj.insert(key.clone(), serde_json::Value::String(value.clone()));
+        env_obj.insert(key.clone(), Value::String(value.clone()));
     }
 
-    config_obj.insert("env".to_string(), serde_json::Value::Object(env_obj));
+    let model_picker = crate::live::project::claude::terminal_model_picker(&env_obj, provider_name);
+    for key in drops.env.keys() {
+        env_obj
+            .entry(key.clone())
+            .or_insert_with(|| Value::String(String::new()));
+    }
+    for (key, value) in &drops.top {
+        let empty = match value {
+            Value::String(_) => Value::String(String::new()),
+            Value::Object(_) => Value::Object(serde_json::Map::new()),
+            Value::Array(_) => Value::Array(Vec::new()),
+            _ => continue,
+        };
+        config_obj.insert(key.clone(), empty);
+    }
+    config_obj.insert("env".to_string(), Value::Object(env_obj));
+    config_obj.insert("modelPicker".to_string(), model_picker);
 
     let config_json =
         serde_json::to_string_pretty(&config_obj).map_err(|e| format!("序列化配置失败: {e}"))?;
@@ -6244,7 +6498,12 @@ fn launch_windows_terminal(launch: &ProviderLaunch, cwd: Option<&Path>) -> Resul
     // Try the preferred terminal first
     let result = match terminal {
         "powershell" => run_windows_start_command_with_env(
-            &["powershell", "-NoExit", "-Command", &ps_cmd],
+            &[
+                windows_powershell_program(&effective_path_string()),
+                "-NoExit",
+                "-Command",
+                &ps_cmd,
+            ],
             "PowerShell",
             &launch_env,
         ),
@@ -6449,6 +6708,23 @@ fn run_windows_start_command_with_env(
     Ok(())
 }
 
+/// 首选终端为 PowerShell 时启动哪个程序。`powershell` 永远是系统自带的 Windows
+/// PowerShell 5.1；装了 PowerShell 7+ 的用户默认用的是 `pwsh`，所以补全后的 PATH 里
+/// 有 `pwsh.exe` 就用它，没有才退回 `powershell`。Microsoft Store 版的 `pwsh.exe` 是
+/// App Execution Alias（跟随不了的重解析点），`Path::exists` 会判成不存在，这里用
+/// `symlink_metadata`。
+#[cfg(target_os = "windows")]
+fn windows_powershell_program(path: &str) -> &'static str {
+    let has_pwsh = std::env::split_paths(path)
+        .filter(|dir| !dir.as_os_str().is_empty())
+        .any(|dir| std::fs::symlink_metadata(dir.join("pwsh.exe")).is_ok());
+    if has_pwsh {
+        "pwsh"
+    } else {
+        "powershell"
+    }
+}
+
 /// 打开用户首选终端并在其中执行一段可信命令脚本。脚本尾部 `read -r` / `pause`
 /// 是刻意设计的——让命令退出后窗口不要瞬间关闭，用户才看得到 `command
 /// not found` / `ModuleNotFoundError` 这类诊断信息。
@@ -6601,7 +6877,12 @@ read -r _
 
         let result = match terminal {
             "powershell" => run_windows_start_command(
-                &["powershell", "-NoExit", "-Command", &ps_cmd],
+                &[
+                    windows_powershell_program(&effective_path_string()),
+                    "-NoExit",
+                    "-Command",
+                    &ps_cmd,
+                ],
                 "PowerShell",
             ),
             "wt" => run_windows_start_command(&["wt", "cmd", "/K", &bat_path], "Windows Terminal"),
@@ -6882,6 +7163,24 @@ mod tests {
 
     #[cfg(target_os = "windows")]
     #[test]
+    fn windows_powershell_program_prefers_pwsh_on_path() {
+        let root = tempfile::tempdir().unwrap();
+        let empty = root.path().join("empty");
+        let pwsh_dir = root.path().join("PowerShell 7");
+        std::fs::create_dir_all(&empty).unwrap();
+        std::fs::create_dir_all(&pwsh_dir).unwrap();
+        std::fs::write(pwsh_dir.join("pwsh.exe"), "").unwrap();
+
+        let without = empty.to_str().unwrap();
+        assert_eq!(windows_powershell_program(without), "powershell");
+        assert_eq!(windows_powershell_program(""), "powershell");
+
+        let with = format!("{};{}", empty.display(), pwsh_dir.display());
+        assert_eq!(windows_powershell_program(&with), "pwsh");
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
     fn windows_lifecycle_restores_user_path_for_npm_and_its_child() {
         let root = tempfile::tempdir().unwrap();
         let npm_dir = root.path().join("npm 用户 & tools");
@@ -7012,6 +7311,66 @@ mod tests {
             finish_lifecycle_output(&output).unwrap_err(),
             "process-npm-failed"
         );
+    }
+
+    /// npm bin 路径冲突（#9173）：EEXIST + File exists 行齐备时，错误详情后
+    /// 追加指出冲突路径与安全处理方式的提示，且不建议盲目 --force。
+    #[test]
+    fn npm_bin_collision_appends_actionable_hint() {
+        let raw = "npm error code EEXIST\n\
+                   npm error path /home/user/.local/bin/pi\n\
+                   npm error EEXIST: file already exists\n\
+                   npm error File exists: /home/user/.local/bin/pi\n\
+                   npm error Remove the existing file and try again, or run npm\n\
+                   npm error with --force to overwrite files recklessly.";
+        let detail = append_npm_bin_collision_hint("npm error code EEXIST".to_string(), raw);
+        assert!(detail.contains("/home/user/.local/bin/pi"));
+        assert!(detail.contains("/home/user/.local/bin/pi.bak"));
+        assert!(detail.contains("Do not use npm --force"));
+    }
+
+    /// Windows 的 npm 输出同样带 `File exists:` 行（含盘符路径），应能提取。
+    #[test]
+    fn npm_bin_collision_extracts_windows_path() {
+        let raw = "npm error code EEXIST\nnpm error File exists: C:\\Users\\me\\AppData\\Roaming\\npm\\pi.cmd";
+        assert_eq!(
+            npm_bin_collision_path(raw),
+            Some("C:\\Users\\me\\AppData\\Roaming\\npm\\pi.cmd")
+        );
+    }
+
+    /// 只有 EEXIST 字样、没有 File exists 行的失败不误判，原样返回。
+    #[test]
+    fn npm_bin_collision_ignores_other_failures() {
+        let raw = "some tool failed with EEXIST while writing its cache";
+        let detail = "cache write failed".to_string();
+        assert_eq!(append_npm_bin_collision_hint(detail.clone(), raw), detail);
+        assert_eq!(npm_bin_collision_path("npm error code E404"), None);
+    }
+
+    #[test]
+    fn npm_bin_collision_detail_survives_trailing_noise() {
+        let raw = [
+            "npm error code EEXIST",
+            "npm error path /home/me/.local/bin/pi",
+            "npm error EEXIST: file already exists",
+            "npm error File exists: /home/me/.local/bin/pi",
+            "npm error Remove the existing file and try again, or run npm",
+            "npm error with --force to overwrite files recklessly.",
+            "npm notice",
+            "npm notice New major version of npm available! 10.9.2 -> 11.6.0",
+            "npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.6.0",
+            "npm notice To update run: npm install -g npm@11.6.0",
+            "npm notice",
+            "npm error A complete log of this run can be found in: /tmp/debug-0.log",
+        ]
+        .join("\n");
+        assert_eq!(
+            npm_bin_collision_detail(&raw).as_deref(),
+            Some("npm error code EEXIST\nnpm error File exists: /home/me/.local/bin/pi")
+        );
+        assert_eq!(npm_bin_collision_detail("npm error code E404"), None);
+        assert_eq!(npm_bin_collision_detail("EEXIST without a path"), None);
     }
 
     /// 探测 helper 正常路径：spawn（含 pre_exec setsid）能启动、输出能捕获。
@@ -7434,8 +7793,13 @@ mod tests {
     #[test]
     fn claude_terminal_config_is_private() {
         use std::os::unix::fs::PermissionsExt;
-        let launch =
-            claude_terminal_launch(&[("ANTHROPIC_AUTH_TOKEN".into(), "t".into())], "p").unwrap();
+        let launch = claude_terminal_launch(
+            &[("ANTHROPIC_AUTH_TOKEN".into(), "t".into())],
+            "p",
+            "P",
+            &Default::default(),
+        )
+        .unwrap();
         let file = &launch.cleanup[0];
         assert_eq!(
             std::fs::metadata(file).unwrap().permissions().mode() & 0o777,
@@ -7449,6 +7813,127 @@ mod tests {
             ]
         );
         std::fs::remove_file(file).unwrap();
+    }
+
+    #[test]
+    fn claude_terminal_config_writes_the_cards_own_model_picker() {
+        let read = |env: &[(&str, &str)]| {
+            let env: Vec<(String, String)> = env
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect();
+            let launch =
+                claude_terminal_launch(&env, "p", "DeepSeek", &Default::default()).unwrap();
+            let file = &launch.cleanup[0];
+            let value: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(file).unwrap()).unwrap();
+            std::fs::remove_file(file).unwrap();
+            value["modelPicker"].clone()
+        };
+
+        // 卡上显式配了档位：只列这几档，`model` 写档位别名。
+        let picker = read(&[
+            ("ANTHROPIC_MODEL", "deepseek-v4-pro"),
+            ("ANTHROPIC_DEFAULT_OPUS_MODEL", "deepseek-v4-pro[1M]"),
+            ("ANTHROPIC_DEFAULT_HAIKU_MODEL", "deepseek-v4-flash"),
+            ("ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME", "Flash"),
+        ]);
+        assert_eq!(
+            picker,
+            serde_json::json!({
+                "replaceBuiltInOptions": true,
+                "options": [
+                    {
+                        "model": "opus",
+                        "label": "Opus · deepseek-v4-pro",
+                        "description": "DeepSeek · deepseek-v4-pro · 1M",
+                    },
+                    {
+                        "model": "haiku",
+                        "label": "Haiku · Flash",
+                        "description": "DeepSeek · deepseek-v4-flash",
+                    },
+                ],
+            })
+        );
+
+        // 一档都没配：空菜单，挡住用户级菜单，显示内置的。
+        let picker = read(&[("ANTHROPIC_MODEL", "deepseek-v4-pro")]);
+        assert_eq!(
+            picker,
+            serde_json::json!({ "replaceBuiltInOptions": false, "options": [] })
+        );
+    }
+
+    #[test]
+    fn claude_terminal_config_shadows_what_the_switch_clears() {
+        let drops = crate::services::provider::SwitchDrops {
+            env: serde_json::json!({
+                "ANTHROPIC_AUTH_TOKEN": "PROXY_MANAGED",
+                "ANTHROPIC_DEFAULT_OPUS_MODEL": "ccs-claude-kimi--k3[1M]",
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+            top: serde_json::json!({
+                "model": "ccs-claude-kimi--k3[1M]",
+                "modelOverrides": { "a": "b" },
+                "modelPicker": { "replaceBuiltInOptions": true, "options": [] },
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        };
+        let launch = claude_terminal_launch(
+            &[
+                ("ANTHROPIC_API_KEY".into(), "sk".into()),
+                (
+                    "ANTHROPIC_DEFAULT_OPUS_MODEL".into(),
+                    "deepseek-v4-pro".into(),
+                ),
+            ],
+            "p",
+            "DeepSeek",
+            &drops,
+        )
+        .unwrap();
+        let file = &launch.cleanup[0];
+        let value: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(file).unwrap()).unwrap();
+        std::fs::remove_file(file).unwrap();
+
+        // 卡上有的照写，没有的写空值挡住用户级的。
+        assert_eq!(value["env"]["ANTHROPIC_API_KEY"], "sk");
+        assert_eq!(
+            value["env"]["ANTHROPIC_DEFAULT_OPUS_MODEL"],
+            "deepseek-v4-pro"
+        );
+        assert_eq!(value["env"]["ANTHROPIC_AUTH_TOKEN"], "");
+        assert_eq!(value["model"], "");
+        assert_eq!(value["modelOverrides"], serde_json::json!({}));
+        // 菜单写卡自己的，不是空对象。
+        assert_eq!(value["modelPicker"]["options"][0]["model"], "opus");
+    }
+
+    #[test]
+    fn claude_terminal_config_without_drops_writes_only_the_card() {
+        let launch = claude_terminal_launch(
+            &[("ANTHROPIC_MODEL".into(), "deepseek-v4-pro".into())],
+            "p",
+            "DeepSeek",
+            &Default::default(),
+        )
+        .unwrap();
+        let file = &launch.cleanup[0];
+        let value: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(file).unwrap()).unwrap();
+        std::fs::remove_file(file).unwrap();
+        let keys: Vec<&String> = value.as_object().unwrap().keys().collect();
+        assert_eq!(keys, ["env", "modelPicker"]);
+        assert_eq!(
+            value["modelPicker"],
+            serde_json::json!({ "replaceBuiltInOptions": false, "options": [] })
+        );
     }
 
     #[test]
@@ -7753,6 +8238,101 @@ mod tests {
         .unwrap();
         assert_eq!(update, format!("kimi upgrade --yes || {posix}"));
         assert!(!update.contains("npm"));
+    }
+
+    #[test]
+    fn kimi_native_install_root_follows_the_installer_layout() {
+        assert_eq!(
+            kimi_native_install_root(
+                "/home/me/.kimi-code/bin/kimi",
+                "/home/me/.kimi-code/bin/kimi"
+            )
+            .as_deref(),
+            Some("/home/me/.kimi-code")
+        );
+        // 软链指回安装目录时写回真身那处。
+        assert_eq!(
+            kimi_native_install_root("/home/me/.local/bin/kimi", "/opt/kimi/bin/kimi").as_deref(),
+            Some("/opt/kimi")
+        );
+        assert_eq!(
+            kimi_native_install_root(
+                r"C:\Users\sc\.kimi-code\bin\kimi.exe",
+                r"\\?\C:\Users\sc\.kimi-code\bin\kimi.exe"
+            )
+            .as_deref(),
+            Some(r"C:\Users\sc\.kimi-code")
+        );
+        // npm 版不归 installer 管。
+        assert_eq!(
+            kimi_native_install_root(
+                "/home/me/.nvm/versions/node/v22.19.0/bin/kimi",
+                "/home/me/.nvm/versions/node/v22.19.0/lib/node_modules/@moonshot-ai/kimi-code/dist/main.mjs"
+            ),
+            None
+        );
+        assert_eq!(
+            kimi_native_install_root(
+                r"C:\Users\sc\AppData\Roaming\npm\kimi.cmd",
+                r"\\?\C:\Users\sc\AppData\Roaming\npm\kimi.cmd"
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn legacy_kimi_native_update_reruns_the_installer() {
+        let install = |path: &str, version: &str| ToolInstallation {
+            path: path.to_string(),
+            version: Some(version.to_string()),
+            runnable: true,
+            error: None,
+            exited_with_error: false,
+            source: infer_install_source(Path::new(path)).to_string(),
+            is_path_default: true,
+            real: PathBuf::from(path),
+        };
+        let (path, root) = if cfg!(target_os = "windows") {
+            (
+                r"C:\Users\sc\.kimi-code\bin\kimi.exe",
+                r"C:\Users\sc\.kimi-code",
+            )
+        } else {
+            ("/home/me/.kimi-code/bin/kimi", "/home/me/.kimi-code")
+        };
+
+        // 0.43.0 之前 `upgrade --yes` 在非 TTY 下只打印提示就 exit 0（#9032）。
+        assert_eq!(
+            installs_anchored_command("kimi", &[install(path, "0.23.1")]),
+            Some(kimi_installer_update_command(root))
+        );
+        // 新版照旧走 CLI 自升级。
+        let current = installs_anchored_command("kimi", &[install(path, "2.4.0")]).unwrap();
+        assert!(current.contains("upgrade --yes"), "{current}");
+        assert_eq!(
+            installs_anchored_command("kimi", &[install(path, "0.43.0")]),
+            Some(current)
+        );
+        // Volta 的 shim 也是 `bin/kimi`，必须交给 Volta，不能让 installer 覆盖。
+        #[cfg(not(target_os = "windows"))]
+        {
+            let volta =
+                installs_anchored_command("kimi", &[install("/home/me/.volta/bin/kimi", "0.23.1")])
+                    .unwrap();
+            assert!(
+                volta.ends_with("volta install @moonshot-ai/kimi-code"),
+                "{volta}"
+            );
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn kimi_installer_update_command_targets_the_detected_dir() {
+        assert_eq!(
+            kimi_installer_update_command("/home/me/my kimi"),
+            format!("KIMI_INSTALL_DIR='/home/me/my kimi' {KIMI_INSTALL_UNIX}")
+        );
     }
 
     #[cfg(target_os = "windows")]
@@ -10935,6 +11515,52 @@ mod tests {
 
     #[cfg(not(target_os = "windows"))]
     #[test]
+    fn mise_shim_target_resolves_shim_through_mise_which() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempfile::tempdir().expect("temp dir should be created");
+        let root = temp.path();
+        let node_bin = root.join("installs/node/22.12.0/bin");
+        std::fs::create_dir_all(&node_bin).expect("node bin should be created");
+        let target = node_bin.join("claude");
+        std::fs::write(&target, "").expect("target should be written");
+
+        let mise_dir = root.join("bin");
+        std::fs::create_dir_all(&mise_dir).expect("mise dir should be created");
+        let mise = mise_dir.join("mise");
+        std::fs::write(
+            &mise,
+            format!(
+                "#!/bin/sh\n[ \"$1\" = which ] && [ \"$2\" = claude ] && echo '{}'\n",
+                target.display()
+            ),
+        )
+        .expect("fake mise should be written");
+        std::fs::set_permissions(&mise, std::fs::Permissions::from_mode(0o755))
+            .expect("fake mise should be executable");
+
+        let shims = root.join("shims");
+        std::fs::create_dir_all(&shims).expect("shims dir should be created");
+        let shim = shims.join("claude");
+        std::os::unix::fs::symlink(&mise, &shim).expect("shim symlink should be created");
+        let shim_real = std::fs::canonicalize(&shim).expect("shim should canonicalize");
+
+        assert_eq!(
+            mise_shim_target("claude", &shim, &shim_real, None),
+            Some(target.clone())
+        );
+        // 不是 mise shim 的候选不去问 mise。
+        let target_real = std::fs::canonicalize(&target).expect("target should canonicalize");
+        assert_eq!(
+            mise_shim_target("claude", &target, &target_real, None),
+            None
+        );
+        // mise 说不出路径（工具没装在当前版本里）时不猜。
+        assert_eq!(mise_shim_target("codex", &shim, &shim_real, None), None);
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
     fn tool_executable_candidates_non_windows_uses_plain_binary_name() {
         let dir = PathBuf::from("/usr/local/bin");
         let candidates = tool_executable_candidates("opencode", &dir);
@@ -11053,6 +11679,102 @@ mod tests {
                 PathBuf::from("C:\\tools\\opencode"),
             ]
         );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn tool_executable_candidates_windows_prefers_opencode_desktop_cli_sidecar() {
+        let dir = tempfile::tempdir().expect("temp dir should be created");
+        let gui = dir.path().join("opencode.exe");
+        let sidecar = dir.path().join("opencode-cli.exe");
+        std::fs::write(&gui, "").expect("desktop executable should be created");
+        std::fs::write(&sidecar, "").expect("CLI sidecar should be created");
+
+        let candidates = tool_executable_candidates("opencode", dir.path());
+
+        assert_eq!(
+            candidates,
+            vec![dir.path().join("opencode.cmd"), sidecar.clone()]
+        );
+        assert!(!candidates.contains(&gui));
+        assert_eq!(
+            windows_preferred_tool_executable("opencode", &gui),
+            Some(sidecar)
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn tool_executable_candidates_windows_prefers_opencode_resources_cli_sidecar() {
+        let dir = tempfile::tempdir().expect("temp dir should be created");
+        let gui = dir.path().join("opencode.exe");
+        let resources = dir.path().join("resources");
+        let sidecar = resources.join("opencode-cli.exe");
+        std::fs::create_dir(&resources).expect("resources dir should be created");
+        std::fs::write(&gui, "").expect("desktop executable should be created");
+        std::fs::write(resources.join("app.asar"), "").expect("app.asar should be created");
+        std::fs::write(&sidecar, "").expect("CLI sidecar should be created");
+
+        let candidates = tool_executable_candidates("opencode", dir.path());
+
+        assert_eq!(
+            candidates,
+            vec![dir.path().join("opencode.cmd"), sidecar.clone()]
+        );
+        assert!(!candidates.contains(&gui));
+        assert_eq!(
+            windows_preferred_tool_executable("opencode", &gui),
+            Some(sidecar)
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn tool_executable_candidates_windows_skips_electron_desktop_without_cli_sidecar() {
+        let dir = tempfile::tempdir().expect("temp dir should be created");
+        let gui = dir.path().join("opencode.exe");
+        let resources = dir.path().join("resources");
+        std::fs::create_dir(&resources).expect("resources dir should be created");
+        std::fs::write(&gui, "").expect("desktop executable should be created");
+        std::fs::write(resources.join("app.asar"), "").expect("app.asar should be created");
+
+        let candidates = tool_executable_candidates("opencode", dir.path());
+
+        assert_eq!(candidates, vec![dir.path().join("opencode.cmd")]);
+        assert!(!candidates.contains(&gui));
+        assert_eq!(windows_preferred_tool_executable("opencode", &gui), None);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_preferred_tool_executable_keeps_standalone_opencode_exe() {
+        let dir = tempfile::tempdir().expect("temp dir should be created");
+        let standalone = dir.path().join("opencode.exe");
+        std::fs::write(&standalone, "").expect("standalone executable should be created");
+
+        assert_eq!(
+            windows_preferred_tool_executable("opencode", &standalone),
+            Some(standalone)
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_path_default_skips_desktop_without_sidecar_and_uses_next_cli() {
+        let desktop_dir = tempfile::tempdir().expect("desktop temp dir should be created");
+        let resources = desktop_dir.path().join("resources");
+        std::fs::create_dir(&resources).expect("resources dir should be created");
+        let desktop = desktop_dir.path().join("opencode.exe");
+        std::fs::write(&desktop, "").expect("desktop executable should be created");
+        std::fs::write(resources.join("app.asar"), "").expect("app.asar should be created");
+
+        let cli_dir = tempfile::tempdir().expect("CLI temp dir should be created");
+        let cli = cli_dir.path().join("opencode.exe");
+        std::fs::write(&cli, "").expect("standalone executable should be created");
+
+        let raw = format!("{}\r\n{}\r\n", desktop.display(), cli.display());
+
+        assert_eq!(windows_preferred_path_default("opencode", &raw), Some(cli));
     }
 
     #[cfg(target_os = "windows")]

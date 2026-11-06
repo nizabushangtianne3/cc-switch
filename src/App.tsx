@@ -1,8 +1,8 @@
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
-  Suspense,
-  lazy,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -85,6 +85,7 @@ import {
 } from "@/components/providers/forms/helpers/opencodeFormUtils";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { discardUnsavedChanges, hasUnsavedChanges } from "@/lib/unsavedChanges";
+import { RefreshAllQuotaButton } from "@/components/settings/auth/RefreshAllQuotaButton";
 import {
   checkToolUpdatesInBackground,
   useToolUpdatesAvailable,
@@ -300,6 +301,10 @@ function App() {
     PROMPT_APP_IDS.includes(sharedFeatureApp) ? sharedFeatureApp : "claude",
   );
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [hasOpenedAdd, setHasOpenedAdd] = useState(false);
+  useEffect(() => {
+    if (isAddOpen) setHasOpenedAdd(true);
+  }, [isAddOpen]);
   // 供应商搜索面板：页头按钮和 ⌘F 都能打开；换应用或离开供应商页就收起
   const [providerSearchOpen, setProviderSearchOpen] = useState(false);
   const [connectionStatusSlot, setConnectionStatusSlot] =
@@ -412,6 +417,10 @@ function App() {
   }, [activeApp, currentView]);
 
   const [editingProvider, setEditingProvider] = useState<Provider | null>(null);
+  const [hasOpenedEdit, setHasOpenedEdit] = useState(false);
+  useEffect(() => {
+    if (editingProvider) setHasOpenedEdit(true);
+  }, [editingProvider]);
   const [usageProvider, setUsageProvider] = useState<Provider | null>(null);
   const [confirmAction, setConfirmAction] = useState<{
     provider: Provider;
@@ -689,6 +698,22 @@ function App() {
           defaultValue: `当前供应商 ${payload.providerName} 是官方供应商，建议切换到第三方供应商后再使用代理接管`,
         }),
         { duration: 8000 },
+      );
+    },
+  );
+
+  // Codex / Grok Build 跟随系统代理发请求：发往本地路由的请求被系统代理接走时客户端只看到
+  // 空正文 502，CC Switch 这边没有日志（#9221），进入路由时后端自检一次，没回来就提示。
+  useTauriEvent<{ appType: AppId; origin: string }>(
+    "proxy-loopback-hijacked",
+    (payload) => {
+      const app = APP_DISPLAY_NAME[payload.appType] ?? payload.appType;
+      toast.warning(
+        t("notifications.proxyLoopbackHijacked", {
+          app,
+          origin: payload.origin,
+        }),
+        { duration: 15000 },
       );
     },
   );
@@ -1832,6 +1857,7 @@ function App() {
                   </Badge>
                 </>
               }
+              actions={<RefreshAllQuotaButton />}
             />
             <div
               id="main-content"
@@ -1979,7 +2005,7 @@ function App() {
       </div>
 
       <Suspense fallback={null}>
-        {isAddOpen && (
+        {(isAddOpen || hasOpenedAdd) && (
           <LazyAddProviderDialog
             open={isAddOpen}
             onOpenChange={setIsAddOpen}
@@ -1989,7 +2015,7 @@ function App() {
           />
         )}
 
-        {Boolean(editingProvider) && (
+        {(Boolean(editingProvider) || hasOpenedEdit) && (
           <LazyEditProviderDialog
             open={Boolean(editingProvider)}
             provider={effectiveEditingProvider}

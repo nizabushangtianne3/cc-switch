@@ -51,15 +51,6 @@ export const PRESET_BRAND_IDENTITIES = {
     isPartner: true,
     partnerPromotionKey: "apinebula",
   },
-  patewayai: {
-    name: "PatewayAI",
-    websiteUrl: "https://pateway.ai",
-    apiKeyUrl: "https://pateway.ai/?ch=etzpm8&aff=WB6M6F67#/",
-    category: "third_party",
-    icon: "pateway",
-    isPartner: true,
-    partnerPromotionKey: "patewayai",
-  },
   haoai: {
     name: "hao.ai",
     websiteUrl: "https://hao.ai",
@@ -96,15 +87,6 @@ export const PRESET_BRAND_IDENTITIES = {
     icon: "grooroute",
     isPartner: true,
     partnerPromotionKey: "grooroute",
-  },
-  ditai: {
-    name: "DIT.ai",
-    websiteUrl: "https://dit.ai",
-    apiKeyUrl: "https://dit.ai?utm_source=ccswitch",
-    category: "aggregator",
-    icon: "dit",
-    isPartner: true,
-    partnerPromotionKey: "dit",
   },
   buytoken: {
     name: "BuyToken",
@@ -223,9 +205,9 @@ export const PRESET_BRAND_IDENTITIES = {
   },
   teamorouter: {
     name: "TeamoRouter",
-    websiteUrl: "https://teamorouter.cn",
+    websiteUrl: "https://teamorouter.com",
     apiKeyUrl:
-      "https://teamorouter.cn/?utm_source=cc_switch&utm_medium=referral&utm_campaign=ai_directory",
+      "https://teamorouter.com/?utm_source=cc_switch&utm_medium=referral&utm_campaign=ai_directory",
     category: "aggregator",
     icon: "teamorouter",
     isPartner: true,
@@ -240,9 +222,9 @@ export const PRESET_BRAND_IDENTITIES = {
   },
   teamorouterClaude: {
     name: "TeamoRouter Claude",
-    websiteUrl: "https://teamorouter.cn",
+    websiteUrl: "https://teamorouter.com",
     apiKeyUrl:
-      "https://teamorouter.cn/?utm_source=cc_switch&utm_medium=referral&utm_campaign=ai_directory",
+      "https://teamorouter.com/?utm_source=cc_switch&utm_medium=referral&utm_campaign=ai_directory",
     category: "aggregator",
     isPartner: true,
     partnerPromotionKey: "teamorouter",
@@ -348,8 +330,8 @@ export const PRESET_BRAND_IDENTITIES = {
   },
   a6api: {
     name: "A6API",
-    websiteUrl: "https://www.a6api.com",
-    apiKeyUrl: "https://a6api.com/register?aff=AqNr",
+    websiteUrl: "https://www.a6api.vip",
+    apiKeyUrl: "https://a6api.vip/register?aff=AqNr",
     category: "aggregator",
     icon: "a6api",
     isPartner: true,
@@ -411,16 +393,6 @@ export const PRESET_BRAND_IDENTITIES = {
     isPartner: true,
     partnerPromotionKey: "soleapi",
   },
-  micu: {
-    name: "Micu",
-    websiteUrl: "https://www.micuapi.ai",
-    apiKeyUrl: "https://www.micuapi.ai/register?aff=aOYQ",
-    category: "third_party",
-    icon: "micu",
-    iconColor: "#000000",
-    isPartner: true,
-    partnerPromotionKey: "micu",
-  },
   rightcode: {
     name: "RightCode",
     websiteUrl: "https://www.rightapi.ai",
@@ -440,17 +412,6 @@ export const PRESET_BRAND_IDENTITIES = {
     iconColor: "#000000",
     isPartner: true,
     partnerPromotionKey: "cubence",
-  },
-  sudocodechat: {
-    name: "SudoCode.chat",
-    websiteUrl: "https://sudocode.chat",
-    apiKeyUrl:
-      "https://sudocode.chat/sign-up?aff=CC-SWITCH&utm_source=cc-switch&utm_medium=sponsor&utm_campaign=ccswitch",
-    category: "third_party",
-    icon: "sudocode",
-    family: "sudocode",
-    isPartner: true,
-    partnerPromotionKey: "sudocode",
   },
   xycai: {
     name: "XycAi",
@@ -633,7 +594,7 @@ export const PRESET_BRAND_IDENTITIES = {
   streamlake: {
     name: "StreamLake",
     websiteUrl: "https://www.streamlake.com",
-    apiKeyUrl: "https://console.streamlake.com/console/wanqing/api-key",
+    apiKeyUrl: "https://console.streamlake.com/console/wanqing/api-key?channel=ccswitch",
     category: "cn_official",
     icon: "streamlake",
     family: "streamlake",
@@ -642,7 +603,7 @@ export const PRESET_BRAND_IDENTITIES = {
   "streamlake-en": {
     name: "StreamLake en",
     websiteUrl: "https://console.streamlake.ai",
-    apiKeyUrl: "https://console.streamlake.ai/console/api-key",
+    apiKeyUrl: "https://console.streamlake.ai/console/api-key?channel=ccswitch",
     category: "cn_official",
     icon: "streamlake",
     family: "streamlake",
@@ -963,8 +924,8 @@ export const PRESET_BRAND_IDENTITIES = {
   },
   tokenflux: {
     name: "TokenFlux",
-    websiteUrl: "https://tokenflux.dev",
-    apiKeyUrl: "https://tokenflux.dev/keys",
+    websiteUrl: "https://tokenflux.com",
+    apiKeyUrl: "https://tokenflux.com/keys",
     category: "aggregator",
     icon: "tokenflux",
   },
@@ -996,5 +957,22 @@ export const PRESET_BRAND_IDENTITIES = {
     category: "cloud_provider",
     icon: "aws",
     iconColor: "#FF9900",
+  },
+  ospreyai: {
+    name: "OspreyAI",
+    websiteUrl: "https://open.ospreyai.cn",
+    apiKeyUrl: "https://open.ospreyai.cn",
+    category: "aggregator",
+    icon: "ospreyai",
+    isPartner: true,
+    partnerPromotionKey: "ospreyai",
+  },
+  "openai-api": {
+    name: "OpenAI API",
+    websiteUrl: "https://platform.openai.com",
+    apiKeyUrl: "https://platform.openai.com/api-keys",
+    category: "cn_official",
+    icon: "openai",
+    iconColor: "#00A67E",
   },
 } as const satisfies Record<string, PresetBrandIdentity>;

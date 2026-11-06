@@ -201,4 +201,58 @@ mod tests {
         assert_eq!(requeued[0].id, "warm");
         assert_eq!(requeued[1].id, "cold");
     }
+
+    use serde_json::json;
+
+    #[test]
+    fn provider_loading_preserves_list_and_queue_order_with_app_local_endpoints() {
+        let db = Database::memory().unwrap();
+        for (id, created_at, queued) in [("b", 1, true), ("a", 2, true), ("outside", 0, false)] {
+            let mut provider =
+                Provider::with_id(id.to_string(), id.to_string(), json!({"model": id}), None);
+            provider.sort_index = Some(1);
+            provider.created_at = Some(created_at);
+            provider.in_failover_queue = queued;
+            db.save_provider("claude", &provider).unwrap();
+            db.add_custom_endpoint("claude", id, &format!("https://{id}.example.com"))
+                .unwrap();
+        }
+        let other_app = Provider::with_id("a".into(), "other app".into(), json!({}), None);
+        db.save_provider("codex", &other_app).unwrap();
+        db.add_custom_endpoint("codex", "a", "https://codex.example.com")
+            .unwrap();
+
+        let all = db.get_all_providers("claude").unwrap();
+        assert_eq!(
+            all.keys().map(String::as_str).collect::<Vec<_>>(),
+            ["outside", "b", "a"]
+        );
+        let queued = db.get_shared_failover_queue_providers("claude").unwrap();
+        let queue = db.get_failover_queue("claude").unwrap();
+        assert_eq!(
+            queued.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(),
+            queue
+                .iter()
+                .map(|p| p.provider_id.as_str())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(queued[0].id, "a");
+        assert_eq!(queued[1].id, "b");
+        for provider in &queued {
+            let meta = provider.meta.as_ref().unwrap();
+            let url = format!("https://{}.example.com", provider.id);
+            assert_eq!(meta.custom_endpoints.len(), 1);
+            assert_eq!(meta.custom_endpoints[&url].url, url);
+            assert!(meta.custom_endpoints[&url].added_at > 0);
+            assert_eq!(
+                provider.settings_config["model"].as_str(),
+                Some(provider.id.as_str())
+            );
+            assert!(provider.in_failover_queue);
+            let listed = &all[&provider.id].meta.as_ref().unwrap().custom_endpoints;
+            assert_eq!(listed.len(), 1);
+            assert_eq!(listed[&url].url, url);
+            assert_eq!(listed[&url].added_at, meta.custom_endpoints[&url].added_at);
+        }
+    }
 }

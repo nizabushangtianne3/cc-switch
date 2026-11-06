@@ -644,9 +644,9 @@ async fn send_raw_request(
     } else {
         // 手写报文分两段落（头 + 体）：Nagle 会把第二段等 ACK 才发出去，
         // 上游拿不全请求就不响应，keep-alive 池等于每次多付一个 RTT。
-        let tcp = tokio::net::TcpStream::connect((host, port))
-            .await
-            .map_err(|e| ProxyError::ForwardFailed(format!("TCP connect failed: {e}")))?;
+        // connect_direct 兼顾问号 IPv6 主机与 Happy Eyeballs（AAAA 全是死地址时
+        // 不会干等 20 秒以上）。
+        let tcp = connect_direct(host, port).await?;
         tcp.set_nodelay(true)
             .map_err(|e| ProxyError::ForwardFailed(format!("TCP connect failed: {e}")))?;
         ProxyStream::Tcp(tcp)
@@ -700,6 +700,36 @@ async fn send_raw_request(
         sender,
     };
     Ok(wrap_hyper_response(resp, Some(release)))
+}
+
+/// Open a direct TCP connection to `host:port` with Happy Eyeballs.
+///
+/// `TcpStream::connect` tries every resolved address one after another and only
+/// moves on when the OS gives up on the current one (about 75s per address on
+/// macOS, about 21s on Windows). Hosts that publish AAAA records unreachable from
+/// the user's network (e.g. two dead IPv6 addresses in front of a working IPv4)
+/// then stall every request for minutes before the first byte goes out. Reuse
+/// hyper-util's connector, which races the other address family after 300ms the
+/// same way curl and browsers do.
+async fn connect_direct(host: &str, port: u16) -> Result<tokio::net::TcpStream, ProxyError> {
+    use tower::Service;
+
+    // `host` comes from `http::Uri::host()`, which keeps IPv6 literals bracketed.
+    let dst: http::Uri = format!("http://{host}:{port}/")
+        .parse()
+        .map_err(|e| ProxyError::ForwardFailed(format!("Invalid upstream address: {e}")))?;
+    let mut connector = hyper_util::client::legacy::connect::HttpConnector::new();
+    connector.enforce_http(false);
+    std::future::poll_fn(|cx| connector.poll_ready(cx))
+        .await
+        .map_err(|e| ProxyError::ForwardFailed(format!("TCP connect failed: {e}")))?;
+    let io = connector.call(dst).await.map_err(|e| {
+        ProxyError::ForwardFailed(format!(
+            "TCP connect failed: {}",
+            super::error::describe_error_chain(&e)
+        ))
+    })?;
+    Ok(io.into_inner())
 }
 
 /// Establish a connection through an HTTP CONNECT proxy tunnel.
@@ -1459,5 +1489,26 @@ mod tests {
             2,
             "上游声明 Connection: close 时必须各建一条连接"
         );
+    }
+
+    #[tokio::test]
+    async fn connect_direct_reaches_ipv4_and_bracketed_ipv6_hosts() {
+        let v4 = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let v4_port = v4.local_addr().unwrap().port();
+        let stream = connect_direct("127.0.0.1", v4_port).await.unwrap();
+        assert_eq!(stream.peer_addr().unwrap().port(), v4_port);
+
+        // `http::Uri::host()` hands IPv6 literals over with brackets.
+        let Ok(v6) = tokio::net::TcpListener::bind(("::1", 0)).await else {
+            return; // no IPv6 loopback on this machine
+        };
+        let v6_port = v6.local_addr().unwrap().port();
+        let uri: http::Uri = format!("https://[::1]:{v6_port}/v1/messages")
+            .parse()
+            .unwrap();
+        let stream = connect_direct(uri.host().unwrap(), v6_port).await.unwrap();
+        assert!(stream.peer_addr().unwrap().is_ipv6());
     }
 }

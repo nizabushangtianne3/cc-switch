@@ -71,6 +71,7 @@ pub fn import(state: &AppState) -> Result<usize, AppError> {
             set_app: |apps, enabled| apps.mcode = enabled,
             unify: unified_spec,
             transport_fields: &TRANSPORT_FIELDS,
+            reject_entry: None,
         },
     )
 }

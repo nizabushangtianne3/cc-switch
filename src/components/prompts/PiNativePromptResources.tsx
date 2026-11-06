@@ -283,6 +283,8 @@ function PiInstructionFileEditor({
             onChange={(event) => setDraft(event.target.value)}
             disabled={busy}
             spellCheck={false}
+            autoCorrect="off"
+            autoCapitalize="off"
             placeholder={t("pi.prompts.instructionPlaceholder")}
             aria-invalid={showBlankError}
             aria-describedby={
@@ -676,6 +678,8 @@ function PiPromptTemplateEditor({
             }
             autoComplete="off"
             spellCheck={false}
+            autoCorrect="off"
+            autoCapitalize="off"
             className={cn(
               promptFieldClass,
               "h-8 ps-[19px] font-mono text-caption",
@@ -706,6 +710,8 @@ function PiPromptTemplateEditor({
           disabled={busy}
           placeholder={t("pi.prompts.templateDescriptionPlaceholder")}
           autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
           className={cn(promptFieldClass, "h-8")}
         />
       </div>
@@ -730,6 +736,8 @@ function PiPromptTemplateEditor({
           onChange={(event) => setContent(event.target.value)}
           disabled={busy}
           spellCheck={false}
+          autoCorrect="off"
+          autoCapitalize="off"
           placeholder={t("pi.prompts.templateContentPlaceholder")}
           className={cn(
             promptFieldClass,

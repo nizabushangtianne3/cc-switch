@@ -274,6 +274,7 @@ mod tests {
                 CustomEndpoint {
                     url: "https://api.example.com/v1".to_string(),
                     added_at: 1_700_000_001,
+                    last_used: None,
                 },
             )]),
             ..Default::default()
