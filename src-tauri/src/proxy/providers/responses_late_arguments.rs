@@ -91,9 +91,9 @@ impl Block {
     }
 
     /// 把参数写进结束事件，重新序列化。
-    fn with_arguments(mut self, arguments: &str) -> Bytes {
+    fn with_arguments(mut self, arguments: &str, out: &mut Vec<u8>) {
         let Some(event) = self.event.as_mut() else {
-            return self.into_bytes();
+            return self.into_bytes(out);
         };
         let target =
             if event.get("type").and_then(Value::as_str) == Some("response.output_item.done") {
@@ -102,35 +102,32 @@ impl Block {
                 Some(&mut *event)
             };
         let Some(target) = target.and_then(Value::as_object_mut) else {
-            return self.into_bytes();
+            return self.into_bytes(out);
         };
         target.insert(
             "arguments".to_string(),
             Value::String(arguments.to_string()),
         );
-        let mut out = String::new();
+        // 与 frame_sse_event 一致：直接写进调用方的块缓冲，不留中间 String。
         if let Some(name) = &self.event_name {
-            out.push_str("event: ");
-            out.push_str(name);
-            out.push('\n');
+            out.extend_from_slice(b"event: ");
+            out.extend_from_slice(name.as_bytes());
+            out.push(b'\n');
         }
-        out.push_str("data: ");
-        out.push_str(&serde_json::to_string(event).unwrap_or_default());
-        out.push_str("\n\n");
-        Bytes::from(out)
+        out.extend_from_slice(b"data: ");
+        let _ = serde_json::to_writer(&mut *out, event);
+        out.extend_from_slice(b"\n\n");
     }
 
-    fn into_bytes(self) -> Bytes {
-        passthrough_block(&self.raw)
+    fn into_bytes(self, out: &mut Vec<u8>) {
+        passthrough_block(out, &self.raw);
     }
 }
 
 /// 原样放行一个块：块文本加一个空行，与逐字节重发完全一致。
-fn passthrough_block(raw: &str) -> Bytes {
-    let mut out = Vec::with_capacity(raw.len() + 2);
+fn passthrough_block(out: &mut Vec<u8>, raw: &str) {
     out.extend_from_slice(raw.as_bytes());
     out.extend_from_slice(b"\n\n");
-    Bytes::from(out)
 }
 
 #[derive(Default)]
@@ -142,9 +139,9 @@ struct Repair {
 }
 
 impl Repair {
-    fn push(&mut self, raw: &str) -> Vec<Bytes> {
-        let mut out = Vec::new();
-
+    /// 处理一个块，输出追加进 `out`：同一个 chunk 的若干块合成一次 yield，
+    /// 不再一个块一次分配、一次流式写。
+    fn push(&mut self, raw: &str, out: &mut Vec<u8>) {
         // 与补齐无关的事件才是流的绝大多数：借用的 data 载荷加一个借用的 type
         // 探针就够判定，不解析 JSON、不复制块文本。没有 data 行、载荷摊在多行、
         // 或者类型命中候选的事件，才走下面的完整解析。
@@ -154,9 +151,9 @@ impl Repair {
         if !repair_candidate {
             // 语义与完整路径一致：任何「不是参数增量」的事件都会放行此前扣住的
             // 结束事件，然后自己原样发出。
-            out.extend(self.flush(None));
-            out.push(passthrough_block(raw));
-            return out;
+            self.flush(None, out);
+            passthrough_block(out, raw);
+            return;
         }
 
         let block = Block::parse(raw);
@@ -164,28 +161,27 @@ impl Repair {
             self.arguments.entry(item_id).or_default().push_str(delta);
             // 增量一律照发，不触发放行：并行调用时几个条目的结束事件可能都先到，各自的增量
             // （乃至别的调用的增量）随后交错着来，见到任何增量就放行会让还没等到参数的条目空着发出。
-            out.push(block.into_bytes());
-            return out;
+            block.into_bytes(out);
+            return;
         }
 
         if let Some(item_id) = block.empty_function_call_end() {
             self.held.push((item_id, block));
-            return out;
+            return;
         }
 
         let completed = block
             .event
             .as_ref()
             .filter(|_| block.event_type() == Some("response.completed"));
-        out.extend(self.flush(completed));
-        out.push(block.into_bytes());
-        out
+        self.flush(completed, out);
+        block.into_bytes(out);
     }
 
-    fn flush(&mut self, completed: Option<&Value>) -> Vec<Bytes> {
+    fn flush(&mut self, completed: Option<&Value>, out: &mut Vec<u8>) {
         std::mem::take(&mut self.held)
             .into_iter()
-            .map(|(item_id, block)| {
+            .for_each(|(item_id, block)| {
                 let arguments = self
                     .arguments
                     .get(&item_id)
@@ -193,11 +189,10 @@ impl Repair {
                     .cloned()
                     .or_else(|| completed_arguments(completed?, &item_id));
                 match arguments {
-                    Some(arguments) => block.with_arguments(&arguments),
-                    None => block.into_bytes(),
+                    Some(arguments) => block.with_arguments(&arguments, out),
+                    None => block.into_bytes(out),
                 }
-            })
-            .collect()
+            });
     }
 }
 
@@ -227,6 +222,7 @@ where
         let mut repair = Repair::default();
 
         tokio::pin!(stream);
+        let mut out: Vec<u8> = Vec::new();
 
         while let Some(chunk) = stream.next().await {
             match chunk {
@@ -234,20 +230,23 @@ where
                     utf8_tail.append(&mut buffer, &bytes);
                     while let Some((end, delim)) = next_sse_block_range(&buffer) {
                         let block = &buffer[..end];
-                        let outputs = if block.trim().is_empty() {
-                            Vec::new()
-                        } else {
-                            repair.push(block)
-                        };
-                        buffer.drain(..end + delim);
-                        for out in outputs {
-                            yield Ok(out);
+                        if !block.trim().is_empty() {
+                            repair.push(block, &mut out);
                         }
+                        buffer.drain(..end + delim);
+                    }
+                    // 一个 chunk 的所有块合成一次 yield：下游看到的字节序列不变，
+                    // 但省下每块一次分配和一次流式写。
+                    if !out.is_empty() {
+                        yield Ok(Bytes::copy_from_slice(&out));
+                        out.clear();
                     }
                 }
                 Err(e) => {
-                    for out in repair.flush(None) {
-                        yield Ok(out);
+                    repair.flush(None, &mut out);
+                    if !out.is_empty() {
+                        yield Ok(Bytes::copy_from_slice(&out));
+                        out.clear();
                     }
                     yield Err(std::io::Error::other(e.to_string()));
                     return;
@@ -258,12 +257,11 @@ where
         utf8_tail.flush(&mut buffer);
         let tail = std::mem::take(&mut buffer);
         if !tail.trim().is_empty() {
-            for out in repair.push(&tail) {
-                yield Ok(out);
-            }
+            repair.push(&tail, &mut out);
         }
-        for out in repair.flush(None) {
-            yield Ok(out);
+        repair.flush(None, &mut out);
+        if !out.is_empty() {
+            yield Ok(Bytes::copy_from_slice(&out));
         }
     }
 }
@@ -283,21 +281,23 @@ mod tests {
 
     fn run(blocks: Vec<Value>) -> Vec<Value> {
         let mut repair = Repair::default();
-        let mut out: Vec<Bytes> = blocks
-            .into_iter()
-            .flat_map(|event| repair.push(&sse(event)))
-            .collect();
-        out.extend(repair.flush(None));
-        out.iter()
-            .map(|bytes| {
-                let text = std::str::from_utf8(bytes).unwrap();
-                let data = text
-                    .lines()
-                    .find_map(|line| line.strip_prefix("data: "))
-                    .unwrap();
-                serde_json::from_str(data).unwrap()
-            })
-            .collect()
+        let mut stream: Vec<u8> = Vec::new();
+        for event in blocks {
+            repair.push(&sse(event), &mut stream);
+        }
+        repair.flush(None, &mut stream);
+        let text = String::from_utf8(stream).unwrap();
+        let mut events = Vec::new();
+        let mut rest = text.as_str();
+        while let Some((end, delim)) = next_sse_block_range(rest) {
+            let data = rest[..end]
+                .lines()
+                .find_map(|line| line.strip_prefix("data: "))
+                .unwrap();
+            events.push(serde_json::from_str(data).unwrap());
+            rest = &rest[end + delim..];
+        }
+        events
     }
 
     fn types(events: &[Value]) -> Vec<&str> {
@@ -419,11 +419,12 @@ mod tests {
             json!({ "type": "response.completed", "response": { "output": [] } }),
         ];
         let mut repair = Repair::default();
+        let mut out: Vec<u8> = Vec::new();
         for event in blocks {
             let raw = sse(event);
-            let out = repair.push(&raw);
-            assert_eq!(out.len(), 1);
-            assert_eq!(out[0], Bytes::from(format!("{raw}\n\n")));
+            repair.push(&raw, &mut out);
+            assert_eq!(out, format!("{raw}\n\n").as_bytes());
+            out.clear();
         }
     }
 
@@ -438,9 +439,11 @@ mod tests {
             "event: response.reasoning_summary_text.delta\ndata: {\"type\":\"response.reasoning_summary_text.delta\"}",
         ];
         let mut repair = Repair::default();
+        let mut out: Vec<u8> = Vec::new();
         for raw in unrelated {
-            let out = repair.push(raw);
-            assert_eq!(out, vec![Bytes::from(format!("{raw}\n\n"))], "{raw}");
+            repair.push(raw, &mut out);
+            assert_eq!(out, format!("{raw}\n\n").as_bytes(), "{raw}");
+            out.clear();
         }
     }
 
@@ -449,27 +452,31 @@ mod tests {
     fn multi_line_payloads_are_also_untouched() {
         let raw = "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\ndata: \"delta\":\"hi\"}";
         let mut repair = Repair::default();
-        assert_eq!(repair.push(raw), vec![Bytes::from(format!("{raw}\n\n"))]);
+        let mut out: Vec<u8> = Vec::new();
+        repair.push(raw, &mut out);
+        assert_eq!(out, format!("{raw}\n\n").as_bytes());
     }
 
     /// 没有 data 行的块（纯注释/纯 event）也走快路径，但扣住的结束事件必须放行。
     #[test]
     fn data_less_blocks_release_held_events() {
         let mut repair = Repair::default();
-        repair.push(&sse(json!({
-            "type": "response.output_item.done",
-            "item": call_item("")
-        })));
-        let out = repair.push("event: ping");
+        let mut out: Vec<u8> = Vec::new();
+        repair.push(
+            &sse(json!({
+                "type": "response.output_item.done",
+                "item": call_item("")
+            })),
+            &mut out,
+        );
+        assert!(out.is_empty(), "held block must not be emitted yet");
+        repair.push("event: ping", &mut out);
         assert_eq!(
-            out,
-            vec![
-                Bytes::from(format!(
-                    "event: response.output_item.done\ndata: {}\n\n",
-                    json!({ "type": "response.output_item.done", "item": call_item("") })
-                )),
-                Bytes::from("event: ping\n\n")
-            ]
+            String::from_utf8(out).unwrap(),
+            format!(
+                "event: response.output_item.done\ndata: {}\n\nevent: ping\n\n",
+                json!({ "type": "response.output_item.done", "item": call_item("") })
+            )
         );
     }
 

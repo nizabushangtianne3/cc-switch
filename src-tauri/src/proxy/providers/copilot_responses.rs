@@ -2,11 +2,24 @@
 //! Keep the first upstream-issued ID for each output index so Codex can merge
 //! streamed text with its completed item. The original ID remains replayable.
 
-use crate::proxy::sse::{strip_sse_field, SseBuffer};
+use crate::proxy::sse::{next_sse_block_range, scan_sse_block, strip_sse_field, Utf8TailDecoder};
 use bytes::Bytes;
-use futures::{Stream, StreamExt};
+use futures::stream::{Stream, StreamExt};
 use serde_json::Value;
 use std::{collections::HashMap, io};
+
+/// `ItemIds::rewrite_event` 会读到的字段名：`output_index`、`item_id` 和
+/// `response.output`。一个都不含的块（文本增量、推理增量、注释行……）哪怕解析出
+/// 整棵 JSON 树也改不动任何字段，直接按原文重发。
+const REWRITE_KEYS: [&str; 3] = ["\"output_index\"", "\"item_id\"", "\"output\""];
+
+/// 原样放行一个块：块文本加一个空行，与逐字节重发完全一致。
+fn passthrough_block(raw: &str) -> Bytes {
+    let mut out = Vec::with_capacity(raw.len() + 2);
+    out.extend_from_slice(raw.as_bytes());
+    out.extend_from_slice(b"\n\n");
+    Bytes::from(out)
+}
 
 #[derive(Default)]
 struct ItemIds {
@@ -68,16 +81,16 @@ impl ItemIds {
     }
 
     fn rewrite_block(&mut self, raw: &str) -> Result<Bytes, io::Error> {
-        let data = raw
-            .lines()
-            .filter_map(|line| strip_sse_field(line, "data"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let unchanged = || Bytes::from(format!("{raw}\n\n"));
+        if !REWRITE_KEYS.iter().any(|key| raw.contains(key)) {
+            return Ok(passthrough_block(raw));
+        }
+        let (_, payload) = scan_sse_block(raw);
+        let data = payload.as_deref().unwrap_or_default();
+        let unchanged = || passthrough_block(raw);
         if data.is_empty() || data.trim() == "[DONE]" {
             return Ok(unchanged());
         }
-        let mut event: Value = match serde_json::from_str(&data) {
+        let mut event: Value = match serde_json::from_str(data) {
             Ok(event) => event,
             Err(error) => {
                 log::warn!("[Copilot/Responses] Invalid SSE JSON: {error}");
@@ -94,23 +107,22 @@ impl ItemIds {
             return Ok(unchanged());
         }
 
-        let data = serde_json::to_string(&event).map_err(io::Error::other)?;
-        let mut output = String::new();
+        let mut output = Vec::with_capacity(raw.len() + 16);
         let mut wrote_data = false;
         for line in raw.lines() {
             if strip_sse_field(line, "data").is_some() {
                 if !wrote_data {
-                    output.push_str("data: ");
-                    output.push_str(&data);
-                    output.push('\n');
+                    output.extend_from_slice(b"data: ");
+                    serde_json::to_writer(&mut output, &event).map_err(io::Error::other)?;
+                    output.push(b'\n');
                     wrote_data = true;
                 }
             } else {
-                output.push_str(line);
-                output.push('\n');
+                output.extend_from_slice(line.as_bytes());
+                output.push(b'\n');
             }
         }
-        output.push('\n');
+        output.push(b'\n');
         Ok(Bytes::from(output))
     }
 }
@@ -122,23 +134,133 @@ where
     E: std::error::Error + Send + 'static,
 {
     async_stream::try_stream! {
-        let mut sse = SseBuffer::new();
         let mut ids = ItemIds::default();
+        let mut buffer = String::new();
+        let mut utf8_tail = Utf8TailDecoder::default();
+
         tokio::pin!(stream);
 
         while let Some(chunk) = stream.next().await {
             let bytes = chunk.map_err(|error| io::Error::other(error.to_string()))?;
-            sse.push_bytes(&bytes);
-            while let Some(block) = sse.next_block() {
-                if !block.trim().is_empty() {
-                    yield ids.rewrite_block(block)?;
+            utf8_tail.append(&mut buffer, &bytes);
+            while let Some((end, delim)) = next_sse_block_range(&buffer) {
+                let block = &buffer[..end];
+                let outcome = if block.trim().is_empty() {
+                    None
+                } else {
+                    Some(ids.rewrite_block(block))
+                };
+                buffer.drain(..end + delim);
+                if let Some(outcome) = outcome {
+                    yield outcome?;
                 }
             }
         }
 
-        let tail = sse.take_tail();
+        utf8_tail.flush(&mut buffer);
+        let tail = std::mem::take(&mut buffer);
         if !tail.trim().is_empty() {
             yield ids.rewrite_block(&tail)?;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sse(event: &str, data: &str) -> String {
+        format!("event: {event}\ndata: {data}\n\n")
+    }
+
+    async fn drain(blocks: Vec<String>) -> String {
+        let stream = create_stable_item_id_stream(futures::stream::iter(
+            blocks
+                .into_iter()
+                .map(|block| Ok::<_, io::Error>(Bytes::from(block))),
+        ));
+        futures::pin_mut!(stream);
+        let mut out = Vec::new();
+        while let Some(item) = stream.next().await {
+            out.extend_from_slice(&item.unwrap());
+        }
+        String::from_utf8(out).unwrap()
+    }
+
+    /// Copilot 为同一个 output_index 重发 item id：拉回第一次的 id，Codex 才认得出
+    /// 流式文本属于哪个条目。
+    #[tokio::test]
+    async fn rewrites_reissued_item_ids_for_the_same_output_index() {
+        let stream = drain(vec![
+            sse(
+                "response.output_item.added",
+                r#"{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_1"}}"#,
+            ),
+            sse(
+                "response.output_text.delta",
+                r#"{"type":"response.output_text.delta","output_index":0,"item_id":"rs_1","delta":"hi"}"#,
+            ),
+            sse(
+                "response.output_item.done",
+                r#"{"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","id":"rs_2"}}"#,
+            ),
+        ])
+        .await;
+        let done = stream
+            .lines()
+            .rfind(|line| line.starts_with("data: "))
+            .unwrap();
+        let event: Value = serde_json::from_str(&done["data: ".len()..]).unwrap();
+        assert_eq!(event["item"]["id"], "rs_1");
+    }
+
+    /// 不含任何可改字段的事件逐字节透传，event 行、注释、[DONE] 都不动。
+    #[tokio::test]
+    async fn passes_unrelated_events_through_byte_for_byte() {
+        let blocks = vec![
+            sse(
+                "response.output_text.delta",
+                r#"{"type":"response.output_text.delta","delta":"hi"}"#,
+            ),
+            "event: message\ndata: [DONE]\n\n".to_string(),
+            ": keep-alive comment\n\n".to_string(),
+        ];
+        assert_eq!(drain(blocks.clone()).await, blocks.join(""));
+    }
+
+    /// `response.created` 带 output 数组：走完整路径但改不出东西，字节不变。
+    #[tokio::test]
+    async fn created_with_an_empty_output_is_untouched() {
+        let block = sse(
+            "response.created",
+            r#"{"type":"response.created","response":{"id":"resp_1","output":[]}}"#,
+        );
+        assert_eq!(drain(vec![block.clone()]).await, block);
+    }
+
+    /// 载荷文本里出现 "item_id" 字面量：命中门控走完整路径，照样不改一个字节。
+    #[tokio::test]
+    async fn payload_mentioning_item_id_as_text_is_untouched() {
+        let block = sse(
+            "response.output_text.delta",
+            r#"{"type":"response.output_text.delta","delta":"键 \"item_id\" 只是文本"}"#,
+        );
+        assert_eq!(drain(vec![block.clone()]).await, block);
+    }
+
+    /// 载荷摊在多行 data 上：join 之后照旧判定，字节不变。
+    #[tokio::test]
+    async fn multi_line_payloads_are_untouched() {
+        let raw = "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\ndata: \"delta\":\"hi\"}\n\n";
+        assert_eq!(drain(vec![raw.to_string()]).await, raw);
+    }
+
+    /// 上游最后一块没带空行：尾部路径同样处理，重发时补上分隔符。
+    #[tokio::test]
+    async fn handles_a_tail_without_a_delimiter() {
+        let raw = "event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"reasoning\",\"id\":\"rs_1\"}}";
+        let mut expected = raw.to_string();
+        expected.push_str("\n\n");
+        assert_eq!(drain(vec![raw.to_string()]).await, expected);
     }
 }
