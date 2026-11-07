@@ -16,7 +16,9 @@
 //!   来源（可能正是这家自己签发的），原样发出，上游明确拒绝后再由 `opaque_state_rectifier`
 //!   换掉。
 
-use crate::proxy::sse::{next_sse_block_range, strip_sse_field, Utf8TailDecoder};
+use crate::proxy::sse::{
+    next_sse_block_range, sse_block_payload, sse_data_type, strip_sse_field, Utf8TailDecoder,
+};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
@@ -425,26 +427,36 @@ struct NativeCompactionState {
 impl NativeCompactionState {
     fn handle_block(&mut self, block: &str) -> Vec<Bytes> {
         let passthrough = || vec![Bytes::from(format!("{block}\n\n"))];
-        let data = block
-            .lines()
-            .filter_map(|line| strip_sse_field(line, "data"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let Ok(event) = serde_json::from_str::<Value>(&data) else {
-            return passthrough();
+        // 只有一个 data 行时直接借用块文本，多行才拼一份（SSE 规范允许，极少见）。
+        let data: Cow<'_, str> = match sse_block_payload(block) {
+            Some(payload) => Cow::Borrowed(payload),
+            None => Cow::Owned(
+                block
+                    .lines()
+                    .filter_map(|line| strip_sse_field(line, "data"))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            ),
         };
-
-        match event.get("type").and_then(Value::as_str) {
-            Some("response.output_item.done") => {
-                if let Some(index) = event.get("output_index").and_then(Value::as_u64) {
-                    self.next_output_index = self.next_output_index.max(index + 1);
+        // 事件类型用只读探针取：只有真要动手的两类事件才建整棵 Value。
+        match sse_data_type(&data) {
+            Some("response.output_item.done") | Some("response.completed") => {
+                let Ok(event) = serde_json::from_str::<Value>(&data) else {
+                    return passthrough();
+                };
+                match event.get("type").and_then(Value::as_str) {
+                    Some("response.output_item.done") => {
+                        if let Some(index) = event.get("output_index").and_then(Value::as_u64) {
+                            self.next_output_index = self.next_output_index.max(index + 1);
+                        }
+                        if let Some(item) = event.get("item") {
+                            self.done_items.push(item.clone());
+                        }
+                        passthrough()
+                    }
+                    _ => self.finish(event),
                 }
-                if let Some(item) = event.get("item") {
-                    self.done_items.push(item.clone());
-                }
-                passthrough()
             }
-            Some("response.completed") => self.finish(event),
             _ => passthrough(),
         }
     }
