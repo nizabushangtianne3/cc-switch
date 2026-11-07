@@ -5,6 +5,7 @@
 use crate::proxy::sse::{next_sse_block_range, scan_sse_block, strip_sse_field, Utf8TailDecoder};
 use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
+use serde::Deserialize;
 use serde_json::Value;
 use std::{collections::HashMap, io};
 
@@ -19,6 +20,43 @@ fn passthrough_block(raw: &str) -> Bytes {
     out.extend_from_slice(raw.as_bytes());
     out.extend_from_slice(b"\n\n");
     Bytes::from(out)
+}
+
+/// `rewrite_event` 需要的字段的只读借阅版。
+///
+/// Copilot 重发 id 是少数场景，绝大多数事件判定完一个字节都不用改。用探针判
+/// 定不必建整棵 `Value`（每个键值都要分配 String），只有判定「要改」时才回头
+/// 走完整的解析与改写路径。字段类型意外（`item_id` 不是字符串之类）时探针解析
+/// 失败，同样退回完整路径，判定结果不变。
+#[derive(Deserialize)]
+struct IdProbe<'a> {
+    #[serde(rename = "type", borrow)]
+    r#type: Option<&'a str>,
+    output_index: Option<u64>,
+    #[serde(borrow)]
+    item_id: Option<&'a str>,
+    #[serde(borrow)]
+    item: Option<IdProbeItem<'a>>,
+    #[serde(borrow)]
+    response: Option<IdProbeResponse<'a>>,
+}
+
+#[derive(Deserialize)]
+struct IdProbeItem<'a> {
+    #[serde(borrow)]
+    id: Option<&'a str>,
+}
+
+#[derive(Deserialize)]
+struct IdProbeResponse<'a> {
+    #[serde(borrow)]
+    output: Option<Vec<IdProbeOutput<'a>>>,
+}
+
+#[derive(Deserialize)]
+struct IdProbeOutput<'a> {
+    #[serde(borrow)]
+    id: Option<&'a str>,
 }
 
 #[derive(Default)]
@@ -80,6 +118,55 @@ impl ItemIds {
         changed
     }
 
+    /// [`Self::rewrite_event`] 的只读判定版：照样维护 `by_output_index`（首次见到
+    /// 的 id 必须记住，否则后面的 done 事件就对不上），但不动事件本身，只回答
+    /// 「这个事件会不会被改写」。
+    fn probe_would_rewrite(&mut self, kind: &str, probe: &IdProbe<'_>) -> bool {
+        if kind == "response.created" {
+            self.by_output_index.clear();
+        }
+
+        let mut changed = false;
+        if let Some(index) = probe.output_index {
+            if matches!(
+                kind,
+                "response.output_item.added" | "response.output_item.done"
+            ) {
+                if let Some(id) = probe.item.as_ref().and_then(|item| item.id) {
+                    changed |= self.stabilize_probe_id(index, id);
+                }
+            }
+            if let Some(id) = probe.item_id {
+                if let Some(stable) = self.by_output_index.get(&index) {
+                    if id != stable {
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        if let Some(output) = probe.response.as_ref().and_then(|r| r.output.as_ref()) {
+            for (index, item) in output.iter().enumerate() {
+                if let Some(id) = item.id {
+                    changed |= self.stabilize_probe_id(index as u64, id);
+                }
+            }
+        }
+        changed
+    }
+
+    /// [`Self::stabilize_id`] 的只读判定版。
+    fn stabilize_probe_id(&mut self, output_index: u64, current: &str) -> bool {
+        if current.is_empty() {
+            return false;
+        }
+        let stable = self
+            .by_output_index
+            .entry(output_index)
+            .or_insert_with(|| current.to_string());
+        current != stable
+    }
+
     fn rewrite_block(&mut self, raw: &str) -> Result<Bytes, io::Error> {
         if !REWRITE_KEYS.iter().any(|key| raw.contains(key)) {
             return Ok(passthrough_block(raw));
@@ -89,6 +176,17 @@ impl ItemIds {
         let unchanged = || passthrough_block(raw);
         if data.is_empty() || data.trim() == "[DONE]" {
             return Ok(unchanged());
+        }
+        // 先用只读探针判一刀：判定「不用改」就直接透传，省下整棵 Value。
+        // 探针解析失败（字段类型意外）或判定「要改」，才走下面的完整路径。
+        if let Ok(probe) = serde_json::from_str::<IdProbe<'_>>(data) {
+            let kind = probe
+                .r#type
+                .or_else(|| raw.lines().find_map(|line| strip_sse_field(line, "event")))
+                .unwrap_or_default();
+            if !self.probe_would_rewrite(kind, &probe) {
+                return Ok(unchanged());
+            }
         }
         let mut event: Value = match serde_json::from_str(data) {
             Ok(event) => event,
@@ -340,5 +438,44 @@ mod tests {
         let mut expected = raw.to_string();
         expected.push_str("\n\n");
         assert_eq!(drain(vec![raw.to_string()]).await, expected);
+    }
+
+    /// 字段类型意外（item_id 是数字、output_index 是字符串）：探针解析不上，
+    /// 退回完整路径，仍判定不改，字节原样。
+    #[tokio::test]
+    async fn unexpected_field_types_fall_back_without_changing_bytes() {
+        let block = sse(
+            "response.output_text.delta",
+            r#"{"type":"response.output_text.delta","output_index":0,"item_id":7,"delta":"hi"}"#,
+        );
+        assert_eq!(drain(vec![block.clone()]).await, block);
+
+        let block = sse(
+            "response.output_item.done",
+            r#"{"type":"response.output_item.done","output_index":"0","item":{"type":"reasoning","id":"rs_9"}}"#,
+        );
+        assert_eq!(drain(vec![block.clone()]).await, block);
+    }
+
+    /// `response.completed` 的 output 里出现重发的 id：照样拉回第一次的 id。
+    #[tokio::test]
+    async fn rewrites_ids_reissued_in_the_completed_snapshot() {
+        let stream = drain(vec![
+            sse(
+                "response.output_item.added",
+                r#"{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_1"}}"#,
+            ),
+            sse(
+                "response.completed",
+                r#"{"type":"response.completed","response":{"output":[{"type":"reasoning","id":"rs_2"}]}}"#,
+            ),
+        ])
+        .await;
+        let line = stream
+            .lines()
+            .rfind(|line| line.starts_with("data: "))
+            .unwrap();
+        let event: Value = serde_json::from_str(&line["data: ".len()..]).unwrap();
+        assert_eq!(event["response"]["output"][0]["id"], "rs_1");
     }
 }
