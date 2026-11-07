@@ -594,7 +594,8 @@ export const PRESET_BRAND_IDENTITIES = {
   streamlake: {
     name: "StreamLake",
     websiteUrl: "https://www.streamlake.com",
-    apiKeyUrl: "https://console.streamlake.com/console/wanqing/api-key?channel=ccswitch",
+    apiKeyUrl:
+      "https://console.streamlake.com/console/wanqing/api-key?channel=ccswitch",
     category: "cn_official",
     icon: "streamlake",
     family: "streamlake",
@@ -795,9 +796,24 @@ export const PRESET_BRAND_IDENTITIES = {
   "mistral-ai": {
     name: "Mistral AI",
     websiteUrl: "https://mistral.ai",
-    apiKeyUrl: "https://console.mistral.ai/api-keys",
+    apiKeyUrl: "https://chat.mistral.ai/code/extensions",
     category: "cn_official",
     icon: "mistral",
+  },
+  tokenplus: {
+    name: "TokenPlus",
+    websiteUrl: "https://www.tokenplus.cn/",
+    apiKeyUrl: "https://www.tokenplus.cn/workspace",
+    category: "aggregator",
+    icon: "tokenplus",
+    partnerPromotionKey: "tokenplus",
+  },
+  genesis: {
+    name: "Genesis",
+    websiteUrl: "https://genesis.moi.matrixorigin.cn/taas/",
+    apiKeyUrl: "https://uc.moi.matrixorigin.cn/account/credentials?app=genesis",
+    category: "aggregator",
+    icon: "genesis",
   },
   "cloudflare-ai-gateway": {
     name: "Cloudflare AI Gateway",

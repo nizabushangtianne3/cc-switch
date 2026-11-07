@@ -1,5 +1,5 @@
 /**
- * 品牌身份键集合的冻结基线（108 家，spread 下沉那一刻的快照）。
+ * 品牌身份键集合的冻结基线（110 家，spread 下沉那一刻的快照）。
  *
  * 它刻意不从 src/config/presetBrandIdentities.ts 推导：守卫测试拿它当独立裁判，
  * 专防「从表行里删掉一个键」这类改动——条目是 spread 表行的，表行丢键条目
@@ -281,6 +281,7 @@ export const PRESET_BRAND_IDENTITY_KEYS: Record<string, readonly string[]> = {
     "iconColor",
   ],
   "github-copilot": ["name", "websiteUrl", "category", "icon", "iconColor"],
+  genesis: ["name", "websiteUrl", "apiKeyUrl", "category", "icon"],
   "grooroute-pro": [
     "name",
     "websiteUrl",
@@ -589,6 +590,14 @@ export const PRESET_BRAND_IDENTITY_KEYS: Record<string, readonly string[]> = {
     "icon",
   ],
   tokenflux: ["name", "websiteUrl", "apiKeyUrl", "category", "icon"],
+  tokenplus: [
+    "name",
+    "websiteUrl",
+    "apiKeyUrl",
+    "category",
+    "icon",
+    "partnerPromotionKey",
+  ],
   "tu-zi": ["name", "nameKey", "websiteUrl", "apiKeyUrl", "category", "icon"],
   "v-api": [
     "name",

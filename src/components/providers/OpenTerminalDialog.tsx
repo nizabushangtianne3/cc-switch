@@ -113,14 +113,16 @@ const TERMINAL_APP_NAMES: Partial<Record<AppId, string>> = {
   claude: "Claude Code",
   codex: "Codex",
   agy: "Antigravity CLI",
+  grokbuild: "Grok Build",
 };
 
-/** 跳过权限确认的参数：Claude Code 和 agy 同名，Codex 同时关掉沙箱 */
+/** 跳过权限确认的参数：Claude Code 和 agy 同名，Codex 同时关掉沙箱，Grok Build 用自己的 */
 function skipPermissionsFlag(appId: AppId): string {
-  return appId === "codex"
-    ? "--dangerously-bypass-approvals-and-sandbox"
-    : "--dangerously-skip-permissions";
+  if (appId === "codex") return "--dangerously-bypass-approvals-and-sandbox";
+  if (appId === "grokbuild") return "--always-approve";
+  return "--dangerously-skip-permissions";
 }
+
 interface OpenTerminalDialogProps {
   /** 有值即打开 */
   provider: Provider | null;

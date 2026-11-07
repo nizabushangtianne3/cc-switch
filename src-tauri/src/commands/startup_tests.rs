@@ -14,10 +14,16 @@ pub(super) struct TestHome {
     previous: Option<std::ffi::OsString>,
     native_overrides: Vec<(&'static str, Option<std::ffi::OsString>)>,
     _directory: tempfile::TempDir,
+    // 最后声明 = 最后 drop：HOME 还原、临时目录删除之后才放锁，
+    // 下一个拿到锁的测试不会读到这一家的临时主目录。
+    _home_lock: tokio::sync::MutexGuard<'static, ()>,
 }
 
 impl TestHome {
     pub(super) fn new() -> Self {
+        // 和其他换 CC_SWITCH_TEST_HOME / HOME 的测试共用一把锁：
+        // 私有锁挡不住跨文件的并行互换（#serial 也不跨 target 二进制）。
+        let _home_lock = crate::config::test_home_lock().blocking_lock();
         let directory = tempfile::tempdir().unwrap();
         let previous = std::env::var_os("CC_SWITCH_TEST_HOME");
         std::env::set_var("CC_SWITCH_TEST_HOME", directory.path());
@@ -38,6 +44,7 @@ impl TestHome {
             previous,
             native_overrides,
             _directory: directory,
+            _home_lock,
         }
     }
 }
