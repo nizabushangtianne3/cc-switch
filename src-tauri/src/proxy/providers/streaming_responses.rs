@@ -34,6 +34,29 @@ fn anthropic_sse(event_name: &str, payload: &Value) -> Bytes {
     frame_sse_event(event_name, payload)
 }
 
+/// `content_block_delta` 的直接字节写出。
+///
+/// 增量事件占流式输出的绝大多数，`json!` 每发一个都要为一棵树分配十来个
+/// String、再整棵序列化；这里按固定键序直接写字节，字符串值交给 serde 的写入器
+/// 转义（与整棵序列化同一套规则），输出与 `json!` + [`anthropic_sse`] 逐字节
+/// 一致。`delta_type` 是 `text_delta` / `thinking_delta` / `signature_delta` /
+/// `input_json_delta`，`field` 是它对应的载荷字段名。
+fn content_block_delta_sse(index: u32, delta_type: &str, field: &str, value: &str) -> Bytes {
+    let mut frame = Vec::with_capacity(value.len() + 96);
+    frame.extend_from_slice(
+        b"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":",
+    );
+    let _ = serde_json::to_writer(&mut frame, &index);
+    frame.extend_from_slice(b",\"delta\":{\"type\":\"");
+    frame.extend_from_slice(delta_type.as_bytes());
+    frame.extend_from_slice(b"\",\"");
+    frame.extend_from_slice(field.as_bytes());
+    frame.extend_from_slice(b"\":");
+    let _ = serde_json::to_writer(&mut frame, value);
+    frame.extend_from_slice(b"}}\n\n");
+    Bytes::from(frame)
+}
+
 fn responses_error_details(data: &Value, fallback: &str) -> (String, String) {
     let response = response_object_from_event(data);
     let error = response.get("error").unwrap_or(response);
@@ -2852,15 +2875,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                         yield Ok(start_sse);
                                         open_indices.insert(index);
                                     }
-                                    let event = json!({
-                                        "type": "content_block_delta",
-                                        "index": index,
-                                        "delta": {
-                                            "type": "text_delta",
-                                            "text": delta
-                                        }
-                                    });
-                                    let sse = frame_sse_event("content_block_delta", &event);
+                                    let sse = content_block_delta_sse(index, "text_delta", "text", delta);
                                     yield Ok(sse);
                                 }
                             }
@@ -3307,15 +3322,12 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                         continue;
                                     }
 
-                                    let event = json!({
-                                        "type": "content_block_delta",
-                                        "index": index,
-                                        "delta": {
-                                            "type": "input_json_delta",
-                                            "partial_json": delta
-                                        }
-                                    });
-                                    let sse = frame_sse_event("content_block_delta", &event);
+                                    let sse = content_block_delta_sse(
+                                        index,
+                                        "input_json_delta",
+                                        "partial_json",
+                                        delta,
+                                    );
                                     yield Ok(sse);
                                 }
                             }
@@ -3504,15 +3516,8 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                         .or_default()
                                         .push_str(delta);
 
-                                    let event = json!({
-                                        "type": "content_block_delta",
-                                        "index": index,
-                                        "delta": {
-                                            "type": "thinking_delta",
-                                            "thinking": delta
-                                        }
-                                    });
-                                    let sse = frame_sse_event("content_block_delta", &event);
+                                    let sse =
+                                        content_block_delta_sse(index, "thinking_delta", "thinking", delta);
                                     yield Ok(sse);
                                 }
                             }
@@ -4220,15 +4225,12 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                                     raw
                                                 };
                                                 if !arguments.is_empty() {
-                                                    let event = json!({
-                                                        "type": "content_block_delta",
-                                                        "index": index,
-                                                        "delta": {
-                                                            "type": "input_json_delta",
-                                                            "partial_json": arguments
-                                                        }
-                                                    });
-                                                    let sse = frame_sse_event("content_block_delta", &event);
+                                                    let sse = content_block_delta_sse(
+                                                        index,
+                                                        "input_json_delta",
+                                                        "partial_json",
+                                                        &arguments,
+                                                    );
                                                     yield Ok(sse);
                                                 }
                                             }
@@ -4545,17 +4547,13 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                                     let start_sse = frame_sse_event("content_block_start", &start_event);
                                                     yield Ok(start_sse);
                                                     open_indices.insert(index);
-                                                    let signature_event = json!({
-                                                        "type": "content_block_delta",
-                                                        "index": index,
-                                                        "delta": {
-                                                            "type": "signature_delta",
-                                                            "signature": envelope
-                                                        }
-                                                    });
-                                                    let signature_sse = format!("event: content_block_delta\ndata: {}\n\n",
-                                                        serde_json::to_string(&signature_event).unwrap_or_default());
-                                                    yield Ok(Bytes::from(signature_sse));
+                                                            let signature_sse = content_block_delta_sse(
+                                                                index,
+                                                                "signature_delta",
+                                                                "signature",
+                                                                &envelope,
+                                                            );
+                                                            yield Ok(signature_sse);
                                                 }
                                             }
                                         }
@@ -7633,6 +7631,30 @@ mod tests {
             0,
         )
         .await;
+    }
+
+    /// 直接字节写出必须与 `json!` + frame_sse_event 逐字节一致：键序、数字格式、
+    /// 字符串转义都不能有差别。四种增量形状全覆盖，值里带引号、反斜杠、中文和
+    /// emoji，把转义规则也钉住。
+    #[test]
+    fn content_block_delta_sse_matches_the_json_macro_output() {
+        let value = "hi \"quoted\" \\ back 中文 \u{1F600}";
+        for (delta_type, field) in [
+            ("text_delta", "text"),
+            ("thinking_delta", "thinking"),
+            ("signature_delta", "signature"),
+            ("input_json_delta", "partial_json"),
+        ] {
+            let direct = content_block_delta_sse(7, delta_type, field, value);
+            let mut delta = serde_json::Map::new();
+            delta.insert("type".to_string(), json!(delta_type));
+            delta.insert(field.to_string(), json!(value));
+            let macroed = anthropic_sse(
+                "content_block_delta",
+                &json!({"type":"content_block_delta","index":7,"delta":delta}),
+            );
+            assert_eq!(direct, macroed, "{delta_type}");
+        }
     }
 
     #[tokio::test]
