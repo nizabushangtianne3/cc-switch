@@ -176,12 +176,6 @@ pub(crate) fn build_message_start_event(
     })
 }
 
-fn sse_event_string(event: Value) -> String {
-    let event_name = event.get("type").and_then(|v| v.as_str()).unwrap_or("");
-    // 复用同一套字节成帧；Vec 的分配由 String::from_utf8 接手，不多一次拷贝
-    String::from_utf8(frame_sse_event(event_name, &event).into()).unwrap_or_default()
-}
-
 /// 生成一个 thinking/text 增量所需的 Anthropic SSE 事件序列
 /// （必要时先关闭当前块：content_block_stop? + content_block_start + content_block_delta）。
 fn non_tool_block_events(
@@ -190,15 +184,13 @@ fn non_tool_block_events(
     next_content_index: &mut u32,
     current_type: &mut Option<&'static str>,
     current_index: &mut Option<u32>,
-) -> Vec<String> {
+) -> Vec<Bytes> {
     let mut events = Vec::new();
 
     if *current_type != Some(block_type) {
         if let Some(index) = current_index.take() {
-            events.push(sse_event_string(json!({
-                "type": "content_block_stop",
-                "index": index
-            })));
+            let event = json!({"type": "content_block_stop", "index": index});
+            events.push(frame_sse_event("content_block_stop", &event));
         }
         let index = *next_content_index;
         *next_content_index += 1;
@@ -207,26 +199,21 @@ fn non_tool_block_events(
         } else {
             json!({"type": "text", "text": ""})
         };
-        events.push(sse_event_string(json!({
-            "type": "content_block_start",
-            "index": index,
-            "content_block": content_block
-        })));
+        let event =
+            json!({"type": "content_block_start", "index": index, "content_block": content_block});
+        events.push(frame_sse_event("content_block_start", &event));
         *current_type = Some(block_type);
         *current_index = Some(index);
     }
 
     if let Some(index) = *current_index {
-        let delta_payload = if block_type == "thinking" {
-            json!({"type": "thinking_delta", "thinking": delta})
+        // 增量是这条路的大头：直接写字节，不再建一棵 json! 树再转 String。
+        let (delta_type, field) = if block_type == "thinking" {
+            ("thinking_delta", "thinking")
         } else {
-            json!({"type": "text_delta", "text": delta})
+            ("text_delta", "text")
         };
-        events.push(sse_event_string(json!({
-            "type": "content_block_delta",
-            "index": index,
-            "delta": delta_payload
-        })));
+        events.push(content_block_delta_sse(index, delta_type, field, delta));
     }
 
     events
@@ -241,22 +228,18 @@ fn open_block_stop_events(
     current_non_tool_block_index: &mut Option<u32>,
     current_non_tool_block_type: &mut Option<&'static str>,
     open_tool_block_indices: &mut HashSet<u32>,
-) -> Vec<String> {
+) -> Vec<Bytes> {
     let mut events = Vec::new();
     if let Some(index) = current_non_tool_block_index.take() {
-        events.push(sse_event_string(json!({
-            "type": "content_block_stop",
-            "index": index
-        })));
+        let event = json!({"type": "content_block_stop", "index": index});
+        events.push(frame_sse_event("content_block_stop", &event));
     }
     *current_non_tool_block_type = None;
     let mut tool_indices: Vec<u32> = open_tool_block_indices.iter().copied().collect();
     tool_indices.sort_unstable();
     for index in tool_indices {
-        events.push(sse_event_string(json!({
-            "type": "content_block_stop",
-            "index": index
-        })));
+        let event = json!({"type": "content_block_stop", "index": index});
+        events.push(frame_sse_event("content_block_stop", &event));
     }
     open_tool_block_indices.clear();
     events
@@ -316,7 +299,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                                 &mut current_non_tool_block_type,
                                                 &mut current_non_tool_block_index,
                                             ) {
-                                                yield Ok(Bytes::from(sse_data));
+                                                yield Ok(sse_data);
                                             }
                                         }
                                     }
@@ -329,7 +312,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                         &mut current_non_tool_block_type,
                                         &mut open_tool_block_indices,
                                     ) {
-                                        yield Ok(Bytes::from(sse_data));
+                                        yield Ok(sse_data);
                                     }
 
                                     // 流正常结束，发出缓存的 message_delta（含完整 usage）。
@@ -417,7 +400,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                                 &mut current_non_tool_block_type,
                                                 &mut current_non_tool_block_index,
                                             ) {
-                                                yield Ok(Bytes::from(sse_data));
+                                                yield Ok(sse_data);
                                             }
                                         }
 
@@ -438,7 +421,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                                             &mut current_non_tool_block_type,
                                                             &mut current_non_tool_block_index,
                                                         ) {
-                                                            yield Ok(Bytes::from(sse_data));
+                                                            yield Ok(sse_data);
                                                         }
                                                     }
                                                 }
@@ -463,7 +446,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                                             &mut current_non_tool_block_type,
                                                             &mut current_non_tool_block_index,
                                                         ) {
-                                                            yield Ok(Bytes::from(sse_data));
+                                                            yield Ok(sse_data);
                                                         }
                                                     }
                                                 }
@@ -640,7 +623,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                                         &mut current_non_tool_block_type,
                                                         &mut current_non_tool_block_index,
                                                     ) {
-                                                        yield Ok(Bytes::from(sse_data));
+                                                        yield Ok(sse_data);
                                                     }
                                                 }
                                             }
@@ -752,7 +735,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                 &mut current_non_tool_block_type,
                                 &mut current_non_tool_block_index,
                             ) {
-                                yield Ok(Bytes::from(sse_data));
+                                yield Ok(sse_data);
                             }
                         }
                     }
@@ -782,7 +765,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                     &mut current_non_tool_block_type,
                     &mut current_non_tool_block_index,
                 ) {
-                    yield Ok(Bytes::from(sse_data));
+                    yield Ok(sse_data);
                 }
             }
         }
@@ -800,7 +783,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                     &mut current_non_tool_block_type,
                     &mut open_tool_block_indices,
                 ) {
-                    yield Ok(Bytes::from(sse_data));
+                    yield Ok(sse_data);
                 }
                 let event = build_message_delta_event(stop_reason, usage_json);
                 let sse_data = frame_sse_event("message_delta", &event);
