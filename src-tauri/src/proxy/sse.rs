@@ -50,7 +50,18 @@ pub(crate) fn sse_data_type(data: &str) -> Option<&str> {
 
 #[inline]
 pub(crate) fn next_sse_block_range(buffer: &str) -> Option<(usize, usize)> {
-    let bytes = buffer.as_bytes();
+    next_sse_block_range_bytes(buffer.as_bytes())
+}
+
+/// [`next_sse_block_range`] 的字节版：透传流在字节缓冲上扫描，不必先把整块
+/// 解码成 `String`。
+///
+/// UTF-8 的 0x0A/0x0D 只可能以自身出现（多字节序列的每个字节都 >= 0x80），
+/// 所以字节扫描与字符串扫描的定界符判定完全一致；跨块被切断的多字节字符只是
+/// 留在缓冲里，等到块完整再一次性解码。
+#[inline]
+pub(crate) fn next_sse_block_range_bytes(buffer: &[u8]) -> Option<(usize, usize)> {
+    let bytes = buffer;
     // Scan once instead of running four searches over the remaining stream.
     // The delimiters all start with CR or LF, so the byte search can jump
     // straight to each candidate instead of testing every byte of the event

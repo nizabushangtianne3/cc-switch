@@ -187,6 +187,84 @@ mod tests {
         String::from_utf8(out).unwrap()
     }
 
+    /// 按调用方给的原始分片走完整条流，返回拼接后的字节。
+    async fn drain_chunks(chunks: &[&str]) -> Vec<u8> {
+        let owned: Vec<String> = chunks.iter().map(|chunk| chunk.to_string()).collect();
+        let stream = create_stable_item_id_stream(futures::stream::iter(
+            owned
+                .into_iter()
+                .map(|chunk| Ok::<_, io::Error>(Bytes::from(chunk))),
+        ));
+        futures::pin_mut!(stream);
+        let mut out = Vec::new();
+        while let Some(item) = stream.next().await {
+            out.extend_from_slice(&item.unwrap());
+        }
+        out
+    }
+
+    /// 一个 chunk 里多个块：逐块发出，拼回来与原文一致。
+    #[tokio::test]
+    async fn stream_passes_many_blocks_in_one_chunk_through_byte_for_byte() {
+        let chunk = "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"hi\"}\n\n: keep-alive\n\nevent: message\ndata: [DONE]\n\n";
+        assert_eq!(drain_chunks(&[chunk]).await, chunk.as_bytes());
+    }
+
+    /// 事件被切断在两个 chunk 里：缓冲住，补齐后按原文发出。
+    #[tokio::test]
+    async fn stream_reassembles_an_event_split_across_chunks() {
+        let head = "event: response.output_text.delta\ndata: {\"type\":";
+        let tail = "\"response.output_text.delta\",\"delta\":\"hi\"}\n\n";
+        assert_eq!(
+            drain_chunks(&[head, tail]).await,
+            format!("{head}{tail}").as_bytes()
+        );
+    }
+
+    /// 分隔符本身被切断：跨 chunk 的定界符记账不能错位。
+    #[tokio::test]
+    async fn stream_handles_a_delimiter_split_across_chunks() {
+        let stream = "data: {\"a\":1}\n\ndata: {\"b\":2}\n\n";
+        assert_eq!(
+            drain_chunks(&[&stream[..14], &stream[14..]]).await,
+            stream.as_bytes()
+        );
+    }
+
+    /// CRLF 分隔符：块文本原样、分隔符规范成 \n\n。
+    #[tokio::test]
+    async fn stream_normalizes_crlf_delimiters() {
+        let chunk = "event: response.output_text.delta\r\ndata: {\"type\":\"response.output_text.delta\"}\r\n\r\n";
+        assert_eq!(
+            drain_chunks(&[chunk]).await,
+            "event: response.output_text.delta\r\ndata: {\"type\":\"response.output_text.delta\"}\n\n"
+                .as_bytes()
+        );
+    }
+
+    /// id 改写跨过 chunk 边界照样成立。
+    #[tokio::test]
+    async fn stream_rewrites_ids_across_chunk_boundaries() {
+        let added = sse(
+            "response.output_item.added",
+            r#"{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_1"}}"#,
+        );
+        let done = sse(
+            "response.output_item.done",
+            r#"{"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","id":"rs_2"}}"#,
+        );
+        let text = String::from_utf8(
+            drain_chunks(&[&added[..30], &added[30..], &done[..22], &done[22..]]).await,
+        )
+        .unwrap();
+        let line = text
+            .lines()
+            .rfind(|line| line.starts_with("data: "))
+            .unwrap();
+        let event: Value = serde_json::from_str(&line["data: ".len()..]).unwrap();
+        assert_eq!(event["item"]["id"], "rs_1");
+    }
+
     /// Copilot 为同一个 output_index 重发 item id：拉回第一次的 id，Codex 才认得出
     /// 流式文本属于哪个条目。
     #[tokio::test]

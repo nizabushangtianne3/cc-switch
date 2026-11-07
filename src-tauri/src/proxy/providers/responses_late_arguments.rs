@@ -17,7 +17,7 @@ use futures::stream::{Stream, StreamExt};
 use serde_json::Value;
 
 use crate::proxy::sse::{
-    next_sse_block_range, scan_sse_block, sse_block_payload, sse_data_type, Utf8TailDecoder,
+    next_sse_block_range_bytes, scan_sse_block, sse_block_payload, sse_data_type,
 };
 
 /// 会参与参数补齐的事件类型。
@@ -30,6 +30,42 @@ const REPAIR_EVENT_TYPES: [&str; 4] = [
     "response.output_item.done",
     "response.completed",
 ];
+
+/// 会参与参数补齐的事件类型在 data 载荷里的原文（JSON 字符串值就是这种形式）。
+/// 只保留能区分候选的最短前缀，命中之后仍由完整解析决定是不是真候选。
+///
+/// 块里一个都不含时，它的 type 不可能是候选：类型值一定以带引号的原文出现，
+/// 与键顺序、行间空白、多行 data 都无关。于是这类块连 UTF-8 解码和 JSON 解析
+/// 都不必做，直接在字节上放行。
+const REPAIR_MARKERS: [&[u8]; 3] = [
+    b"\"response.function_call_arguments.",
+    b"\"response.output_item.done\"",
+    b"\"response.completed\"",
+];
+
+/// 候选标记的字节搜索器。Finder 内部要预处理稀有字节表，构造一次不便宜，而
+/// 透传流是每个请求一条、每个事件都要用，所以在开流时构造一份、整条流复用。
+struct RepairMarkers {
+    arguments: memchr::memmem::Finder<'static>,
+    item_done: memchr::memmem::Finder<'static>,
+    completed: memchr::memmem::Finder<'static>,
+}
+
+impl RepairMarkers {
+    fn new() -> Self {
+        Self {
+            arguments: memchr::memmem::Finder::new(REPAIR_MARKERS[0]),
+            item_done: memchr::memmem::Finder::new(REPAIR_MARKERS[1]),
+            completed: memchr::memmem::Finder::new(REPAIR_MARKERS[2]),
+        }
+    }
+
+    fn matches(&self, block: &[u8]) -> bool {
+        self.arguments.find(block).is_some()
+            || self.item_done.find(block).is_some()
+            || self.completed.find(block).is_some()
+    }
+}
 
 /// 一个 SSE 块，解析出的事件（不是 JSON 的块为 None）。
 struct Block {
@@ -130,6 +166,14 @@ fn passthrough_block(out: &mut Vec<u8>, raw: &str) {
     out.extend_from_slice(b"\n\n");
 }
 
+/// [`passthrough_block`] 的字节版：跨块或非 \n\n 分隔符的透传走这里。
+fn passthrough_block_owned(raw: &[u8]) -> Bytes {
+    let mut out = Vec::with_capacity(raw.len() + 2);
+    out.extend_from_slice(raw);
+    out.extend_from_slice(b"\n\n");
+    Bytes::from(out)
+}
+
 #[derive(Default)]
 struct Repair {
     /// 每个条目累积的参数增量。
@@ -217,51 +261,83 @@ where
     E: std::error::Error + Send + 'static,
 {
     async_stream::stream! {
-        let mut buffer = String::new();
-        let mut utf8_tail = Utf8TailDecoder::default();
+        // 字节缓冲：UTF-8 的 0x0A/0x0D 只以自身出现，定界符扫描本来就不需要
+        // 先解码整块；只有当块真的命中补齐逻辑时才解码那一个块。
+        let mut buffer: Vec<u8> = Vec::new();
+        let mut scratch = String::new();
         let mut repair = Repair::default();
+        let markers = RepairMarkers::new();
 
         tokio::pin!(stream);
-        let mut out: Vec<u8> = Vec::new();
+        let mut rewritten: Vec<u8> = Vec::new();
 
         while let Some(chunk) = stream.next().await {
-            match chunk {
-                Ok(bytes) => {
-                    utf8_tail.append(&mut buffer, &bytes);
-                    while let Some((end, delim)) = next_sse_block_range(&buffer) {
-                        let block = &buffer[..end];
-                        if !block.trim().is_empty() {
-                            repair.push(block, &mut out);
-                        }
-                        buffer.drain(..end + delim);
-                    }
-                    // 一个 chunk 的所有块合成一次 yield：下游看到的字节序列不变，
-                    // 但省下每块一次分配和一次流式写。
-                    if !out.is_empty() {
-                        yield Ok(Bytes::copy_from_slice(&out));
-                        out.clear();
-                    }
-                }
+            let bytes = match chunk {
+                Ok(bytes) => bytes,
                 Err(e) => {
-                    repair.flush(None, &mut out);
-                    if !out.is_empty() {
-                        yield Ok(Bytes::copy_from_slice(&out));
-                        out.clear();
+                    repair.flush(None, &mut rewritten);
+                    if !rewritten.is_empty() {
+                        yield Ok(Bytes::copy_from_slice(&rewritten));
+                        rewritten.clear();
                     }
                     yield Err(std::io::Error::other(e.to_string()));
                     return;
                 }
+            };
+            let mut chunk_rest = buffer.len();
+            buffer.extend_from_slice(&bytes);
+            // 块整块来自本 chunk、且分隔符本就是 \n\n 时，直接切上游 chunk 的视图
+            // 发出去，一次拷贝都不做。chunk_rest 记着缓冲前端还压着多少个上个
+            // chunk 的尾巴字节：它为 0 时整块才确实来自本 chunk；chunk_cursor 记
+            // 着本 chunk 已经发出多少字节，用于计算切片偏移。任何跨块、非 \n\n
+            // 分隔符或命中补齐的块都会关掉切片，剩余部分退回拷贝。
+            let mut chunk_cursor = 0usize;
+            let mut sliceable = true;
+            while let Some((end, delim)) = next_sse_block_range_bytes(&buffer) {
+                let take = end + delim;
+                let block = &buffer[..end];
+                let leftover = chunk_rest;
+                chunk_rest = leftover.saturating_sub(take);
+                let from_chunk = take.saturating_sub(leftover);
+                if block.trim_ascii().is_empty() {
+                    buffer.drain(..take);
+                    chunk_cursor += from_chunk;
+                    continue;
+                }
+                if !markers.matches(block) {
+                    if sliceable && leftover == 0 && delim == 2 {
+                        // 与补齐无关的块：连同 \n\n 原样发出，字节与旧行为一致。
+                        yield Ok(bytes.slice(chunk_cursor..chunk_cursor + take));
+                    } else {
+                        sliceable = false;
+                        // 跨块或非 \n\n 分隔符：块文本加 \n\n，与旧行为一致。
+                        yield Ok(passthrough_block_owned(block));
+                    }
+                    chunk_cursor += take;
+                    buffer.drain(..take);
+                    continue;
+                }
+                // 命中补齐逻辑的块很少：只解码这一个块，走原有解析与补齐。
+                sliceable = false;
+                scratch.clear();
+                scratch.push_str(&String::from_utf8_lossy(block));
+                repair.push(&scratch, &mut rewritten);
+                if !rewritten.is_empty() {
+                    yield Ok(Bytes::copy_from_slice(&rewritten));
+                    rewritten.clear();
+                }
+                buffer.drain(..take);
             }
         }
 
-        utf8_tail.flush(&mut buffer);
         let tail = std::mem::take(&mut buffer);
-        if !tail.trim().is_empty() {
-            repair.push(&tail, &mut out);
+        if !tail.trim_ascii().is_empty() {
+            scratch = String::from_utf8_lossy(&tail).into_owned();
+            repair.push(&scratch, &mut rewritten);
         }
-        repair.flush(None, &mut out);
-        if !out.is_empty() {
-            yield Ok(Bytes::copy_from_slice(&out));
+        repair.flush(None, &mut rewritten);
+        if !rewritten.is_empty() {
+            yield Ok(Bytes::copy_from_slice(&rewritten));
         }
     }
 }
@@ -269,6 +345,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::proxy::sse::next_sse_block_range;
     use serde_json::json;
 
     fn sse(event: Value) -> String {
@@ -302,6 +379,121 @@ mod tests {
 
     fn types(events: &[Value]) -> Vec<&str> {
         events.iter().map(|e| e["type"].as_str().unwrap()).collect()
+    }
+
+    /// 走完整条流（字节进、字节出），按调用方给的分片原样喂进去。
+    async fn run_stream(chunks: &[&str]) -> Vec<u8> {
+        let owned: Vec<String> = chunks.iter().map(|chunk| chunk.to_string()).collect();
+        let stream = create_late_arguments_repair_stream(futures::stream::iter(
+            owned
+                .into_iter()
+                .map(|chunk| Ok::<_, std::io::Error>(Bytes::from(chunk))),
+        ));
+        futures::pin_mut!(stream);
+        let mut out = Vec::new();
+        while let Some(item) = stream.next().await {
+            out.extend_from_slice(&item.unwrap());
+        }
+        out
+    }
+
+    /// 一个 chunk 里塞满多个块：逐块零拷贝发出，拼回来与原文一致。
+    #[tokio::test]
+    async fn stream_passes_many_blocks_in_one_chunk_through_byte_for_byte() {
+        let chunk = "event: response.created\ndata: {\"type\":\"response.created\"}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"hi\"}\n\n: keep-alive\n\n";
+        assert_eq!(run_stream(&[chunk]).await, chunk.as_bytes());
+    }
+
+    /// 事件被切断在两个 chunk 里：缓冲住，补齐后按原文发出。
+    #[tokio::test]
+    async fn stream_reassembles_an_event_split_across_chunks() {
+        let head = "event: response.output_text.delta\ndata: {\"type\":";
+        let tail = "\"response.output_text.delta\",\"delta\":\"hi\"}\n\n";
+        assert_eq!(
+            run_stream(&[head, tail]).await,
+            format!("{head}{tail}").as_bytes()
+        );
+    }
+
+    /// 分隔符本身被切断（首个 \n 在一个 chunk，第二个 \n 在下一个）。
+    #[tokio::test]
+    async fn stream_handles_a_delimiter_split_across_chunks() {
+        let stream = "data: {\"a\":1}\n\ndata: {\"b\":2}\n\n";
+        assert_eq!(
+            run_stream(&[&stream[..14], &stream[14..]]).await,
+            stream.as_bytes()
+        );
+    }
+
+    /// CRLF 分隔符走拷贝路径，仍旧规范成 \n\n：与旧行为逐字节一致。
+    #[tokio::test]
+    async fn stream_normalizes_crlf_delimiters() {
+        let chunk = "event: response.output_text.delta\r\ndata: {\"type\":\"response.output_text.delta\"}\r\n\r\n";
+        assert_eq!(
+            run_stream(&[chunk]).await,
+            "event: response.output_text.delta\r\ndata: {\"type\":\"response.output_text.delta\"}\n\n"
+                .as_bytes()
+        );
+    }
+
+    /// 两个定界符贴在一起产生的空块被丢弃，不发给客户端。
+    #[tokio::test]
+    async fn stream_drops_empty_blocks() {
+        assert_eq!(
+            run_stream(&["data: {\"a\":1}\n\n\n\ndata: {\"b\":2}\n\n"]).await,
+            "data: {\"a\":1}\n\ndata: {\"b\":2}\n\n".as_bytes()
+        );
+    }
+
+    /// 最后一个块没带分隔符：流结束时补上 \n\n 发出。
+    #[tokio::test]
+    async fn stream_flushes_a_tail_without_a_delimiter() {
+        let tail = "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"hi\"}";
+        assert_eq!(run_stream(&[tail]).await, format!("{tail}\n\n").as_bytes());
+    }
+
+    /// MiniMax 乱序场景跨过多个诡异分片：扣住、补参数、按序发出仍然成立。
+    #[tokio::test]
+    async fn stream_repairs_late_arguments_across_awkward_chunks() {
+        let done = "event: response.function_call_arguments.done\ndata: {\"type\":\"response.function_call_arguments.done\",\"item_id\":\"x_fc_0\",\"arguments\":\"\"}\n\n";
+        let item_done = "event: response.output_item.done\ndata: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"function_call\",\"id\":\"x_fc_0\",\"arguments\":\"\"}}\n\n";
+        let delta = "event: response.function_call_arguments.delta\ndata: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"x_fc_0\",\"delta\":\"{\\\"cmd\\\":\\\"ls\\\"}\"}\n\n";
+        let completed = "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"output\":[]}}\n\n";
+        let text = String::from_utf8(
+            run_stream(&[
+                &done[..40],
+                &done[40..],
+                &item_done[..17],
+                &item_done[17..],
+                &delta[..25],
+                &delta[25..],
+                completed,
+            ])
+            .await,
+        )
+        .unwrap();
+        let events: Vec<Value> = text
+            .split("\n\n")
+            .filter(|block| !block.is_empty())
+            .map(|block| {
+                let data = block
+                    .lines()
+                    .find_map(|line| line.strip_prefix("data: "))
+                    .unwrap();
+                serde_json::from_str(data).unwrap()
+            })
+            .collect();
+        assert_eq!(
+            types(&events),
+            vec![
+                "response.function_call_arguments.delta",
+                "response.function_call_arguments.done",
+                "response.output_item.done",
+                "response.completed",
+            ]
+        );
+        assert_eq!(events[1]["arguments"], "{\"cmd\":\"ls\"}");
+        assert_eq!(events[2]["item"]["arguments"], "{\"cmd\":\"ls\"}");
     }
 
     fn call_item(arguments: &str) -> Value {
