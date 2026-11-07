@@ -23,6 +23,7 @@ use crate::proxy::sse::{
 };
 use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
+use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -333,26 +334,136 @@ enum ContentPartKey {
 }
 
 #[inline]
-fn content_part_key(data: &Value) -> Option<ContentPartKey> {
-    if let (Some(item_id), Some(content_index)) = (
-        data.get("item_id").and_then(|v| v.as_str()),
-        data.get("content_index").and_then(|v| v.as_u64()),
-    ) {
+fn content_part_key<'a>(keys: impl Into<DeltaKeys<'a>>) -> Option<ContentPartKey> {
+    let keys = keys.into();
+    if let (Some(item_id), Some(content_index)) = (keys.item_id, keys.content_index) {
         return Some(ContentPartKey::Item {
             item_id: item_id.to_string(),
             content_index,
         });
     }
-    if let (Some(output_index), Some(content_index)) = (
-        data.get("output_index").and_then(|v| v.as_u64()),
-        data.get("content_index").and_then(|v| v.as_u64()),
-    ) {
+    if let (Some(output_index), Some(content_index)) = (keys.output_index, keys.content_index) {
         return Some(ContentPartKey::Output {
             output_index,
             content_index,
         });
     }
     None
+}
+
+/// 增量事件的三个定位键。探针和完整 `Value` 都能给出，簿记函数只认它。
+#[derive(Default, Clone, Copy)]
+struct DeltaKeys<'a> {
+    output_index: Option<u64>,
+    content_index: Option<u64>,
+    item_id: Option<&'a str>,
+}
+
+impl<'a> DeltaKeys<'a> {
+    fn from_value(data: &'a Value) -> Self {
+        Self {
+            output_index: data.get("output_index").and_then(Value::as_u64),
+            content_index: data.get("content_index").and_then(Value::as_u64),
+            item_id: data.get("item_id").and_then(Value::as_str),
+        }
+    }
+}
+
+/// 完整事件也能直接给出定位键：簿记函数因此只需收 `impl Into<DeltaKeys>`，
+/// 探针路径传 `DeltaKeys`、完整路径传 `&Value`，两边都不用包一层。
+impl<'a> From<&'a Value> for DeltaKeys<'a> {
+    fn from(data: &'a Value) -> Self {
+        Self::from_value(data)
+    }
+}
+
+/// 走增量快速路径的事件类型。
+const DELTA_EVENT_TYPES: [&str; 6] = [
+    "response.output_text.delta",
+    "response.refusal.delta",
+    "response.function_call_arguments.delta",
+    "response.reasoning_summary_text.delta",
+    "response.reasoning_text.delta",
+    "response.reasoning.delta",
+];
+
+/// 增量事件的只读探针。
+///
+/// 增量占流式输入的绝大多数，而转换器对增量只需要：类型、三个定位键、delta
+/// 文本，以及工具增量在首个 delta 才需要的 name/call_id。借阅解析拿到这些字段
+/// 后，整条增量路径都不必建那棵 `Value` 树——每个键值一对 String 分配，这是
+/// Responses 转换器每事件成本的大头。类型不在增量名单、或字段类型意外（探针
+/// 解析失败）时退回完整路径，行为不变。
+#[derive(Deserialize)]
+struct ResponsesDeltaProbe<'a> {
+    #[serde(rename = "type", borrow)]
+    r#type: Option<&'a str>,
+    output_index: Option<u64>,
+    content_index: Option<u64>,
+    #[serde(borrow)]
+    item_id: Option<&'a str>,
+    #[serde(borrow)]
+    delta: Option<&'a str>,
+    #[serde(borrow)]
+    text: Option<&'a str>,
+    #[serde(borrow)]
+    name: Option<&'a str>,
+    #[serde(borrow)]
+    call_id: Option<&'a str>,
+}
+
+/// 一个增量事件的两种读法：探针（不建树）或完整 `Value`。
+///
+/// 六个增量分支只过这一层，两份数据源走同一套逻辑：探针命中时一棵树都不建，
+/// 事件名来自 `event:` 行而载荷类型不在名单的畸形上游，退回完整 `Value`。
+enum DeltaEvent<'a> {
+    Probed(&'a ResponsesDeltaProbe<'a>),
+    Full(&'a Value),
+}
+
+impl<'a> DeltaEvent<'a> {
+    fn delta(&self) -> &'a str {
+        match self {
+            Self::Probed(probe) => probe.delta.unwrap_or(""),
+            Self::Full(data) => data.get("delta").and_then(Value::as_str).unwrap_or(""),
+        }
+    }
+
+    /// 推理增量的载荷字段：`delta` 优先，兼容把文本放在 `text` 里的上游。
+    fn delta_or_text(&self) -> Option<&'a str> {
+        match self {
+            Self::Probed(probe) => probe.delta.or(probe.text),
+            Self::Full(data) => data
+                .get("delta")
+                .or_else(|| data.get("text"))
+                .and_then(Value::as_str),
+        }
+    }
+
+    fn keys(&self) -> DeltaKeys<'a> {
+        match self {
+            Self::Probed(probe) => DeltaKeys {
+                output_index: probe.output_index,
+                content_index: probe.content_index,
+                item_id: probe.item_id,
+            },
+            Self::Full(data) => DeltaKeys::from_value(data),
+        }
+    }
+
+    fn name(&self) -> Option<&'a str> {
+        match self {
+            Self::Probed(probe) => probe.name,
+            Self::Full(data) => data.get("name").and_then(Value::as_str),
+        }
+    }
+
+    fn call_id(&self) -> Option<&'a str> {
+        match self {
+            Self::Probed(probe) => probe.call_id,
+            Self::Full(data) => data.get("call_id").and_then(Value::as_str),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -627,20 +738,14 @@ impl StreamedTextState {
                 && (self.unkeyed.starts_with(full_text) || full_text.starts_with(&self.unkeyed)))
     }
 
-    fn record_delta(&mut self, data: &Value, delta: &str) {
+    fn record_delta<'a>(&mut self, keys: impl Into<DeltaKeys<'a>>, delta: &str) {
+        let keys = keys.into();
         if delta.is_empty() {
             return;
         }
-        let content_index = data.get("content_index").and_then(Value::as_u64);
-        let output_key = data
-            .get("output_index")
-            .and_then(Value::as_u64)
-            .zip(content_index);
-        let item_key = data
-            .get("item_id")
-            .and_then(Value::as_str)
-            .map(ToString::to_string)
-            .zip(content_index);
+        let content_index = keys.content_index;
+        let output_key = keys.output_index.zip(content_index);
+        let item_key = keys.item_id.map(ToString::to_string).zip(content_index);
         if output_key.is_some() || item_key.is_some() {
             let Some(index) = self.resolve_keyed_part(output_key, item_key) else {
                 return;
@@ -776,17 +881,11 @@ struct BufferedCitationTextState {
 }
 
 impl BufferedCitationTextState {
-    fn keys(data: &Value) -> BufferedCitationKeys {
-        let content_index = data.get("content_index").and_then(Value::as_u64);
-        let output_key = data
-            .get("output_index")
-            .and_then(Value::as_u64)
-            .zip(content_index);
-        let item_key = data
-            .get("item_id")
-            .and_then(Value::as_str)
-            .map(ToString::to_string)
-            .zip(content_index);
+    fn keys<'a>(keys: impl Into<DeltaKeys<'a>>) -> BufferedCitationKeys {
+        let keys = keys.into();
+        let content_index = keys.content_index;
+        let output_key = keys.output_index.zip(content_index);
+        let item_key = keys.item_id.map(ToString::to_string).zip(content_index);
         (output_key, item_key)
     }
 
@@ -1351,11 +1450,12 @@ impl BufferedCitationTextState {
         true
     }
 
-    fn record_delta(&mut self, data: &Value, delta: &str) {
+    fn record_delta<'a>(&mut self, keys: impl Into<DeltaKeys<'a>>, delta: &str) {
+        let keys = keys.into();
         if delta.is_empty() {
             return;
         }
-        let (output_key, item_key) = Self::keys(data);
+        let (output_key, item_key) = Self::keys(keys);
         let unkeyed = output_key.is_none() && item_key.is_none();
         if unkeyed {
             let index = self.open_part.unwrap_or_else(|| {
@@ -2070,13 +2170,19 @@ fn tool_item_key_from_added(data: &Value, item: &Value) -> Option<ContentPartKey
 
 #[inline]
 fn tool_item_key_from_event(data: &Value) -> Option<ContentPartKey> {
-    if let Some(item_id) = data.get("item_id").and_then(|v| v.as_str()) {
+    tool_item_key_from_keys(data)
+}
+
+/// [`tool_item_key_from_event`] 的定位键版：工具键固定 content_index 0。
+fn tool_item_key_from_keys<'a>(keys: impl Into<DeltaKeys<'a>>) -> Option<ContentPartKey> {
+    let keys = keys.into();
+    if let Some(item_id) = keys.item_id {
         return Some(ContentPartKey::Item {
             item_id: item_id.to_string(),
             content_index: 0,
         });
     }
-    if let Some(output_index) = data.get("output_index").and_then(|v| v.as_u64()) {
+    if let Some(output_index) = keys.output_index {
         return Some(ContentPartKey::Output {
             output_index,
             content_index: 0,
@@ -2292,18 +2398,26 @@ fn record_web_search_call(
 
 #[inline]
 fn reasoning_item_key(data: &Value, item: Option<&Value>) -> Option<ContentPartKey> {
+    reasoning_item_key_from_keys(data, item)
+}
+
+/// [`reasoning_item_key`] 的定位键版（item 覆盖只在完整路径用得到）。
+fn reasoning_item_key_from_keys<'a>(
+    keys: impl Into<DeltaKeys<'a>>,
+    item: Option<&Value>,
+) -> Option<ContentPartKey> {
+    let keys = keys.into();
     if let Some(item_id) = item
         .and_then(|value| value.get("id"))
         .and_then(Value::as_str)
-        .or_else(|| data.get("item_id").and_then(Value::as_str))
+        .or(keys.item_id)
     {
         return Some(ContentPartKey::Item {
             item_id: item_id.to_string(),
             content_index: 0,
         });
     }
-    data.get("output_index")
-        .and_then(Value::as_u64)
+    keys.output_index
         .map(|output_index| ContentPartKey::Output {
             output_index,
             content_index: 0,
@@ -2315,13 +2429,14 @@ fn reasoning_item_key(data: &Value, item: Option<&Value>) -> Option<ContentPartK
 /// Uses `content_part_key` to look up or assign a stable index, falling back to
 /// `fallback_open_index` when no key is available.
 #[inline]
-fn resolve_content_index(
-    data: &Value,
+fn resolve_content_index<'a>(
+    keys: impl Into<DeltaKeys<'a>>,
     next_content_index: &mut u32,
     index_by_key: &mut HashMap<ContentPartKey, u32>,
     fallback_open_index: &mut Option<u32>,
 ) -> u32 {
-    if let Some(k) = content_part_key(data) {
+    let keys = keys.into();
+    if let Some(k) = content_part_key(keys) {
         if let Some(existing) = index_by_key.get(&k).copied() {
             existing
         } else {
@@ -2550,6 +2665,9 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
     async_stream::stream! {
         let mut buffer = String::new();
         let mut utf8_tail = Utf8TailDecoder::default();
+        // 增量探针的载荷文本框：每个块清空重用，容量留着下个块用。探针的借阅
+        // 字段指向它，因此它必须比块循环活得更久。
+        let mut scratch = String::new();
         let mut message_id: Option<String> = None;
         let mut current_model: Option<String> = None;
         let mut has_sent_message_start = false;
@@ -2648,18 +2766,41 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                         // 拆出 event: 与 data:：单行 data 是借支，不为它拷贝一份
                         let (event_type, payload) = scan_sse_block(block);
 
-                        // 先解析再 drain。Value 是 owned，借用的 block 到这里已经用完；
-                        // drain 必须发生，否则没有 data 的块会永远留在 buffer 里。
-                        let parsed = payload
-                            .as_deref()
-                            .map(serde_json::from_str::<Value>)
-                            .transpose();
+                        // 增量事件先用只读探针判一刀：命中就一棵 Value 都不建。探针
+                        // 能解析成功意味着整份 JSON 语法合法，完整路径必然也能解析，
+                        // 不会漏事件；类型不在增量名单、或字段类型意外（探针解析失败）
+                        // 时下面照旧走完整解析。探针的借阅字段要活到 drain 之后，
+                        // 载荷文本先抄进复用缓冲（一份拷贝，换掉整棵树十来个分配）。
+                        let mut probe = None;
+                        if let Some(payload_text) = payload.as_deref() {
+                            scratch.clear();
+                            scratch.push_str(payload_text);
+                            probe = serde_json::from_str::<ResponsesDeltaProbe<'_>>(&scratch)
+                                .ok()
+                                .filter(|probe| {
+                                    probe
+                                        .r#type
+                                        .is_some_and(|kind| DELTA_EVENT_TYPES.contains(&kind))
+                                });
+                        }
+                        let parsed = if probe.is_some() {
+                            Ok(None)
+                        } else {
+                            payload
+                                .as_deref()
+                                .map(serde_json::from_str::<Value>)
+                                .transpose()
+                        };
                         buffer.drain(..end + delim);
 
                         // 没有 data 行或 data 不是合法 JSON：这个块没有可转换的内容
-                        let data: Value = match parsed {
-                            Ok(Some(value)) => value,
-                            _ => continue,
+                        let data: Value = if probe.is_some() {
+                            Value::Null
+                        } else {
+                            match parsed {
+                                Ok(Some(value)) => value,
+                                _ => continue,
+                            }
                         };
 
                         // Official streams use both a named SSE event and `type` in
@@ -2668,8 +2809,20 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                         let event_name = event_type
                             .as_deref()
                             .filter(|name| !name.is_empty())
+                            .or_else(|| probe.as_ref().and_then(|probe| probe.r#type))
                             .or_else(|| data.get("type").and_then(Value::as_str))
                             .unwrap_or("");
+
+                        // 增量分支共用的读法：探针命中用探针；畸形上游把事件名写在
+                        // event: 行、载荷类型却不在名单里（或探针解析失败）时，用完整
+                        // Value 兜底。六个增量分支因此只有一套逻辑。
+                        let delta_event: Option<DeltaEvent<'_>> = if let Some(probe) = &probe {
+                            Some(DeltaEvent::Probed(probe))
+                        } else if DELTA_EVENT_TYPES.contains(&event_name) {
+                            Some(DeltaEvent::Full(&data))
+                        } else {
+                            None
+                        };
 
                         log::debug!("[Claude/Responses] <<< SSE event: {event_name}");
 
@@ -2811,12 +2964,13 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                             // response.output_text.delta → content_block_delta (text_delta)
                             // ================================================
                             "response.output_text.delta" => {
-                                if let Some(delta) = data.get("delta").and_then(|d| d.as_str()) {
+                                if let Some(event) = &delta_event {
+                                    let delta = event.delta();
                                     if preserve_web_search_citations {
-                                        buffered_citation_text.record_delta(&data, delta);
+                                        buffered_citation_text.record_delta(event.keys(), delta);
                                         if current_text_index.is_none() {
                                             current_text_index = Some(resolve_content_index(
-                                                &data,
+                                                event.keys(),
                                                 &mut next_content_index,
                                                 &mut index_by_key,
                                                 &mut fallback_open_index,
@@ -2825,12 +2979,12 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                         yield Ok(anthropic_ping_sse());
                                         continue;
                                     }
-                                    streamed_text.record_delta(&data, delta);
+                                    streamed_text.record_delta(event.keys(), delta);
                                     let index = if let Some(index) = current_text_index {
                                         index
                                     } else {
                                         let index = resolve_content_index(
-                                            &data,
+                                            event.keys(),
                                             &mut next_content_index,
                                             &mut index_by_key,
                                             &mut fallback_open_index,
@@ -2870,13 +3024,14 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                             // response.refusal.delta → content_block_delta (text_delta)
                             // ================================================
                             "response.refusal.delta" => {
-                                if let Some(delta) = data.get("delta").and_then(|d| d.as_str()) {
-                                    streamed_text.record_delta(&data, delta);
+                                if let Some(event) = &delta_event {
+                                    let delta = event.delta();
+                                    streamed_text.record_delta(event.keys(), delta);
                                     let index = if let Some(index) = current_text_index {
                                         index
                                     } else {
                                         let index = resolve_content_index(
-                                            &data,
+                                            event.keys(),
                                             &mut next_content_index,
                                             &mut index_by_key,
                                             &mut fallback_open_index,
@@ -2899,15 +3054,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                         open_indices.insert(index);
                                     }
 
-                                    let event = json!({
-                                        "type": "content_block_delta",
-                                        "index": index,
-                                        "delta": {
-                                            "type": "text_delta",
-                                            "text": delta
-                                        }
-                                    });
-                                    let sse = frame_sse_event("content_block_delta", &event);
+                                    let sse = content_block_delta_sse(index, "text_delta", "text", delta);
                                     yield Ok(sse);
                                 }
                             }
@@ -3238,16 +3385,18 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                             // response.function_call_arguments.delta → content_block_delta (input_json_delta)
                             // ================================================
                             "response.function_call_arguments.delta" => {
-                                if let Some(delta) = data.get("delta").and_then(|d| d.as_str()) {
+                                if let Some(event) = &delta_event {
+                                    let delta = event.delta();
                                     has_tool_use = true;
-                                    let item_id = data.get("item_id").and_then(|v| v.as_str());
+                                    let keys = event.keys();
+                                    let item_id = keys.item_id;
                                     let index = if let Some(id) = item_id {
                                         tool_index_by_item_id.get(id).copied()
                                     } else {
                                         None
                                     }
                                     .or_else(|| {
-                                        tool_item_key_from_event(&data)
+                                        tool_item_key_from_keys(keys)
                                             .and_then(|k| index_by_key.get(&k).copied())
                                     })
                                     .or(last_tool_index)
@@ -3260,7 +3409,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                     if let Some(id) = item_id {
                                         tool_index_by_item_id.insert(id.to_string(), index);
                                     }
-                                    if let Some(name) = data.get("name").and_then(Value::as_str) {
+                                    if let Some(name) = event.name() {
                                         tool_name_by_index.insert(index, name.to_string());
                                     } else {
                                         tool_name_by_index.entry(index).or_default();
@@ -3273,15 +3422,11 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                             "index": index,
                                             "content_block": {
                                                 "type": "tool_use",
-                                                "id": data
-                                                    .get("call_id")
-                                                    .and_then(|v| v.as_str())
+                                                "id": event
+                                                    .call_id()
                                                     .or(item_id)
                                                     .unwrap_or(""),
-                                                "name": data
-                                                    .get("name")
-                                                    .and_then(|v| v.as_str())
-                                                    .unwrap_or("")
+                                                "name": event.name().unwrap_or("")
                                             }
                                         });
                                         let start_sse = frame_sse_event("content_block_start", &start_event);
@@ -3426,11 +3571,10 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                             "response.reasoning_summary_text.delta"
                             | "response.reasoning_text.delta"
                             | "response.reasoning.delta" => {
-                                if let Some(delta) = data
-                                    .get("delta")
-                                    .or_else(|| data.get("text"))
-                                    .and_then(|d| d.as_str())
-                                {
+                                if let Some(event) = &delta_event {
+                                    let Some(delta) = event.delta_or_text() else {
+                                        continue;
+                                    };
                                     if let Some(index) = current_text_index.take() {
                                         if open_indices.remove(&index) {
                                             let stop_event = json!({
@@ -3444,8 +3588,9 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                             fallback_open_index = None;
                                         }
                                     }
-                                    let item_id = data.get("item_id").and_then(Value::as_str);
-                                    let item_key = reasoning_item_key(&data, None);
+                                    let keys = event.keys();
+                                    let item_id = keys.item_id;
+                                    let item_key = reasoning_item_key_from_keys(keys, None);
                                     let is_keyless = item_id.is_none() && item_key.is_none();
                                     let index = item_id
                                         .and_then(|id| reasoning_index_by_item_id.get(id).copied())
@@ -4750,6 +4895,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use futures::stream;
     use futures::StreamExt;
     use std::collections::HashMap;
@@ -7637,6 +7783,26 @@ mod tests {
     #[tokio::test]
     async fn diagnostic_late_error_after_incomplete_is_ignored() {
         assert_diagnostic_late_error_preserves_terminal("response.incomplete", json!({"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"usage":{"input_tokens":1,"output_tokens":1}}), 1, 0).await;
+    }
+
+    #[tokio::test]
+    async fn typed_event_line_falls_back_to_the_full_payload() {
+        // 事件名只写在 event: 行、载荷里没有 type：探针判不了，必须退回完整
+        // Value 路径，增量照样发得出去。
+        let input = concat!(
+            "event: response.output_text.delta\n",
+            "data: {\"item_id\":\"msg_1\",\"delta\":\"hi\"}\n\n",
+        );
+        let output = convert_stream_text(input).await;
+        let events = sse_data_values(&output);
+        let text: String = events
+            .iter()
+            .filter(|event| {
+                event.pointer("/delta/type").and_then(Value::as_str) == Some("text_delta")
+            })
+            .filter_map(|event| event.pointer("/delta/text").and_then(Value::as_str))
+            .collect();
+        assert_eq!(text, "hi");
     }
 
     #[tokio::test]
