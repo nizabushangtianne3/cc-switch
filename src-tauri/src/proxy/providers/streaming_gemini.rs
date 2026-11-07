@@ -9,7 +9,9 @@ use super::transform_gemini::{
     build_anthropic_usage, is_synthesized_tool_call_id, rectify_tool_call_parts,
     synthesize_tool_call_id, AnthropicToolSchemaHints,
 };
-use crate::proxy::sse::{next_sse_block_range, strip_sse_field, Utf8TailDecoder};
+use crate::proxy::sse::{
+    content_block_delta_sse, next_sse_block_range, strip_sse_field, Utf8TailDecoder,
+};
 use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
 use serde_json::{json, Value};
@@ -369,15 +371,12 @@ pub fn create_anthropic_sse_stream_from_gemini<E: std::error::Error + Send + 'st
                                             open_indices.insert(index);
                                         }
 
-                                        let delta_event = json!({
-                                            "type": "content_block_delta",
-                                            "index": index,
-                                            "delta": {
-                                                "type": "text_delta",
-                                                "text": delta
-                                            }
-                                        });
-                                        yield Ok(encode_sse("content_block_delta", &delta_event));
+                                        yield Ok(content_block_delta_sse(
+                                            index,
+                                            "text_delta",
+                                            "text",
+                                            &delta,
+                                        ));
                                         if is_cumulative {
                                             accumulated_text = visible_text;
                                         } else {
@@ -422,15 +421,12 @@ pub fn create_anthropic_sse_stream_from_gemini<E: std::error::Error + Send + 'st
                     open_indices.insert(index);
                 }
 
-                let delta_event = json!({
-                    "type": "content_block_delta",
-                    "index": index,
-                    "delta": {
-                        "type": "text_delta",
-                        "text": blocked_text
-                    }
-                });
-                yield Ok(encode_sse("content_block_delta", &delta_event));
+                yield Ok(content_block_delta_sse(
+                    index,
+                    "text_delta",
+                    "text",
+                    &blocked_text,
+                ));
             }
         }
 
@@ -513,15 +509,13 @@ pub fn create_anthropic_sse_stream_from_gemini<E: std::error::Error + Send + 'st
             });
             yield Ok(encode_sse("content_block_start", &start_event));
 
-            let delta_event = json!({
-                "type": "content_block_delta",
-                "index": index,
-                "delta": {
-                    "type": "input_json_delta",
-                    "partial_json": serde_json::to_string(&tool_call.args).unwrap_or_else(|_| "{}".to_string())
-                }
-            });
-            yield Ok(encode_sse("content_block_delta", &delta_event));
+            let args = serde_json::to_string(&tool_call.args).unwrap_or_else(|_| "{}".to_string());
+            yield Ok(content_block_delta_sse(
+                index,
+                "input_json_delta",
+                "partial_json",
+                &args,
+            ));
 
             let stop_event = json!({
                 "type": "content_block_stop",

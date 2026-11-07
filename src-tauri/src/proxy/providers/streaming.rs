@@ -3,7 +3,10 @@
 //! 实现 OpenAI SSE → Anthropic SSE 格式转换
 
 use super::inline_think::InlineThinkSplitter;
-use crate::proxy::sse::{frame_sse_event, next_sse_block_range, strip_sse_field, Utf8TailDecoder};
+use crate::proxy::sse::{
+    content_block_delta_sse, frame_sse_event, next_sse_block_range, strip_sse_field,
+    Utf8TailDecoder,
+};
 use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -583,28 +586,22 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                                     }
 
                                                     if let Some(args) = pending_after_start {
-                                                        let event = json!({
-                                                            "type": "content_block_delta",
-                                                            "index": anthropic_index,
-                                                            "delta": {
-                                                                "type": "input_json_delta",
-                                                                "partial_json": args
-                                                            }
-                                                        });
-                                                        let sse_data = frame_sse_event("content_block_delta", &event);
+                                                        let sse_data = content_block_delta_sse(
+                                                            anthropic_index,
+                                                            "input_json_delta",
+                                                            "partial_json",
+                                                            &args,
+                                                        );
                                                         yield Ok(sse_data);
                                                     }
 
                                                     if let Some(args) = immediate_delta {
-                                                        let event = json!({
-                                                            "type": "content_block_delta",
-                                                            "index": anthropic_index,
-                                                            "delta": {
-                                                                "type": "input_json_delta",
-                                                                "partial_json": args
-                                                            }
-                                                        });
-                                                        let sse_data = frame_sse_event("content_block_delta", &event);
+                                                        let sse_data = content_block_delta_sse(
+                                                            anthropic_index,
+                                                            "input_json_delta",
+                                                            "partial_json",
+                                                            &args,
+                                                        );
                                                         yield Ok(sse_data);
                                                     }
                                                 }
@@ -705,15 +702,12 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                                 yield Ok(sse_data);
                                                 open_tool_block_indices.insert(index);
                                                 if !pending.is_empty() {
-                                                    let delta_event = json!({
-                                                        "type": "content_block_delta",
-                                                        "index": index,
-                                                        "delta": {
-                                                            "type": "input_json_delta",
-                                                            "partial_json": pending
-                                                        }
-                                                    });
-                                                    let delta_sse = frame_sse_event("content_block_delta", &delta_event);
+                                                    let delta_sse = content_block_delta_sse(
+                                                        index,
+                                                        "input_json_delta",
+                                                        "partial_json",
+                                                        &pending,
+                                                    );
                                                     yield Ok(delta_sse);
                                                 }
                                             }

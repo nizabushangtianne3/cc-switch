@@ -18,7 +18,8 @@ use super::transform_responses::{
     web_search_results_from_output_item, web_search_tool_result_error,
 };
 use crate::proxy::sse::{
-    frame_sse_event, next_sse_block_range, scan_sse_block, strip_sse_field, Utf8TailDecoder,
+    content_block_delta_sse, frame_sse_event, next_sse_block_range, scan_sse_block,
+    strip_sse_field, Utf8TailDecoder,
 };
 use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
@@ -33,30 +34,6 @@ fn response_object_from_event(data: &Value) -> &Value {
 fn anthropic_sse(event_name: &str, payload: &Value) -> Bytes {
     frame_sse_event(event_name, payload)
 }
-
-/// `content_block_delta` 的直接字节写出。
-///
-/// 增量事件占流式输出的绝大多数，`json!` 每发一个都要为一棵树分配十来个
-/// String、再整棵序列化；这里按固定键序直接写字节，字符串值交给 serde 的写入器
-/// 转义（与整棵序列化同一套规则），输出与 `json!` + [`anthropic_sse`] 逐字节
-/// 一致。`delta_type` 是 `text_delta` / `thinking_delta` / `signature_delta` /
-/// `input_json_delta`，`field` 是它对应的载荷字段名。
-fn content_block_delta_sse(index: u32, delta_type: &str, field: &str, value: &str) -> Bytes {
-    let mut frame = Vec::with_capacity(value.len() + 96);
-    frame.extend_from_slice(
-        b"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":",
-    );
-    let _ = serde_json::to_writer(&mut frame, &index);
-    frame.extend_from_slice(b",\"delta\":{\"type\":\"");
-    frame.extend_from_slice(delta_type.as_bytes());
-    frame.extend_from_slice(b"\",\"");
-    frame.extend_from_slice(field.as_bytes());
-    frame.extend_from_slice(b"\":");
-    let _ = serde_json::to_writer(&mut frame, value);
-    frame.extend_from_slice(b"}}\n\n");
-    Bytes::from(frame)
-}
-
 fn responses_error_details(data: &Value, fallback: &str) -> (String, String) {
     let response = response_object_from_event(data);
     let error = response.get("error").unwrap_or(response);

@@ -235,6 +235,34 @@ pub(crate) fn frame_sse_event(event_name: &str, payload: &Value) -> Bytes {
     Bytes::from(frame)
 }
 
+/// `content_block_delta` 的直接字节写出。
+///
+/// 增量事件占各协议转换层输出的绝大多数，`json!` 每发一个都要为一棵树分配十来
+/// 个 String、再整棵序列化；这里按固定键序直接写字节，字符串值交给 serde 的写
+/// 入器转义（与整棵序列化同一套规则），输出与 `json!` + [`frame_sse_event`]
+/// 逐字节一致。`delta_type` 取值 `text_delta` / `thinking_delta` /
+/// `signature_delta` / `input_json_delta`，`field` 是它对应的载荷字段名。
+pub(crate) fn content_block_delta_sse(
+    index: u32,
+    delta_type: &str,
+    field: &str,
+    value: &str,
+) -> Bytes {
+    let mut frame = Vec::with_capacity(value.len() + 96);
+    frame.extend_from_slice(
+        b"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":",
+    );
+    let _ = serde_json::to_writer(&mut frame, &index);
+    frame.extend_from_slice(b",\"delta\":{\"type\":\"");
+    frame.extend_from_slice(delta_type.as_bytes());
+    frame.extend_from_slice(b"\",\"");
+    frame.extend_from_slice(field.as_bytes());
+    frame.extend_from_slice(b"\":");
+    let _ = serde_json::to_writer(&mut frame, value);
+    frame.extend_from_slice(b"}}\n\n");
+    Bytes::from(frame)
+}
+
 /// Split one SSE block into its `event:` value and its `data:` payload.
 ///
 /// The data lines are borrowed rather than copied. Responses, Chat Completions
