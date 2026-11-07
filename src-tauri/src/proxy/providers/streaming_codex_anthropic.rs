@@ -25,7 +25,9 @@ use crate::proxy::json_canonical::canonicalize_tool_arguments_str;
 use crate::proxy::sse::{next_sse_block_range, scan_sse_block, Utf8TailDecoder};
 use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
+use serde::Deserialize;
 use serde_json::{json, Map, Value};
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -146,32 +148,44 @@ impl AnthropicToResponsesState {
     }
 
     fn handle_message_start(&mut self, data: &Value) -> Vec<Bytes> {
-        if let Some(message) = data.get("message") {
-            if let Some(id) = message.get("id").and_then(|v| v.as_str()) {
-                self.response_id = if id.starts_with("resp_") {
-                    id.to_string()
-                } else {
-                    format!("resp_{id}")
-                };
+        let message = data.get("message").unwrap_or(&Value::Null);
+        self.handle_message_start_fields(message)
+    }
+
+    fn handle_message_start_fields(&mut self, message: &Value) -> Vec<Bytes> {
+        if let Some(id) = message.get("id").and_then(|v| v.as_str()) {
+            self.response_id = if id.starts_with("resp_") {
+                id.to_string()
+            } else {
+                format!("resp_{id}")
+            };
+        }
+        if let Some(model) = message.get("model").and_then(|v| v.as_str()) {
+            if !model.is_empty() {
+                self.model = model.to_string();
             }
-            if let Some(model) = message.get("model").and_then(|v| v.as_str()) {
-                if !model.is_empty() {
-                    self.model = model.to_string();
-                }
-            }
-            if let Some(usage) = message.get("usage") {
-                self.merge_usage(usage);
-            }
+        }
+        if let Some(usage) = message.get("usage") {
+            self.merge_usage(usage);
         }
         self.ensure_response_started()
     }
 
     fn handle_content_block_start(&mut self, data: &Value) -> Vec<Bytes> {
+        let index = data.get("index").and_then(|v| v.as_u64());
+        let block = data.get("content_block").unwrap_or(&Value::Null);
+        self.handle_content_block_start_fields(index, block)
+    }
+
+    fn handle_content_block_start_fields(
+        &mut self,
+        index: Option<u64>,
+        block: &Value,
+    ) -> Vec<Bytes> {
         let mut events = self.ensure_response_started();
-        let Some(index) = data.get("index").and_then(|v| v.as_u64()) else {
+        let Some(index) = index else {
             return events;
         };
-        let block = data.get("content_block").unwrap_or(&Value::Null);
         let block_type = block.get("type").and_then(|t| t.as_str()).unwrap_or("");
 
         match block_type {
@@ -274,11 +288,17 @@ impl AnthropicToResponsesState {
     }
 
     fn handle_content_block_delta(&mut self, data: &Value) -> Vec<Bytes> {
-        let Some(index) = data.get("index").and_then(|v| v.as_u64()) else {
+        self.handle_content_block_delta_fields(&AnthropicDeltaFields::from_value(data))
+    }
+
+    fn handle_content_block_delta_fields(
+        &mut self,
+        fields: &AnthropicDeltaFields<'_>,
+    ) -> Vec<Bytes> {
+        let Some(index) = fields.index else {
             return Vec::new();
         };
-        let delta = data.get("delta").unwrap_or(&Value::Null);
-        let delta_type = delta.get("type").and_then(|t| t.as_str()).unwrap_or("");
+        let delta_type = fields.delta_type.unwrap_or("");
 
         let Some(block) = self.blocks.get_mut(&index) else {
             return Vec::new();
@@ -288,15 +308,12 @@ impl AnthropicToResponsesState {
 
         match delta_type {
             "text_delta" => {
-                let text = delta.get("text").and_then(|t| t.as_str()).unwrap_or("");
+                let text = fields.text.unwrap_or("");
                 block.accum.push_str(text);
                 vec![sse::output_text_delta(output_index, &item_id, text)]
             }
             "input_json_delta" => {
-                let partial = delta
-                    .get("partial_json")
-                    .and_then(|t| t.as_str())
-                    .unwrap_or("");
+                let partial = fields.partial_json.unwrap_or("");
                 block.accum.push_str(partial);
                 // The Read tool needs to be sanitized at close time, to avoid emitting pages:"" deltas mid-stream
                 if block.name == "Read" || self.tool_context.is_custom_tool_chat_name(&block.name) {
@@ -309,7 +326,7 @@ impl AnthropicToResponsesState {
                 )]
             }
             "thinking_delta" => {
-                let text = delta.get("thinking").and_then(|t| t.as_str()).unwrap_or("");
+                let text = fields.thinking.unwrap_or("");
                 block.accum.push_str(text);
                 block.source_block["thinking"] = json!(block.accum);
                 vec![sse::reasoning_summary_text_delta(
@@ -319,7 +336,7 @@ impl AnthropicToResponsesState {
                 )]
             }
             "signature_delta" => {
-                if let Some(signature) = delta.get("signature").and_then(Value::as_str) {
+                if let Some(signature) = fields.signature {
                     block.source_block["signature"] = json!(signature);
                 }
                 Vec::new()
@@ -433,10 +450,22 @@ impl AnthropicToResponsesState {
     }
 
     fn handle_message_delta(&mut self, data: &Value) -> Vec<Bytes> {
-        if let Some(reason) = data.pointer("/delta/stop_reason").and_then(|v| v.as_str()) {
+        let stop_reason = data
+            .get("delta")
+            .and_then(|d| d.get("stop_reason"))
+            .and_then(Value::as_str);
+        self.handle_message_delta_fields(stop_reason, data.get("usage"))
+    }
+
+    fn handle_message_delta_fields(
+        &mut self,
+        stop_reason: Option<&str>,
+        usage: Option<&Value>,
+    ) -> Vec<Bytes> {
+        if let Some(reason) = stop_reason {
             self.stop_reason = Some(reason.to_string());
         }
-        if let Some(usage) = data.get("usage") {
+        if let Some(usage) = usage {
             self.merge_usage(usage);
         }
         Vec::new()
@@ -566,6 +595,84 @@ fn extract_anthropic_sse_error(value: &Value) -> (String, Option<String>) {
     (message, error_type)
 }
 
+/// Anthropic SSE 块的只读借阅探针：命中就一棵 Value 都不建。
+///
+/// 这条链路上绝大多数块是 content_block_delta（每小段文本/工具参数一块），
+/// 把整块 JSON 解析成 serde_json::Value（每个键值一对 String 再加 Map/Vec）
+/// 是其中最大的一块。字符串字段一律 `Cow`：无转义时零拷贝，转义自动落到
+/// owned（`#[serde(borrow)]` 的裸 `&str` 遇到转义会直接解析失败）。嵌套的
+/// `message`/`content_block`/`usage` 按 `Value` 收（低频，且 content_block 的
+/// 工具 input 本来就要整体序列化）；`error` 信封同理走整树。
+#[derive(Deserialize)]
+struct AnthropicBlockProbe<'a> {
+    #[serde(default, borrow)]
+    r#type: Option<Cow<'a, str>>,
+    #[serde(default)]
+    index: Option<u64>,
+    #[serde(default, borrow)]
+    delta: Option<AnthropicDeltaProbe<'a>>,
+    #[serde(default)]
+    message: Option<Value>,
+    #[serde(default)]
+    content_block: Option<Value>,
+    #[serde(default)]
+    usage: Option<Value>,
+}
+
+/// `delta` 对象的借阅视图：type + 四种增量文本字段。
+#[derive(Deserialize)]
+struct AnthropicDeltaProbe<'a> {
+    #[serde(default, borrow)]
+    r#type: Option<Cow<'a, str>>,
+    #[serde(default, borrow)]
+    text: Option<Cow<'a, str>>,
+    #[serde(default, borrow)]
+    partial_json: Option<Cow<'a, str>>,
+    #[serde(default, borrow)]
+    thinking: Option<Cow<'a, str>>,
+    #[serde(default, borrow)]
+    signature: Option<Cow<'a, str>>,
+    #[serde(default, borrow)]
+    stop_reason: Option<Cow<'a, str>>,
+}
+
+/// 状态机唯一认的 content_block_delta 字段视图：探针与完整 `Value` 都能填出
+/// 这一份，一条实现、两种数据源。
+struct AnthropicDeltaFields<'a> {
+    index: Option<u64>,
+    delta_type: Option<&'a str>,
+    text: Option<&'a str>,
+    partial_json: Option<&'a str>,
+    thinking: Option<&'a str>,
+    signature: Option<&'a str>,
+}
+
+impl<'a> AnthropicDeltaFields<'a> {
+    fn from_value(data: &'a Value) -> Self {
+        let delta = data.get("delta").unwrap_or(&Value::Null);
+        Self {
+            index: data.get("index").and_then(|v| v.as_u64()),
+            delta_type: delta.get("type").and_then(|t| t.as_str()),
+            text: delta.get("text").and_then(|t| t.as_str()),
+            partial_json: delta.get("partial_json").and_then(|t| t.as_str()),
+            thinking: delta.get("thinking").and_then(|t| t.as_str()),
+            signature: delta.get("signature").and_then(Value::as_str),
+        }
+    }
+
+    fn from_probe(probe: &'a AnthropicBlockProbe<'a>) -> Self {
+        let delta = probe.delta.as_ref();
+        Self {
+            index: probe.index,
+            delta_type: delta.and_then(|delta| delta.r#type.as_deref()),
+            text: delta.and_then(|delta| delta.text.as_deref()),
+            partial_json: delta.and_then(|delta| delta.partial_json.as_deref()),
+            thinking: delta.and_then(|delta| delta.thinking.as_deref()),
+            signature: delta.and_then(|delta| delta.signature.as_deref()),
+        }
+    }
+}
+
 fn process_anthropic_sse_block(
     state: &mut AnthropicToResponsesState,
     block: &str,
@@ -577,24 +684,50 @@ fn process_anthropic_sse_block(
     let Some(payload) = payload else {
         return (Vec::new(), false);
     };
-    let Ok(data) = serde_json::from_str::<Value>(&payload) else {
+    // 探针优先：命中就一棵 Value 都不建。这条链路绝大多数块是
+    // content_block_delta，把整块 JSON 解析成整棵树是其中最大的一块。
+    // 解析失败 = JSON 合法但形状意外，或压根不是合法 JSON：后者与旧
+    // 行为一致，跳过这个块。
+    let Ok(probe) = serde_json::from_str::<AnthropicBlockProbe<'_>>(&payload) else {
         return (Vec::new(), false);
     };
-    let msg_type = data
-        .get("type")
-        .and_then(Value::as_str)
+    let msg_type = probe
+        .r#type
+        .as_deref()
         .map(str::to_string)
         .or(event_name)
         .unwrap_or_default();
 
     let events = match msg_type.as_str() {
-        "message_start" => state.handle_message_start(&data),
-        "content_block_start" => state.handle_content_block_start(&data),
-        "content_block_delta" => state.handle_content_block_delta(&data),
-        "content_block_stop" => state.handle_content_block_stop(&data),
-        "message_delta" => state.handle_message_delta(&data),
+        "message_start" => {
+            state.handle_message_start_fields(probe.message.as_ref().unwrap_or(&Value::Null))
+        }
+        "content_block_start" => state.handle_content_block_start_fields(
+            probe.index,
+            probe.content_block.as_ref().unwrap_or(&Value::Null),
+        ),
+        "content_block_delta" => {
+            state.handle_content_block_delta_fields(&AnthropicDeltaFields::from_probe(&probe))
+        }
+        "content_block_stop" => {
+            let Some(index) = probe.index else {
+                return (Vec::new(), false);
+            };
+            state.close_block(index)
+        }
+        "message_delta" => {
+            let stop_reason = probe
+                .delta
+                .as_ref()
+                .and_then(|delta| delta.stop_reason.as_deref());
+            state.handle_message_delta_fields(stop_reason, probe.usage.as_ref())
+        }
         "message_stop" => state.finalize(),
         "error" => {
+            // 错误信封的归一化要读整棵树，退回完整路径。
+            let Ok(data) = serde_json::from_str::<Value>(&payload) else {
+                return (Vec::new(), false);
+            };
             let (message, error_type) = extract_anthropic_sse_error(&data);
             return (
                 state
