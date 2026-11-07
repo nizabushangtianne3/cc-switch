@@ -22,6 +22,42 @@ pub(crate) fn sse_event(event: &str, data: Value) -> Bytes {
     crate::proxy::sse::frame_sse_event(event, &data)
 }
 
+/// 三兄弟增量（output_text / reasoning_summary_text / function_call_arguments）
+/// 的直接字节写出。
+///
+/// 它们占 Codex 输出流的绝大多数，`json!` 每发一个都要为一棵树分配六七个
+/// String、再整棵序列化；这里按固定键序直接写字节，字符串转义与数字格式都和
+/// 整棵序列化一致。`index_key` 是 text / reasoning 增量里那个固定为 0 的序号
+/// 键名（`content_index` / `summary_index`），函数参数增量没有这一项。
+fn responses_delta_sse(
+    event_type: &str,
+    item_id: &str,
+    output_index: u32,
+    index_key: Option<&str>,
+    delta: &str,
+) -> Bytes {
+    let mut frame = Vec::with_capacity(item_id.len() + delta.len() + 128);
+    frame.extend_from_slice(b"event: ");
+    frame.extend_from_slice(event_type.as_bytes());
+    frame.extend_from_slice(b"\ndata: {\"type\":\"");
+    frame.extend_from_slice(event_type.as_bytes());
+    frame.extend_from_slice(b"\",\"item_id\":");
+    let _ = serde_json::to_writer(&mut frame, item_id);
+    frame.extend_from_slice(b",\"output_index\":");
+    let _ = serde_json::to_writer(&mut frame, &output_index);
+    if let Some(index_key) = index_key {
+        frame.extend_from_slice(b",\"");
+        frame.extend_from_slice(index_key.as_bytes());
+        frame.extend_from_slice(b"\":0");
+    }
+    frame.extend_from_slice(b",\"delta\":");
+    let _ = serde_json::to_writer(&mut frame, delta);
+    // Responses 的增量事件是扁平对象：type/item_id/output_index[/序号键]/delta
+    // 都在同一层，只收一个花括号。
+    frame.extend_from_slice(b"}\n\n");
+    Bytes::from(frame)
+}
+
 // ---------------------------------------------------------------------------
 // Response lifecycle (created / in_progress / completed / failed)
 // ---------------------------------------------------------------------------
@@ -131,15 +167,12 @@ pub(crate) fn message_content_part_added(output_index: u32, item_id: &str) -> By
 
 /// `response.output_text.delta`.
 pub(crate) fn output_text_delta(output_index: u32, item_id: &str, delta: &str) -> Bytes {
-    sse_event(
+    responses_delta_sse(
         "response.output_text.delta",
-        json!({
-            "type": "response.output_text.delta",
-            "item_id": item_id,
-            "output_index": output_index,
-            "content_index": 0,
-            "delta": delta
-        }),
+        item_id,
+        output_index,
+        Some("content_index"),
+        delta,
     )
 }
 
@@ -217,15 +250,12 @@ pub(crate) fn reasoning_summary_part_added(output_index: u32, item_id: &str) -> 
 
 /// `response.reasoning_summary_text.delta`.
 pub(crate) fn reasoning_summary_text_delta(output_index: u32, item_id: &str, delta: &str) -> Bytes {
-    sse_event(
+    responses_delta_sse(
         "response.reasoning_summary_text.delta",
-        json!({
-            "type": "response.reasoning_summary_text.delta",
-            "item_id": item_id,
-            "output_index": output_index,
-            "summary_index": 0,
-            "delta": delta
-        }),
+        item_id,
+        output_index,
+        Some("summary_index"),
+        delta,
     )
 }
 
@@ -295,14 +325,12 @@ pub(crate) fn function_call_arguments_delta(
     item_id: &str,
     delta: &str,
 ) -> Bytes {
-    sse_event(
+    responses_delta_sse(
         "response.function_call_arguments.delta",
-        json!({
-            "type": "response.function_call_arguments.delta",
-            "item_id": item_id,
-            "output_index": output_index,
-            "delta": delta
-        }),
+        item_id,
+        output_index,
+        None,
+        delta,
     )
 }
 
@@ -325,14 +353,12 @@ pub(crate) fn function_call_arguments_done(
 
 /// `response.custom_tool_call_input.delta` (Chat freeform tools only).
 pub(crate) fn custom_tool_call_input_delta(output_index: u32, item_id: &str, delta: &str) -> Bytes {
-    sse_event(
+    responses_delta_sse(
         "response.custom_tool_call_input.delta",
-        json!({
-            "type": "response.custom_tool_call_input.delta",
-            "item_id": item_id,
-            "output_index": output_index,
-            "delta": delta
-        }),
+        item_id,
+        output_index,
+        None,
+        delta,
     )
 }
 
@@ -402,5 +428,42 @@ mod tests {
             .contains("\"type\":\"response.function_call_arguments.delta\""));
         assert!(body(&function_call_arguments_done(1, "fc_x", "{\"a\":1}"))
             .contains("\"arguments\":\"{\\\"a\\\":1}\""));
+    }
+
+    /// 直接字节写出必须与 json! + sse_event 逐字节一致：键序、数字格式、字符串
+    /// 转义都不能有差别。四种增量全覆盖，item_id 与 delta 里都带引号和反斜杠。
+    #[test]
+    fn responses_delta_sse_matches_the_json_macro_output() {
+        let item_id = "fc_\"x\\\"";
+        let delta = "hi \"quoted\" \\ back 中文 \u{1F600}";
+
+        assert_eq!(
+            output_text_delta(3, item_id, delta),
+            sse_event(
+                "response.output_text.delta",
+                json!({"type":"response.output_text.delta","item_id":item_id,"output_index":3,"content_index":0,"delta":delta}),
+            )
+        );
+        assert_eq!(
+            reasoning_summary_text_delta(3, item_id, delta),
+            sse_event(
+                "response.reasoning_summary_text.delta",
+                json!({"type":"response.reasoning_summary_text.delta","item_id":item_id,"output_index":3,"summary_index":0,"delta":delta}),
+            )
+        );
+        assert_eq!(
+            function_call_arguments_delta(3, item_id, delta),
+            sse_event(
+                "response.function_call_arguments.delta",
+                json!({"type":"response.function_call_arguments.delta","item_id":item_id,"output_index":3,"delta":delta}),
+            )
+        );
+        assert_eq!(
+            custom_tool_call_input_delta(3, item_id, delta),
+            sse_event(
+                "response.custom_tool_call_input.delta",
+                json!({"type":"response.custom_tool_call_input.delta","item_id":item_id,"output_index":3,"delta":delta}),
+            )
+        );
     }
 }
