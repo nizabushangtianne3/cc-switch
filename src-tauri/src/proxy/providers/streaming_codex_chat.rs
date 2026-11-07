@@ -16,8 +16,184 @@ use crate::proxy::json_canonical::canonicalize_tool_arguments_str;
 use crate::proxy::sse::{next_sse_block_range, scan_sse_block, Utf8TailDecoder};
 use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
+use serde::Deserialize;
 use serde_json::{json, Value};
+use std::borrow::Cow;
 use std::collections::BTreeMap;
+
+/// Chat 分片里转换器真正要读的字段（全部借阅）。
+///
+/// 探针与完整 `Value` 都能填出这一份，状态机只认它：一条实现、两种数据源。
+/// 错误信封仍走 `Value`（归一化要读整棵树），由调用方分流。
+struct ChatChunkFields<'a> {
+    id: Option<&'a str>,
+    model: Option<&'a str>,
+    created: Option<u64>,
+    usage: Option<&'a Value>,
+    reasoning: Option<Cow<'a, str>>,
+    content: Option<&'a str>,
+    tool_calls: Vec<ToolCallFields<'a>>,
+    finish_reason: Option<&'a str>,
+}
+
+struct ToolCallFields<'a> {
+    index: Option<u64>,
+    id: Option<&'a str>,
+    name: Option<&'a str>,
+    arguments: &'a str,
+    extra_content: Option<&'a Value>,
+}
+
+impl<'a> ChatChunkFields<'a> {
+    fn from_value(chunk: &'a Value) -> Self {
+        let choice = chunk
+            .get("choices")
+            .and_then(Value::as_array)
+            .and_then(|choices| choices.first());
+        let delta = choice.and_then(|choice| choice.get("delta"));
+        let tool_calls = delta
+            .and_then(|delta| delta.get("tool_calls"))
+            .and_then(Value::as_array)
+            .map(|tool_calls| tool_calls.iter().map(ToolCallFields::from_value).collect())
+            .unwrap_or_default();
+        Self {
+            id: chunk.get("id").and_then(Value::as_str),
+            model: chunk.get("model").and_then(Value::as_str),
+            created: chunk.get("created").and_then(Value::as_u64),
+            usage: chunk.get("usage").filter(|usage| !usage.is_null()),
+            // from_value 的 reasoning 由 extract_reasoning_field_text 拼出来，
+            // 只能 owned；探针路径才是零拷贝 borrow。
+            reasoning: delta.and_then(chat_delta_reasoning_text).map(Cow::Owned),
+            content: delta
+                .and_then(|delta| delta.get("content"))
+                .and_then(Value::as_str),
+            tool_calls,
+            finish_reason: choice
+                .and_then(|choice| choice.get("finish_reason"))
+                .and_then(Value::as_str),
+        }
+    }
+
+    fn from_probe(probe: &'a ChatChunkProbe<'a>) -> Self {
+        let choice = probe.choices.first();
+        let delta = choice.map(|choice| &choice.delta);
+        Self {
+            id: probe.id.as_deref(),
+            model: probe.model.as_deref(),
+            created: probe.created,
+            usage: probe.usage.as_ref(),
+            reasoning: delta
+                .and_then(|delta| delta.reasoning.as_deref())
+                .map(Cow::Borrowed),
+            content: delta.and_then(|delta| delta.content.as_deref()),
+            tool_calls: delta
+                .map(|delta| {
+                    delta
+                        .tool_calls
+                        .iter()
+                        .map(ToolCallFields::from_probe)
+                        .collect()
+                })
+                .unwrap_or_default(),
+            finish_reason: choice.and_then(|choice| choice.finish_reason.as_deref()),
+        }
+    }
+}
+
+impl<'a> ToolCallFields<'a> {
+    fn from_value(tool_call: &'a Value) -> Self {
+        let function = tool_call.get("function");
+        Self {
+            index: tool_call.get("index").and_then(Value::as_u64),
+            id: tool_call.get("id").and_then(Value::as_str),
+            name: function
+                .and_then(|function| function.get("name"))
+                .and_then(Value::as_str),
+            arguments: function
+                .and_then(|function| function.get("arguments"))
+                .and_then(Value::as_str)
+                .unwrap_or(""),
+            extra_content: tool_call_extra_content(tool_call),
+        }
+    }
+
+    fn from_probe(tool_call: &'a ChatToolCallProbe<'a>) -> Self {
+        Self {
+            index: tool_call.index,
+            id: tool_call.id.as_deref(),
+            name: tool_call
+                .function
+                .as_ref()
+                .and_then(|function| function.name.as_deref()),
+            arguments: tool_call
+                .function
+                .as_ref()
+                .and_then(|function| function.arguments.as_deref())
+                .unwrap_or(""),
+            extra_content: tool_call.extra_content.as_ref(),
+        }
+    }
+}
+
+/// Chat 分片的只读借阅结构：命中就不建整棵 `Value` 树。
+///
+/// 这条链路每事件约 4µs，解析成整棵树（每个键值一对 String、再加 Map/Vec）是
+/// 其中最大的一块。字符串字段一律 `Cow`：无转义时零拷贝，模型输出里的换行、
+/// 引号等转义自动落到 owned（`#[serde(borrow)]` 的裸 `&str` 遇到转义会直接解析
+/// 失败，绝不能用的就是这个原因）。嵌套的 `usage`/`extra_content` 低频出现，
+/// 仍按 `Value` 收；`error` 信封同理，且调用方一见它就改走完整路径。
+#[derive(Deserialize)]
+struct ChatChunkProbe<'a> {
+    #[serde(default, borrow)]
+    id: Option<Cow<'a, str>>,
+    #[serde(default, borrow)]
+    model: Option<Cow<'a, str>>,
+    #[serde(default)]
+    created: Option<u64>,
+    #[serde(default)]
+    usage: Option<Value>,
+    #[serde(default)]
+    choices: Vec<ChatChoiceProbe<'a>>,
+}
+
+#[derive(Deserialize)]
+struct ChatChoiceProbe<'a> {
+    #[serde(default)]
+    delta: ChatDeltaProbe<'a>,
+    #[serde(default, borrow)]
+    finish_reason: Option<Cow<'a, str>>,
+}
+
+#[derive(Default, Deserialize)]
+struct ChatDeltaProbe<'a> {
+    #[serde(default, borrow)]
+    content: Option<Cow<'a, str>>,
+    // OpenRouter/Kimi 用 reasoning，DeepSeek 用 reasoning_content
+    #[serde(default, borrow, alias = "reasoning_content")]
+    reasoning: Option<Cow<'a, str>>,
+    #[serde(default)]
+    tool_calls: Vec<ChatToolCallProbe<'a>>,
+}
+
+#[derive(Default, Deserialize)]
+struct ChatToolCallProbe<'a> {
+    #[serde(default)]
+    index: Option<u64>,
+    #[serde(default, borrow)]
+    id: Option<Cow<'a, str>>,
+    #[serde(default)]
+    function: Option<ChatFunctionProbe<'a>>,
+    #[serde(default)]
+    extra_content: Option<Value>,
+}
+
+#[derive(Default, Deserialize)]
+struct ChatFunctionProbe<'a> {
+    #[serde(default, borrow)]
+    name: Option<Cow<'a, str>>,
+    #[serde(default, borrow)]
+    arguments: Option<Cow<'a, str>>,
+}
 
 #[derive(Debug, Default)]
 struct TextItemState {
@@ -103,60 +279,50 @@ impl ChatToResponsesState {
         }
     }
 
-    fn handle_chat_chunk(&mut self, chunk: &Value) -> Vec<Bytes> {
+    fn handle_chat_chunk(&mut self, chunk: &ChatChunkFields<'_>) -> Vec<Bytes> {
         let mut events = Vec::new();
 
-        if let Some(id) = chunk.get("id").and_then(|v| v.as_str()) {
+        if let Some(id) = chunk.id {
             self.response_id = response_id_from_chat_id(Some(id));
         }
-        if let Some(model) = chunk.get("model").and_then(|v| v.as_str()) {
+        if let Some(model) = chunk.model {
             if !model.is_empty() {
                 self.model = model.to_string();
             }
         }
-        if let Some(created) = chunk.get("created").and_then(|v| v.as_u64()) {
+        if let Some(created) = chunk.created {
             self.created_at = created;
         }
 
         events.extend(self.ensure_response_started());
 
-        if let Some(usage) = chunk.get("usage").filter(|v| !v.is_null()) {
+        if let Some(usage) = chunk.usage {
             self.latest_usage = Some(chat_usage_to_responses_usage(Some(usage)));
         }
 
-        let Some(choice) = chunk
-            .get("choices")
-            .and_then(|v| v.as_array())
-            .and_then(|choices| choices.first())
-        else {
-            return events;
-        };
+        if let Some(reasoning) = chunk.reasoning.as_deref() {
+            events.extend(self.push_reasoning_delta(reasoning));
+            self.append_reasoning_to_active_tools(reasoning);
+        }
 
-        if let Some(delta) = choice.get("delta") {
-            if let Some(reasoning) = chat_delta_reasoning_text(delta) {
-                events.extend(self.push_reasoning_delta(&reasoning));
-                self.append_reasoning_to_active_tools(&reasoning);
-            }
-
-            if let Some(content) = delta.get("content").and_then(|v| v.as_str()) {
-                if !content.is_empty() {
-                    events.extend(self.push_content_delta(content));
-                }
-            }
-
-            if let Some(tool_calls) = delta.get("tool_calls").and_then(|v| v.as_array()) {
-                events.extend(self.flush_inline_think_at_boundary());
-                let reasoning_for_tool_call = self.current_reasoning_text();
-                events.extend(self.finalize_reasoning());
-                for tool_call in tool_calls {
-                    events.extend(
-                        self.push_tool_call_delta(tool_call, reasoning_for_tool_call.as_deref()),
-                    );
-                }
+        if let Some(content) = chunk.content {
+            if !content.is_empty() {
+                events.extend(self.push_content_delta(content));
             }
         }
 
-        if let Some(finish_reason) = choice.get("finish_reason").and_then(|v| v.as_str()) {
+        if !chunk.tool_calls.is_empty() {
+            events.extend(self.flush_inline_think_at_boundary());
+            let reasoning_for_tool_call = self.current_reasoning_text();
+            events.extend(self.finalize_reasoning());
+            for tool_call in &chunk.tool_calls {
+                events.extend(
+                    self.push_tool_call_delta(tool_call, reasoning_for_tool_call.as_deref()),
+                );
+            }
+        }
+
+        if let Some(finish_reason) = chunk.finish_reason {
             self.finish_reason = Some(finish_reason.to_string());
         }
 
@@ -265,14 +431,10 @@ impl ChatToResponsesState {
     /// 所以这里只在**能确证是新调用**时才分配新 key：delta 带非空 `id`，且该 id 与
     /// 所有已知调用都不同。其余情况一律归入最后一个已知 key（空 map 时为 0），保持
     /// 既有行为——宁可两个并行调用坍缩成一个，也不能把一个调用的续帧炸成多个 item。
-    fn resolve_tool_key_without_index(&self, tool_call: &Value) -> usize {
+    fn resolve_tool_key_without_index(&self, id_delta: Option<&str>) -> usize {
         let last_key = self.tools.keys().next_back().copied();
 
-        let Some(id) = tool_call
-            .get("id")
-            .and_then(|v| v.as_str())
-            .filter(|id| !id.is_empty())
-        else {
+        let Some(id) = id_delta.filter(|id| !id.is_empty()) else {
             return last_key.unwrap_or(0);
         };
 
@@ -290,25 +452,18 @@ impl ChatToResponsesState {
         }
     }
 
-    fn push_tool_call_delta(&mut self, tool_call: &Value, reasoning: Option<&str>) -> Vec<Bytes> {
-        let chat_index = match tool_call.get("index").and_then(|v| v.as_u64()) {
+    fn push_tool_call_delta(
+        &mut self,
+        tool_call: &ToolCallFields<'_>,
+        reasoning: Option<&str>,
+    ) -> Vec<Bytes> {
+        let chat_index = match tool_call.index {
             Some(index) => index as usize,
-            None => self.resolve_tool_key_without_index(tool_call),
+            None => self.resolve_tool_key_without_index(tool_call.id),
         };
-        let id_delta = tool_call
-            .get("id")
-            .and_then(|v| v.as_str())
-            .map(str::to_string);
-        let function = tool_call.get("function").unwrap_or(&Value::Null);
-        let name_delta = function
-            .get("name")
-            .and_then(|v| v.as_str())
-            .map(str::to_string);
-        let args_delta = function
-            .get("arguments")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
+        let id_delta = tool_call.id;
+        let name_delta = tool_call.name;
+        let args_delta = tool_call.arguments;
 
         let mut output_index = None;
         let mut item_id = String::new();
@@ -316,20 +471,22 @@ impl ChatToResponsesState {
 
         {
             let state = self.tools.entry(chat_index).or_default();
-            if let Some(ref id) = id_delta {
+            if let Some(id) = id_delta {
                 if !id.is_empty() {
-                    state.call_id.clone_from(id);
+                    state.call_id.clear();
+                    state.call_id.push_str(id);
                 }
             }
-            if let Some(ref name) = name_delta {
+            if let Some(name) = name_delta {
                 if !name.is_empty() {
-                    state.name.clone_from(name);
+                    state.name.clear();
+                    state.name.push_str(name);
                 }
             }
             if !args_delta.is_empty() {
-                state.arguments.push_str(&args_delta);
+                state.arguments.push_str(args_delta);
             }
-            if let Some(extra) = tool_call_extra_content(tool_call) {
+            if let Some(extra) = tool_call.extra_content {
                 state.extra_content = Some(extra.clone());
             }
             if state.reasoning_content.is_empty() {
@@ -354,7 +511,7 @@ impl ChatToResponsesState {
                 events.push(sse::function_call_arguments_delta(
                     output_index,
                     &item_id,
-                    &args_delta,
+                    args_delta,
                 ));
             }
         }
@@ -775,13 +932,8 @@ pub fn create_responses_sse_stream_from_chat_with_context<E: std::error::Error +
                         let (event_name, payload) = scan_sse_block(block);
                         // [DONE] 的判定只需要一个 bool；先取出来，drain 之后照样能用
                         let is_done = payload.as_deref().is_some_and(|text| text.trim() == "[DONE]");
-                        let parsed = payload
-                            .as_deref()
-                            .map(serde_json::from_str::<Value>)
-                            .transpose();
-                        buffer.drain(..end + delim);
-
                         if is_done {
+                            buffer.drain(..end + delim);
                             for event in state.finalize() {
                                 yield Ok(event);
                             }
@@ -789,21 +941,65 @@ pub fn create_responses_sse_stream_from_chat_with_context<E: std::error::Error +
                             return;
                         }
 
-                        // 没有 data 行或 data 不是合法 JSON：跳过这个块
-                        let chunk: Value = match parsed {
-                            Ok(Some(value)) => value,
-                            _ => continue,
-                        };
+                        // 错误信封仍走完整路径：归一化要读整棵树。其余块先用只读
+                        // 借阅探针——命中就一棵 Value 都不建，这条链路每事件约 4µs，
+                        // 其中最大一块就是那棵树。载荷里出现 "error" 字样（模型输出
+                        // 完全可能）也先按信封走，确认不是信封再回正经路径。
+                        let is_error_envelope = event_name.as_deref() == Some("error")
+                            || payload
+                                .as_deref()
+                                .is_some_and(|text| text.contains("\"error\""));
 
-                        if event_name.as_deref() == Some("error") || chunk.get("error").is_some() {
-                            let normalized = chat_error_to_response_error(Some(&chunk));
-                            yield Ok(state.failed_event_with_error(normalized["error"].clone()));
-                            stream_failed = true;
-                            break;
+                        if is_error_envelope {
+                            if let Some(text) = payload.as_deref() {
+                                if let Ok(value) = serde_json::from_str::<Value>(text) {
+                                    if value.get("error").is_some() {
+                                        let normalized = chat_error_to_response_error(Some(&value));
+                                        yield Ok(state.failed_event_with_error(
+                                            normalized["error"].clone(),
+                                        ));
+                                        stream_failed = true;
+                                        break;
+                                    }
+                                    // 误中：载荷正文里带 "error" 字样，按普通分片处理。
+                                    let chunk = ChatChunkFields::from_value(&value);
+                                    for event in state.handle_chat_chunk(&chunk) {
+                                        yield Ok(event);
+                                    }
+                                    buffer.drain(..end + delim);
+                                    continue;
+                                }
+                            }
                         }
 
-                        for event in state.handle_chat_chunk(&chunk) {
-                            yield Ok(event);
+                        // 探针优先：命中就一棵 Value 都不建。解析失败 = JSON 合法
+                        // 但形状意外，或压根不是合法 JSON；后者与旧行为一致，
+                        // 跳过这个块。
+                        let skip = match payload.as_deref() {
+                            None => true,
+                            Some(text) => match serde_json::from_str::<ChatChunkProbe<'_>>(text) {
+                                Ok(probe) => {
+                                    let chunk = ChatChunkFields::from_probe(&probe);
+                                    for event in state.handle_chat_chunk(&chunk) {
+                                        yield Ok(event);
+                                    }
+                                    false
+                                }
+                                Err(_) => match serde_json::from_str::<Value>(text) {
+                                    Ok(value) => {
+                                        let chunk = ChatChunkFields::from_value(&value);
+                                        for event in state.handle_chat_chunk(&chunk) {
+                                            yield Ok(event);
+                                        }
+                                        false
+                                    }
+                                    Err(_) => true,
+                                },
+                            },
+                        };
+                        buffer.drain(..end + delim);
+                        if skip {
+                            continue;
                         }
                     }
 
@@ -974,10 +1170,15 @@ mod tests {
             })
         };
         let mut state = ChatToResponsesState::default();
-        state.handle_chat_chunk(&chunk("<think>"));
+        state.handle_chat_chunk(&ChatChunkFields::from_value(&chunk("<think>")));
 
         for step in ["step one", " step two", " step three"] {
-            let output = String::from_utf8(state.handle_chat_chunk(&chunk(step)).concat()).unwrap();
+            let output = String::from_utf8(
+                state
+                    .handle_chat_chunk(&ChatChunkFields::from_value(&chunk(step)))
+                    .concat(),
+            )
+            .unwrap();
             let events = parse_sse_events(&output);
             let delta = events
                 .last()
@@ -987,7 +1188,8 @@ mod tests {
         }
 
         // 思考片段都落在同一个 reasoning item 里，正文开始时才收尾，且只收尾一次
-        let mut output = state.handle_chat_chunk(&chunk("</think>\n\npong"));
+        let mut output =
+            state.handle_chat_chunk(&ChatChunkFields::from_value(&chunk("</think>\n\npong")));
         output.extend(state.finalize());
         let output = String::from_utf8(output.concat()).unwrap();
         let events = parse_sse_events(&output);
