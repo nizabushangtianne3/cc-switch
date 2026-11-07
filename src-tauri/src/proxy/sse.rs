@@ -247,17 +247,30 @@ pub(crate) fn frame_sse_event(event_name: &str, payload: &Value) -> Bytes {
 /// when a block repeats the field matches what the previous inline loops did.
 pub(crate) fn scan_sse_block(block: &str) -> (Option<String>, Option<Cow<'_, str>>) {
     let mut event: Option<String> = None;
-    let mut data: SmallVec<[&str; 2]> = SmallVec::new();
 
     for line in block.lines() {
         if let Some(name) = strip_sse_field(line, "event") {
             event = Some(name.trim().to_string());
-        } else if let Some(payload) = strip_sse_field(line, "data") {
+        }
+    }
+
+    (event, sse_block_data(block))
+}
+
+/// 只取一个 SSE 块的 `data:` 载荷，连 `event:` 名字都不看。
+///
+/// 调用方不用事件名时走这里：`scan_sse_block` 每个块都要为那个名字分配一个
+/// String，而 data 载荷本身是借用的、一个字节都不复制。单行 data 照旧零分配，
+/// 多行 data 用换行拼一份，语义与 `scan_sse_block` 完全一致。
+pub(crate) fn sse_block_data(block: &str) -> Option<Cow<'_, str>> {
+    let mut data: SmallVec<[&str; 2]> = SmallVec::new();
+    for line in block.lines() {
+        if let Some(payload) = strip_sse_field(line, "data") {
             data.push(payload);
         }
     }
 
-    let payload = match data.as_slice() {
+    match data.as_slice() {
         [] => None,
         [single] => Some(Cow::Borrowed(*single)),
         many => {
@@ -270,8 +283,7 @@ pub(crate) fn scan_sse_block(block: &str) -> (Option<String>, Option<Cow<'_, str
             }
             Some(Cow::Owned(joined))
         }
-    };
-    (event, payload)
+    }
 }
 
 /// Byte count of the UTF-8 character introduced by `lead`.
@@ -319,8 +331,8 @@ impl<'a> Iterator for SseBlocks<'a> {
 mod tests {
     use super::scan_sse_block;
     use super::{
-        frame_sse_event, next_sse_block_range, sse_block_payload, sse_data_type, strip_sse_field,
-        SseBlocks, Utf8TailDecoder,
+        frame_sse_event, next_sse_block_range, sse_block_data, sse_block_payload, sse_data_type,
+        strip_sse_field, SseBlocks, Utf8TailDecoder,
     };
     use bytes::Bytes;
     use std::borrow::Cow;
@@ -666,6 +678,27 @@ mod tests {
         let payload = payload.expect("data line");
         assert!(matches!(payload, Cow::Borrowed(_)), "单行 data 不该分配");
         assert_eq!(&*payload, "{\"delta\":\"hi\"}");
+    }
+
+    #[test]
+    fn sse_block_data_borrows_a_single_data_line() {
+        let data = sse_block_data("event: message\ndata: {\"a\":1}").expect("data line");
+        assert!(matches!(data, Cow::Borrowed(_)), "单行 data 不该分配");
+        assert_eq!(&*data, "{\"a\":1}");
+    }
+
+    #[test]
+    fn sse_block_data_joins_multiple_data_lines_with_newlines() {
+        assert_eq!(
+            &*sse_block_data("data: {\"a\":1,\ndata: \"b\":2}").expect("data lines"),
+            "{\"a\":1,\n\"b\":2}"
+        );
+    }
+
+    #[test]
+    fn sse_block_data_reports_no_payload_without_a_data_line() {
+        assert!(sse_block_data("event: ping\n").is_none());
+        assert!(sse_block_data(": comment only").is_none());
     }
 
     #[test]

@@ -2,7 +2,7 @@
 //! Keep the first upstream-issued ID for each output index so Codex can merge
 //! streamed text with its completed item. The original ID remains replayable.
 
-use crate::proxy::sse::{next_sse_block_range, scan_sse_block, strip_sse_field, Utf8TailDecoder};
+use crate::proxy::sse::{next_sse_block_range, sse_block_data, strip_sse_field, Utf8TailDecoder};
 use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
 use serde::Deserialize;
@@ -171,7 +171,7 @@ impl ItemIds {
         if !REWRITE_KEYS.iter().any(|key| raw.contains(key)) {
             return Ok(passthrough_block(raw));
         }
-        let (_, payload) = scan_sse_block(raw);
+        let payload = sse_block_data(raw);
         let data = payload.as_deref().unwrap_or_default();
         let unchanged = || passthrough_block(raw);
         if data.is_empty() || data.trim() == "[DONE]" {

@@ -1,5 +1,5 @@
 use super::codex_chat_common::{is_empty_value, response_item_call_id};
-use crate::proxy::sse::{next_sse_block_range, scan_sse_block, Utf8TailDecoder};
+use crate::proxy::sse::{next_sse_block_range, sse_block_data, Utf8TailDecoder};
 use bytes::Bytes;
 use futures::{Stream, StreamExt};
 use serde_json::Value;
@@ -478,7 +478,7 @@ async fn inspect_sse_block(
         return;
     }
 
-    let (_, payload) = scan_sse_block(block);
+    let payload = sse_block_data(block);
     let Some(data) = payload else {
         return;
     };
