@@ -236,25 +236,28 @@ const UnifiedSkillsPanel: React.FC<UnifiedSkillsPanelProps> = ({
     [onInteractionBlockedChange, onNavigationBlockedChange],
   );
 
-  const beginWrite = (allowOpenDialog = false) => {
-    if (
-      checkUpdatesLockRef.current ||
-      isCheckingUpdates ||
-      writeLockRef.current ||
-      mutationPending ||
-      (!allowOpenDialog && dialogOpen)
-    ) {
-      return false;
-    }
-    writeLockRef.current = true;
-    setWritePending(true);
-    return true;
-  };
+  const beginWrite = React.useCallback(
+    (allowOpenDialog = false) => {
+      if (
+        checkUpdatesLockRef.current ||
+        isCheckingUpdates ||
+        writeLockRef.current ||
+        mutationPending ||
+        (!allowOpenDialog && dialogOpen)
+      ) {
+        return false;
+      }
+      writeLockRef.current = true;
+      setWritePending(true);
+      return true;
+    },
+    [isCheckingUpdates, mutationPending, dialogOpen],
+  );
 
-  const endWrite = () => {
+  const endWrite = React.useCallback(() => {
     writeLockRef.current = false;
     setWritePending(false);
-  };
+  }, []);
 
   const listSeparator = t("mcpPage.listSeparator");
   const names = (apps: AppId[]) =>
@@ -400,105 +403,113 @@ const UnifiedSkillsPanel: React.FC<UnifiedSkillsPanelProps> = ({
   }, [view]);
 
   // ─── 写入与失败记录 ────────────────────────────────────────────────
-  const recordResult = (
-    id: string,
-    app: AppId,
-    desired: boolean,
-    error?: unknown,
-  ) =>
-    setFails((prev) => {
-      const next = { ...prev };
-      const key = failKey(id, app);
-      if (error === undefined) delete next[key];
-      else next[key] = { desired, error: extractErrorMessage(error) };
-      return next;
-    });
+  const recordResult = React.useCallback(
+    (id: string, app: AppId, desired: boolean, error?: unknown) =>
+      setFails((prev) => {
+        const next = { ...prev };
+        const key = failKey(id, app);
+        if (error === undefined) delete next[key];
+        else next[key] = { desired, error: extractErrorMessage(error) };
+        return next;
+      }),
+    [],
+  );
 
-  const recordEnableFailures = (
-    failures: Array<{ id: string; app: AppId; error: unknown }>,
-  ) => {
-    for (const failure of failures) {
-      recordResult(failure.id, failure.app, true, failure.error);
-    }
-  };
-
-  const writeOne = async (id: string, app: AppId, enabled: boolean) => {
-    if (!beginWrite()) return;
-    try {
-      await toggleAppMutation.mutateAsync({ id, app, enabled });
-      recordResult(id, app, enabled);
-    } catch (error) {
-      recordResult(id, app, enabled, error);
-    } finally {
-      endWrite();
-    }
-  };
-
-  const writeMany = async (ids: string[], app: AppId, enabled: boolean) => {
-    if (ids.length === 0) return { succeeded: [] as string[], failed: 0 };
-    try {
-      const result = await bulkToggleAppMutation.mutateAsync({
-        ids,
-        app,
-        enabled,
-      });
-      for (const id of result.succeeded) recordResult(id, app, enabled);
-      for (const failure of result.failed) {
-        recordResult(failure.item, app, enabled, failure.error);
+  const recordEnableFailures = React.useCallback(
+    (failures: Array<{ id: string; app: AppId; error: unknown }>) => {
+      for (const failure of failures) {
+        recordResult(failure.id, failure.app, true, failure.error);
       }
-      return { succeeded: result.succeeded, failed: result.failed.length };
-    } catch (error) {
-      for (const id of ids) recordResult(id, app, enabled, error);
-      return { succeeded: [] as string[], failed: ids.length };
-    }
-  };
+    },
+    [recordResult],
+  );
 
-  const bulkToggle = async (
-    ids: string[],
-    app: AppId,
-    enabled: boolean,
-    toastKey: { on: string; off: string },
-  ) => {
-    if (!beginWrite()) return;
-    try {
-      const { succeeded, failed } = await writeMany(ids, app, enabled);
-      let text = t(enabled ? toastKey.on : toastKey.off, {
-        app: APP_DISPLAY_NAME[app],
-        count: succeeded.length,
-        noun,
-      });
-      if (failed) text += t("appMatrix.toast.partialFail", { count: failed });
-      showUndoToast(
-        text,
-        t("appMatrix.undo"),
-        succeeded.length
-          ? () => {
-              void (async () => {
-                if (!beginWrite()) return;
-                try {
-                  const result = await writeMany(succeeded, app, !enabled);
-                  if (result.failed) {
-                    toast[result.succeeded.length ? "warning" : "error"](
-                      t("common.bulkToggleFailed", { count: result.failed }),
-                      { closeButton: true },
-                    );
-                  } else {
-                    toast.success(t("appMatrix.toast.undone"), {
-                      closeButton: true,
-                    });
+  const writeOne = React.useCallback(
+    async (id: string, app: AppId, enabled: boolean) => {
+      if (!beginWrite()) return;
+      try {
+        await toggleAppMutation.mutateAsync({ id, app, enabled });
+        recordResult(id, app, enabled);
+      } catch (error) {
+        recordResult(id, app, enabled, error);
+      } finally {
+        endWrite();
+      }
+    },
+    [beginWrite, toggleAppMutation, recordResult, endWrite],
+  );
+
+  const writeMany = React.useCallback(
+    async (ids: string[], app: AppId, enabled: boolean) => {
+      if (ids.length === 0) return { succeeded: [] as string[], failed: 0 };
+      try {
+        const result = await bulkToggleAppMutation.mutateAsync({
+          ids,
+          app,
+          enabled,
+        });
+        for (const id of result.succeeded) recordResult(id, app, enabled);
+        for (const failure of result.failed) {
+          recordResult(failure.item, app, enabled, failure.error);
+        }
+        return { succeeded: result.succeeded, failed: result.failed.length };
+      } catch (error) {
+        for (const id of ids) recordResult(id, app, enabled, error);
+        return { succeeded: [] as string[], failed: ids.length };
+      }
+    },
+    [bulkToggleAppMutation, recordResult],
+  );
+
+  const bulkToggle = React.useCallback(
+    async (
+      ids: string[],
+      app: AppId,
+      enabled: boolean,
+      toastKey: { on: string; off: string },
+    ) => {
+      if (!beginWrite()) return;
+      try {
+        const { succeeded, failed } = await writeMany(ids, app, enabled);
+        let text = t(enabled ? toastKey.on : toastKey.off, {
+          app: APP_DISPLAY_NAME[app],
+          count: succeeded.length,
+          noun,
+        });
+        if (failed) text += t("appMatrix.toast.partialFail", { count: failed });
+        showUndoToast(
+          text,
+          t("appMatrix.undo"),
+          succeeded.length
+            ? () => {
+                void (async () => {
+                  if (!beginWrite()) return;
+                  try {
+                    const result = await writeMany(succeeded, app, !enabled);
+                    if (result.failed) {
+                      toast[result.succeeded.length ? "warning" : "error"](
+                        t("common.bulkToggleFailed", { count: result.failed }),
+                        { closeButton: true },
+                      );
+                    } else {
+                      toast.success(t("appMatrix.toast.undone"), {
+                        closeButton: true,
+                      });
+                    }
+                  } finally {
+                    endWrite();
                   }
-                } finally {
-                  endWrite();
-                }
-              })();
-            }
-          : undefined,
-        failed ? (succeeded.length ? "warning" : "error") : "success",
-      );
-    } finally {
-      endWrite();
-    }
-  };
+                })();
+              }
+            : undefined,
+          failed ? (succeeded.length ? "warning" : "error") : "success",
+        );
+      } finally {
+        endWrite();
+      }
+    },
+    [beginWrite, writeMany, t, noun],
+  );
 
   const handleColumnBulk = (app: AppId, enabled: boolean) => {
     const ids = scope.rows
@@ -589,41 +600,44 @@ const UnifiedSkillsPanel: React.FC<UnifiedSkillsPanelProps> = ({
     else toast.success(text, options);
   };
 
-  const updateIds = async (ids: string[], allowOpenDialog = false) => {
-    if (ids.length === 0 || !beginWrite(allowOpenDialog)) return;
-    // 不让确认框等着整批更新跑完：点了确认就关，每行的 ⋯ 和页头按钮显示进度
-    setConfirm(null);
-    setIsUpdatingMany(ids.length > 1);
-    setUpdateProgress({ done: 0, total: ids.length });
-    const updated: string[] = [];
-    try {
-      for (const [index, id] of ids.entries()) {
-        try {
-          const result = await updateSkillMutation.mutateAsync(id);
-          updated.push(result.name);
-        } catch (error) {
-          const name = installedSkills.find((skill) => skill.id === id)?.name;
-          toast.error(t("skills.updateFailed"), {
-            description: `${name ?? id}: ${String(error)}`,
-          });
+  const updateIds = React.useCallback(
+    async (ids: string[], allowOpenDialog = false) => {
+      if (ids.length === 0 || !beginWrite(allowOpenDialog)) return;
+      // 不让确认框等着整批更新跑完：点了确认就关，每行的 ⋯ 和页头按钮显示进度
+      setConfirm(null);
+      setIsUpdatingMany(ids.length > 1);
+      setUpdateProgress({ done: 0, total: ids.length });
+      const updated: string[] = [];
+      try {
+        for (const [index, id] of ids.entries()) {
+          try {
+            const result = await updateSkillMutation.mutateAsync(id);
+            updated.push(result.name);
+          } catch (error) {
+            const name = installedSkills.find((skill) => skill.id === id)?.name;
+            toast.error(t("skills.updateFailed"), {
+              description: `${name ?? id}: ${String(error)}`,
+            });
+          }
+          setUpdateProgress({ done: index + 1, total: ids.length });
         }
-        setUpdateProgress({ done: index + 1, total: ids.length });
+      } finally {
+        setIsUpdatingMany(false);
+        setUpdateProgress(null);
+        endWrite();
       }
-    } finally {
-      setIsUpdatingMany(false);
-      setUpdateProgress(null);
-      endWrite();
-    }
-    if (updated.length === 1) {
-      toast.success(t("skills.updateSuccess", { name: updated[0] }), {
-        closeButton: true,
-      });
-    } else if (updated.length > 1) {
-      toast.success(t("skills.updateAllSuccess", { count: updated.length }), {
-        closeButton: true,
-      });
-    }
-  };
+      if (updated.length === 1) {
+        toast.success(t("skills.updateSuccess", { name: updated[0] }), {
+          closeButton: true,
+        });
+      } else if (updated.length > 1) {
+        toast.success(t("skills.updateAllSuccess", { count: updated.length }), {
+          closeButton: true,
+        });
+      }
+    },
+    [beginWrite, updateSkillMutation, installedSkills, t],
+  );
 
   const handleCheckUpdates = async () => {
     if (
@@ -859,7 +873,7 @@ const UnifiedSkillsPanel: React.FC<UnifiedSkillsPanelProps> = ({
     }
   };
 
-  const openDocs = async (skill: InstalledSkill) => {
+  const openDocs = React.useCallback(async (skill: InstalledSkill) => {
     const url =
       skill.readmeUrl ||
       (skill.repoOwner && skill.repoName
@@ -871,28 +885,34 @@ const UnifiedSkillsPanel: React.FC<UnifiedSkillsPanelProps> = ({
     } catch {
       // ignore
     }
-  };
+  }, []);
 
-  const copyName = async (skill: InstalledSkill) => {
-    try {
-      await copyText(skill.name);
-      toast.success(t("skillsPage.toast.copiedName", { name: skill.name }), {
-        closeButton: true,
-      });
-    } catch (error) {
-      toast.error(t("common.error"), { description: String(error) });
-    }
-  };
+  const copyName = React.useCallback(
+    async (skill: InstalledSkill) => {
+      try {
+        await copyText(skill.name);
+        toast.success(t("skillsPage.toast.copiedName", { name: skill.name }), {
+          closeButton: true,
+        });
+      } catch (error) {
+        toast.error(t("common.error"), { description: String(error) });
+      }
+    },
+    [t],
+  );
 
-  const openDirectory = async (skill: InstalledSkill) => {
-    try {
-      await skillsApi.openSkillDir(skill.directory);
-    } catch (error) {
-      toast.error(t("skillsPage.toast.openDirFailed"), {
-        description: extractErrorMessage(error),
-      });
-    }
-  };
+  const openDirectory = React.useCallback(
+    async (skill: InstalledSkill) => {
+      try {
+        await skillsApi.openSkillDir(skill.directory);
+      } catch (error) {
+        toast.error(t("skillsPage.toast.openDirFailed"), {
+          description: extractErrorMessage(error),
+        });
+      }
+    },
+    [t],
+  );
 
   const showInstalled = (skillId: string) => {
     setSearchQuery("");
@@ -1035,6 +1055,49 @@ const UnifiedSkillsPanel: React.FC<UnifiedSkillsPanelProps> = ({
       });
     return t("skillsPage.filter.all");
   };
+
+  // 行的回调全部收成跨渲染稳定的 useCallback，行才 memo 得起来。
+  // 用到的 skill 由行拿自身的 skill prop 现造参数传进来，这里只认 id。
+  const handleRowPick = React.useCallback(
+    (skillId: string, checked: boolean) => {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        if (checked) next.add(skillId);
+        else next.delete(skillId);
+        return next;
+      });
+    },
+    [],
+  );
+
+  const handleRowCell = React.useCallback(
+    (skillId: string, app: AppId) => {
+      const skill = installedSkills.find((item) => item.id === skillId);
+      if (!skill) return;
+      const failure = fails[failKey(skillId, app)];
+      void writeOne(skillId, app, failure ? failure.desired : !skill.apps[app]);
+    },
+    [installedSkills, fails, writeOne],
+  );
+
+  const handleRowUpdate = React.useCallback(
+    (skillId: string) => {
+      void updateIds([skillId]);
+    },
+    [updateIds],
+  );
+
+  const handleRowUninstall = React.useCallback(
+    (skillId: string) => {
+      if (writeLockRef.current || interactionBlocked) return;
+      setConfirm({ kind: "uninstall", ids: [skillId] });
+    },
+    [interactionBlocked],
+  );
+
+  const handleFixSync = React.useCallback(() => setStorageOpen(true), []);
+
+  const handleHighlightDone = React.useCallback(() => setHighlightId(null), []);
 
   const renderInstalledBody = () => {
     if (isLoading) {
@@ -1262,7 +1325,7 @@ const UnifiedSkillsPanel: React.FC<UnifiedSkillsPanelProps> = ({
                       updateSkillMutation.variables === skill.id
                     }
                     highlighted={highlightId === skill.id}
-                    onHighlightDone={() => setHighlightId(null)}
+                    onHighlightDone={handleHighlightDone}
                     fails={fails}
                     disabled={controlsDisabled}
                     sourceText={
@@ -1270,32 +1333,15 @@ const UnifiedSkillsPanel: React.FC<UnifiedSkillsPanelProps> = ({
                         ? `${skill.repoOwner}/${skill.repoName}`
                         : t("skillsPage.source.local")
                     }
-                    onPick={(checked) =>
-                      setSelected((prev) => {
-                        const next = new Set(prev);
-                        if (checked) next.add(skill.id);
-                        else next.delete(skill.id);
-                        return next;
-                      })
-                    }
-                    onCell={(app) => {
-                      const failure = fails[failKey(skill.id, app)];
-                      void writeOne(
-                        skill.id,
-                        app,
-                        failure ? failure.desired : !skill.apps[app],
-                      );
-                    }}
-                    onOpenSource={() => void openDocs(skill)}
-                    onFixSync={() => setStorageOpen(true)}
-                    onUpdate={() => void updateIds([skill.id])}
-                    onOpenDocs={() => void openDocs(skill)}
-                    onCopyName={() => void copyName(skill)}
-                    onOpenDir={() => void openDirectory(skill)}
-                    onUninstall={() => {
-                      if (writeLockRef.current || interactionBlocked) return;
-                      setConfirm({ kind: "uninstall", ids: [skill.id] });
-                    }}
+                    onPick={handleRowPick}
+                    onCell={handleRowCell}
+                    onOpenSource={openDocs}
+                    onFixSync={handleFixSync}
+                    onUpdate={handleRowUpdate}
+                    onOpenDocs={openDocs}
+                    onCopyName={copyName}
+                    onOpenDir={openDirectory}
+                    onUninstall={handleRowUninstall}
                   />
                 ))}
               </ul>
@@ -1769,18 +1815,20 @@ interface InstalledRowProps {
   fails: Record<string, WriteFailure>;
   disabled: boolean;
   sourceText: string;
-  onPick: (checked: boolean) => void;
-  onCell: (app: AppId) => void;
-  onOpenSource: () => void;
+  // 回调一律由行把自身的 skill/id 现造参数：面板传下来的必须是跨渲染
+  // 稳定的同一个函数，否则 memo 每次都被内联回调破功。
+  onPick: (skillId: string, checked: boolean) => void;
+  onCell: (skillId: string, app: AppId) => void;
+  onOpenSource: (skill: InstalledSkill) => void;
   onFixSync: () => void;
-  onUpdate: () => void;
-  onOpenDocs: () => void;
-  onCopyName: () => void;
-  onOpenDir: () => void;
-  onUninstall: () => void;
+  onUpdate: (skillId: string) => void;
+  onOpenDocs: (skill: InstalledSkill) => void;
+  onCopyName: (skill: InstalledSkill) => void;
+  onOpenDir: (skill: InstalledSkill) => void;
+  onUninstall: (skillId: string) => void;
 }
 
-function InstalledRow({
+const InstalledRow = React.memo(function InstalledRow({
   skill,
   first,
   appIds,
@@ -1842,14 +1890,14 @@ function InstalledRow({
             className="ui-checkbox"
             aria-label={t("skillsPage.selectAria", { name: skill.name })}
             checked={checked}
-            onChange={(event) => onPick(event.target.checked)}
+            onChange={(event) => onPick(skill.id, event.target.checked)}
           />
         </span>
         <div className="ms-2 flex min-w-0 flex-1 flex-col pe-3">
           <div className="flex min-w-0 items-center gap-1.5">
             <button
               type="button"
-              onClick={onCopyName}
+              onClick={() => onCopyName(skill)}
               className="min-w-0 cursor-copy truncate text-start text-body font-medium hover:text-fg-1 hover:underline hover:underline-offset-[3px]"
             >
               {skill.name}
@@ -1857,7 +1905,7 @@ function InstalledRow({
             {hasRepo ? (
               <button
                 type="button"
-                onClick={onOpenSource}
+                onClick={() => onOpenSource(skill)}
                 title={sourceText}
                 className="min-w-0 shrink truncate font-mono text-caption text-fg-3 hover:text-fg-1 hover:underline hover:underline-offset-[3px]"
               >
@@ -1877,7 +1925,7 @@ function InstalledRow({
                     name: skill.name,
                   })}
                   disabled={disabled || isUpdating}
-                  onClick={onUpdate}
+                  onClick={() => onUpdate(skill.id)}
                   className="inline-flex h-[18px] shrink-0 items-center gap-0.5 whitespace-nowrap rounded-full border border-transparent bg-warning-soft px-1.5 text-badge font-medium text-warning-text transition-colors duration-150 hover:border-warning focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isUpdating ? (
@@ -1942,7 +1990,7 @@ function InstalledRow({
                 name: skill.name,
                 app: APP_DISPLAY_NAME[app],
               })}
-              onClick={() => onCell(app)}
+              onClick={() => onCell(skill.id, app)}
             />
           );
         })}
@@ -1968,17 +2016,17 @@ function InstalledRow({
           </HoverTip>
           <DropdownMenuContent align="end" className="min-w-[180px]">
             {(skill.readmeUrl || hasRepo) && (
-              <DropdownMenuItem onSelect={onOpenDocs}>
+              <DropdownMenuItem onSelect={() => onOpenDocs(skill)}>
                 {t("mcpPage.openDocs")}
               </DropdownMenuItem>
             )}
-            <DropdownMenuItem onSelect={onOpenDir}>
+            <DropdownMenuItem onSelect={() => onOpenDir(skill)}>
               {t("skillsPage.openDir")}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
               className="text-danger-text focus:text-danger-text"
-              onSelect={onUninstall}
+              onSelect={() => onUninstall(skill.id)}
             >
               {t("skillsPage.uninstallEllipsis")}
             </DropdownMenuItem>
@@ -1987,7 +2035,7 @@ function InstalledRow({
       </div>
     </li>
   );
-}
+});
 
 // ─── 列头左侧的筛选按钮 ──────────────────────────────────────────────────
 function FilterMenu({
