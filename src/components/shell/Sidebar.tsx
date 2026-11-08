@@ -41,6 +41,7 @@ import {
   type SidebarTodayItem,
 } from "@/components/usage/format";
 import { useSidebarStatus, type AppNavStatus } from "@/hooks/useSidebarStatus";
+import type { AppMode } from "@/types/proxy";
 import { HoverTip } from "@/components/ui/hover-tip";
 import { DRAG_REGION_ATTR, DRAG_REGION_STYLE, isMac } from "@/lib/platform";
 import { cn } from "@/lib/utils";
@@ -277,10 +278,6 @@ function MainDirectory({
     }[]
   >(() => {
     return [
-      { page: "mcp", label: "MCP", icon: Server },
-      { page: "skills", label: "Skills", icon: SkillsIcon },
-      { page: "prompts", label: t("nav.prompts"), icon: BookOpen },
-      { page: "sessions", label: t("nav.sessions"), icon: History },
       {
         page: "auth",
         label: t("nav.auth"),
@@ -317,16 +314,14 @@ function MainDirectory({
           aria-label={t("nav.appsGroup")}
           className="flex shrink-0 flex-col"
         >
-          {apps.map((app) => (
-            <AppNavItem
-              key={app}
-              app={app}
-              collapsed={collapsed}
-              selected={onAppPage && activeApp === app}
-              status={appStatus(app)}
-              onSelect={() => onSelectApp(app)}
-            />
-          ))}
+          <AppNavGroup
+            apps={apps}
+            collapsed={collapsed}
+            activeApp={activeApp}
+            onAppPage={onAppPage}
+            statusFor={appStatus}
+            onSelectApp={onSelectApp}
+          />
         </div>
       </div>
 
@@ -338,6 +333,11 @@ function MainDirectory({
       />
 
       <div className="flex shrink-0 flex-col">
+        <PlainGlobalNav
+          collapsed={collapsed}
+          isSelected={isGlobalSelected}
+          onSelectPage={onSelectPage}
+        />
         {globals.map((item) => (
           <NavItem
             key={item.page}
@@ -368,28 +368,12 @@ function MainDirectory({
           collapsed ? "flex-col" : "gap-1 px-2",
         )}
       >
-        <NavItem
+        <BottomNav
           collapsed={collapsed}
-          compact={!collapsed}
-          selected={view === "apps"}
-          icon={LayoutGrid}
-          label={t("nav.apps")}
-          title={
-            appsUpdateAvailable ? t("nav.appsHasUpdate") : t("nav.appsTitle")
-          }
-          dot={appsUpdateAvailable}
-          onClick={() => onSelectPage("apps")}
-        />
-        <NavItem
-          collapsed={collapsed}
-          compact={!collapsed}
-          selected={false}
-          icon={Settings}
-          label={t("nav.settings")}
-          title={hasUpdate ? t("nav.settingsHasUpdate") : t("nav.settings")}
-          dot={hasUpdate}
-          dotTone="success"
-          onClick={() => onSelectPage("settings")}
+          view={view}
+          appsUpdateAvailable={appsUpdateAvailable}
+          hasUpdate={hasUpdate}
+          onSelectPage={onSelectPage}
         />
       </div>
     </>
@@ -397,16 +381,16 @@ function MainDirectory({
 }
 
 function modeTag(
-  status: AppNavStatus,
+  mode: AppMode,
   t: (key: string) => string,
 ): { label: string; className: string } | null {
-  if (status.mode === "route") {
+  if (mode === "route") {
     return {
       label: t("nav.mode.route"),
       className: "bg-route-soft text-route-text",
     };
   }
-  if (status.mode === "stack") {
+  if (mode === "stack") {
     return {
       label: t("nav.mode.stack"),
       className: "bg-stack-soft text-stack-text",
@@ -415,29 +399,33 @@ function modeTag(
   return null;
 }
 
-function AppNavItem({
+//  props 收 mode/alert 原始值而不是 status 对象：appStatus() 每次调用都返回
+//  新对象，收对象 memo 永远 bail out 不了（每 2 秒的代理状态轮询都会牵连）。
+const AppNavItem = memo(function AppNavItem({
   app,
   collapsed,
   selected,
-  status,
+  mode,
+  alert,
   onSelect,
 }: {
   app: AppId;
   collapsed: boolean;
   selected: boolean;
-  status: AppNavStatus;
+  mode: AppMode;
+  alert: boolean;
   onSelect: () => void;
 }) {
   const { t } = useTranslation();
   const name = APP_DISPLAY_NAME[app];
-  const tag = modeTag(status, t);
+  const tag = modeTag(mode, t);
   const modeName =
-    status.mode === "route"
+    mode === "route"
       ? t("nav.mode.route")
-      : status.mode === "stack"
+      : mode === "stack"
         ? t("nav.mode.stack")
         : null;
-  const tip = status.alert
+  const tip = alert
     ? `${name} · ${t("nav.needsAttention")}`
     : modeName
       ? `${name} · ${modeName}`
@@ -445,11 +433,11 @@ function AppNavItem({
   const badgeBg = selected ? "bg-selected" : "bg-sidebar";
 
   if (collapsed) {
-    const marker = status.alert
+    const marker = alert
       ? { className: "bg-danger text-action-fg", icon: AlertGlyph }
-      : status.mode === "stack"
+      : mode === "stack"
         ? { className: "bg-stack-solid text-stack-on", icon: Layers }
-        : status.mode === "route"
+        : mode === "route"
           ? { className: "bg-route-solid text-route-on", icon: Route }
           : null;
     return (
@@ -496,7 +484,7 @@ function AppNavItem({
     >
       <AppGlyph app={app} size={16} badgeClassName={badgeBg} />
       <span className="min-w-0 flex-1 truncate">{name}</span>
-      {status.alert ? (
+      {alert ? (
         <span
           role="img"
           aria-label={t("nav.needsAttention")}
@@ -518,7 +506,49 @@ function AppNavItem({
       )}
     </button>
   );
-}
+});
+
+/**
+ * 应用导航组：整组 memo。
+ *
+ * appStatus 是 useSidebarStatus 里 useMemo 的稳定函数，apps 由
+ * settings.appOrder + visibleApps 派生；这两样不变时，每 2 秒的代理状态
+ * 轮询（今日花费、授权状态变化）不会重跑这 14 行的 map 体。
+ */
+const AppNavGroup = memo(function AppNavGroup({
+  apps,
+  collapsed,
+  activeApp,
+  onAppPage,
+  statusFor,
+  onSelectApp,
+}: {
+  apps: AppId[];
+  collapsed: boolean;
+  activeApp: AppId;
+  onAppPage: boolean;
+  statusFor: (app: AppId) => AppNavStatus;
+  onSelectApp: (app: AppId) => void;
+}) {
+  return (
+    <>
+      {apps.map((app) => {
+        const status = statusFor(app);
+        return (
+          <AppNavItem
+            key={app}
+            app={app}
+            collapsed={collapsed}
+            selected={onAppPage && activeApp === app}
+            mode={status.mode}
+            alert={status.alert}
+            onSelect={() => onSelectApp(app)}
+          />
+        );
+      })}
+    </>
+  );
+});
 
 function AlertGlyph({ className }: { className?: string }) {
   return (
@@ -536,7 +566,7 @@ function AlertGlyph({ className }: { className?: string }) {
   );
 }
 
-function NavItem({
+const NavItem = memo(function NavItem({
   collapsed,
   compact = false,
   selected,
@@ -697,7 +727,93 @@ function NavItem({
       </button>
     </HoverTip>
   );
-}
+});
+
+/**
+ * 四个不带实时数据的全局页。模块级常量：身份永不变，整组可 bail out。
+ * MCP / Skills 是产品名，locale 里没有对应文案，保持原文。
+ */
+const PLAIN_GLOBAL_PAGES: {
+  page: GlobalPage;
+  icon: IconComponent;
+  label?: string;
+  labelKey?: string;
+}[] = [
+  { page: "mcp", icon: Server, label: "MCP" },
+  { page: "skills", icon: SkillsIcon, label: "Skills" },
+  { page: "prompts", icon: BookOpen, labelKey: "nav.prompts" },
+  { page: "sessions", icon: History, labelKey: "nav.sessions" },
+];
+
+const PlainGlobalNav = memo(function PlainGlobalNav({
+  collapsed,
+  isSelected,
+  onSelectPage,
+}: {
+  collapsed: boolean;
+  isSelected: (page: GlobalPage) => boolean;
+  onSelectPage: (page: GlobalPage | "settings") => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      {PLAIN_GLOBAL_PAGES.map(({ page, icon, label, labelKey }) => (
+        <NavItem
+          key={page}
+          collapsed={collapsed}
+          selected={isSelected(page)}
+          icon={icon}
+          label={labelKey ? t(labelKey) : (label ?? page)}
+          onClick={() => onSelectPage(page)}
+        />
+      ))}
+    </>
+  );
+});
+
+/** 底栏「应用 · 设置」两格：props 全稳定，轮询不牵连。 */
+const BottomNav = memo(function BottomNav({
+  collapsed,
+  view,
+  appsUpdateAvailable,
+  hasUpdate,
+  onSelectPage,
+}: {
+  collapsed: boolean;
+  view: View;
+  appsUpdateAvailable: boolean;
+  hasUpdate: boolean;
+  onSelectPage: (page: GlobalPage | "settings") => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      <NavItem
+        collapsed={collapsed}
+        compact={!collapsed}
+        selected={view === "apps"}
+        icon={LayoutGrid}
+        label={t("nav.apps")}
+        title={
+          appsUpdateAvailable ? t("nav.appsHasUpdate") : t("nav.appsTitle")
+        }
+        dot={appsUpdateAvailable}
+        onClick={() => onSelectPage("apps")}
+      />
+      <NavItem
+        collapsed={collapsed}
+        compact={!collapsed}
+        selected={false}
+        icon={Settings}
+        label={t("nav.settings")}
+        title={hasUpdate ? t("nav.settingsHasUpdate") : t("nav.settings")}
+        dot={hasUpdate}
+        dotTone="success"
+        onClick={() => onSelectPage("settings")}
+      />
+    </>
+  );
+});
 
 // ─── 设置目录 ──────────────────────────────────────────────────────────────
 
