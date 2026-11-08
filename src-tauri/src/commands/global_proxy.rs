@@ -173,15 +173,6 @@ pub async fn test_proxy_url(url: String) -> Result<ProxyTestResult, String> {
 /// 获取当前出站代理状态
 ///
 /// 返回当前是否启用了出站代理以及代理 URL。
-#[tauri::command]
-pub fn get_upstream_proxy_status() -> UpstreamProxyStatus {
-    let url = http_client::get_current_proxy_url();
-    UpstreamProxyStatus {
-        enabled: url.is_some(),
-        proxy_url: url.map(|url| url.to_string()),
-    }
-}
-
 /// 出站代理状态信息
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

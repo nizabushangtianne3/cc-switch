@@ -816,6 +816,105 @@ pub(crate) fn commit_staged(tmp: &Path, path: &Path) -> Result<(), AppError> {
     Ok(())
 }
 
+/// 复制文件
+pub fn copy_file(from: &Path, to: &Path) -> Result<(), AppError> {
+    fs::copy(from, to).map_err(|e| AppError::IoContext {
+        context: format!("复制文件失败 ({} -> {})", from.display(), to.display()),
+        source: e,
+    })?;
+    Ok(())
+}
+
+/// 删除文件
+pub fn delete_file(path: &Path) -> Result<(), AppError> {
+    if path.exists() {
+        fs::remove_file(path).map_err(|e| AppError::io(path, e))?;
+    }
+    Ok(())
+}
+
+/// 按修改时间从旧到新删掉超出保留数的旧备份，只统计扩展名命中 `extensions` 的文件。
+///
+/// Hermes 与 OpenClaw 各有一份逐字相同的私有实现（只差扩展名集合与日志前缀），
+/// 已收成这一份。
+pub(crate) fn create_backup_file(
+    subdir: &str,
+    extension: &str,
+    source: &str,
+) -> Result<PathBuf, AppError> {
+    let backup_dir = get_app_config_dir().join("backups").join(subdir);
+    fs::create_dir_all(&backup_dir).map_err(|e| AppError::io(&backup_dir, e))?;
+
+    let base_id = format!("{subdir}_{}", chrono::Local::now().format("%Y%m%d_%H%M%S"));
+    let mut filename = format!("{base_id}.{extension}");
+    let mut backup_path = backup_dir.join(&filename);
+    let mut counter = 1;
+
+    while backup_path.exists() {
+        filename = format!("{base_id}_{counter}.{extension}");
+        backup_path = backup_dir.join(&filename);
+        counter += 1;
+    }
+
+    atomic_write(&backup_path, source.as_bytes())?;
+    Ok(backup_path)
+}
+
+/// 写一份带时间戳的备份，再按保留策略清理旧备份。
+///
+/// Hermes 与 OpenClaw 的备份创建逻辑逐字相同（只差子目录、扩展名、清理认哪些扩展名、
+/// 日志前缀），与 [`prune_backups_by_extension`] 一同收在这里。
+pub(crate) fn create_pruned_backup(
+    subdir: &str,
+    extension: &str,
+    prune_extensions: &[&str],
+    label: &str,
+    source: &str,
+) -> Result<PathBuf, AppError> {
+    let backup_path = create_backup_file(subdir, extension, source)?;
+    let backup_dir = backup_path
+        .parent()
+        .ok_or_else(|| AppError::Config("无效的备份目录".to_string()))?;
+    prune_backups_by_extension(backup_dir, prune_extensions, label)?;
+    Ok(backup_path)
+}
+
+pub(crate) fn prune_backups_by_extension(
+    dir: &Path,
+    extensions: &[&str],
+    label: &str,
+) -> Result<(), AppError> {
+    let retain = crate::settings::effective_backup_retain_count();
+    let mut entries = fs::read_dir(dir)
+        .map_err(|e| AppError::io(dir, e))?
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| {
+            entry
+                .path()
+                .extension()
+                .map(|ext| extensions.iter().any(|want| ext == *want))
+                .unwrap_or(false)
+        })
+        .collect::<Vec<_>>();
+
+    if entries.len() <= retain {
+        return Ok(());
+    }
+
+    entries.sort_by_key(|entry| entry.metadata().and_then(|m| m.modified()).ok());
+    let remove_count = entries.len().saturating_sub(retain);
+    for entry in entries.into_iter().take(remove_count) {
+        if let Err(err) = fs::remove_file(entry.path()) {
+            log::warn!(
+                "Failed to remove old {label} config backup {}: {err}",
+                entry.path().display()
+            );
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1396,119 +1495,4 @@ mod tests {
             .count();
         assert_eq!(yaml_count, 1, "新备份创建后只应保留一份匹配备份");
     }
-}
-
-/// 复制文件
-pub fn copy_file(from: &Path, to: &Path) -> Result<(), AppError> {
-    fs::copy(from, to).map_err(|e| AppError::IoContext {
-        context: format!("复制文件失败 ({} -> {})", from.display(), to.display()),
-        source: e,
-    })?;
-    Ok(())
-}
-
-/// 删除文件
-pub fn delete_file(path: &Path) -> Result<(), AppError> {
-    if path.exists() {
-        fs::remove_file(path).map_err(|e| AppError::io(path, e))?;
-    }
-    Ok(())
-}
-
-/// 检查 Claude Code 配置状态
-#[derive(Serialize, Deserialize)]
-pub struct ConfigStatus {
-    pub exists: bool,
-    pub path: String,
-}
-
-/// 获取 Claude Code 配置状态
-pub fn get_claude_config_status() -> ConfigStatus {
-    let path = get_claude_settings_path();
-    ConfigStatus {
-        exists: path.exists(),
-        path: path.to_string_lossy().to_string(),
-    }
-}
-
-/// 按修改时间从旧到新删掉超出保留数的旧备份，只统计扩展名命中 `extensions` 的文件。
-///
-/// Hermes 与 OpenClaw 各有一份逐字相同的私有实现（只差扩展名集合与日志前缀），
-/// 已收成这一份。
-pub(crate) fn create_backup_file(
-    subdir: &str,
-    extension: &str,
-    source: &str,
-) -> Result<PathBuf, AppError> {
-    let backup_dir = get_app_config_dir().join("backups").join(subdir);
-    fs::create_dir_all(&backup_dir).map_err(|e| AppError::io(&backup_dir, e))?;
-
-    let base_id = format!("{subdir}_{}", chrono::Local::now().format("%Y%m%d_%H%M%S"));
-    let mut filename = format!("{base_id}.{extension}");
-    let mut backup_path = backup_dir.join(&filename);
-    let mut counter = 1;
-
-    while backup_path.exists() {
-        filename = format!("{base_id}_{counter}.{extension}");
-        backup_path = backup_dir.join(&filename);
-        counter += 1;
-    }
-
-    atomic_write(&backup_path, source.as_bytes())?;
-    Ok(backup_path)
-}
-
-/// 写一份带时间戳的备份，再按保留策略清理旧备份。
-///
-/// Hermes 与 OpenClaw 的备份创建逻辑逐字相同（只差子目录、扩展名、清理认哪些扩展名、
-/// 日志前缀），与 [`prune_backups_by_extension`] 一同收在这里。
-pub(crate) fn create_pruned_backup(
-    subdir: &str,
-    extension: &str,
-    prune_extensions: &[&str],
-    label: &str,
-    source: &str,
-) -> Result<PathBuf, AppError> {
-    let backup_path = create_backup_file(subdir, extension, source)?;
-    let backup_dir = backup_path
-        .parent()
-        .ok_or_else(|| AppError::Config("无效的备份目录".to_string()))?;
-    prune_backups_by_extension(backup_dir, prune_extensions, label)?;
-    Ok(backup_path)
-}
-
-pub(crate) fn prune_backups_by_extension(
-    dir: &Path,
-    extensions: &[&str],
-    label: &str,
-) -> Result<(), AppError> {
-    let retain = crate::settings::effective_backup_retain_count();
-    let mut entries = fs::read_dir(dir)
-        .map_err(|e| AppError::io(dir, e))?
-        .filter_map(|entry| entry.ok())
-        .filter(|entry| {
-            entry
-                .path()
-                .extension()
-                .map(|ext| extensions.iter().any(|want| ext == *want))
-                .unwrap_or(false)
-        })
-        .collect::<Vec<_>>();
-
-    if entries.len() <= retain {
-        return Ok(());
-    }
-
-    entries.sort_by_key(|entry| entry.metadata().and_then(|m| m.modified()).ok());
-    let remove_count = entries.len().saturating_sub(retain);
-    for entry in entries.into_iter().take(remove_count) {
-        if let Err(err) = fs::remove_file(entry.path()) {
-            log::warn!(
-                "Failed to remove old {label} config backup {}: {err}",
-                entry.path().display()
-            );
-        }
-    }
-
-    Ok(())
 }

@@ -386,27 +386,10 @@ pub async fn set_pricing_model_source(
         .map_err(|e| e.to_string())
 }
 
-/// 检查代理服务器是否正在运行
-#[tauri::command]
-pub async fn is_proxy_running(state: tauri::State<'_, AppState>) -> Result<bool, String> {
-    Ok(state.proxy_service.is_running().await)
-}
-
 /// 检查是否处于 Live 接管模式
 #[tauri::command]
 pub async fn is_live_takeover_active(state: tauri::State<'_, AppState>) -> Result<bool, String> {
     state.proxy_service.is_takeover_active().await
-}
-
-/// 代理模式下切换供应商（热切换）
-#[tauri::command]
-pub async fn switch_proxy_provider(
-    state: tauri::State<'_, AppState>,
-    app_type: String,
-    provider_id: String,
-) -> Result<(), String> {
-    let app = require_mode_app(&app_type)?;
-    crate::mode::controller::switch_route(state.inner(), &app, &provider_id).await
 }
 
 // ==================== 故障转移相关命令 ====================
