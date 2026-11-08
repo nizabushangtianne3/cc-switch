@@ -141,24 +141,30 @@ const PiPromptPanel: React.FC<PiPromptPanelProps> = ({
   };
 
   /** 包一层：写的过程中锁住页面，写完刷新别处的缓存。 */
-  const runWrite = async (write: () => Promise<void>) => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      await write();
-    } catch {
-      // usePromptActions owns the error toast.
-    } finally {
-      setBusy(false);
-      invalidate();
-    }
-  };
+  const runWrite = React.useCallback(
+    async (write: () => Promise<void>) => {
+      if (busy) return;
+      setBusy(true);
+      try {
+        await write();
+      } catch {
+        // usePromptActions owns the error toast.
+      } finally {
+        setBusy(false);
+        invalidate();
+      }
+    },
+    [busy, invalidate],
+  );
 
-  const openGlobalPromptForm = (id?: string) => {
-    if (interactionBlocked) return;
-    setEditingId(id ?? null);
-    setIsFormOpen(true);
-  };
+  const openGlobalPromptForm = React.useCallback(
+    (id?: string) => {
+      if (interactionBlocked) return;
+      setEditingId(id ?? null);
+      setIsFormOpen(true);
+    },
+    [interactionBlocked],
+  );
 
   const promptEntries = useMemo(() => Object.entries(prompts), [prompts]);
   const activePrompt = promptEntries.find(([, prompt]) => prompt.enabled);
@@ -166,77 +172,93 @@ const PiPromptPanel: React.FC<PiPromptPanelProps> = ({
   const fileHasContent = Boolean(fileText?.trim());
   const hasExternalPrompt = fileHasContent && activePrompt === undefined;
 
-  const handleToggle = (id: string, enabled: boolean) => {
-    if (interactionBlocked) return;
-    const before = prompts;
-    const target = before[id];
-    if (!target) return;
-    const previousActive = Object.entries(before).find(
-      ([key, prompt]) => key !== id && prompt.enabled,
-    );
-    const fileWasMissing = currentFileContent === null;
-    void runWrite(async () => {
-      await toggleEnabled(id, enabled);
-      if (!enabled) {
+  const handleToggle = React.useCallback(
+    (id: string, enabled: boolean) => {
+      if (interactionBlocked) return;
+      const before = prompts;
+      const target = before[id];
+      if (!target) return;
+      const previousActive = Object.entries(before).find(
+        ([key, prompt]) => key !== id && prompt.enabled,
+      );
+      const fileWasMissing = currentFileContent === null;
+      void runWrite(async () => {
+        await toggleEnabled(id, enabled);
+        if (!enabled) {
+          showPromptToast(t, {
+            title: t("prompts.toast.disabledPi", { name: target.name }),
+            description: t("pi.prompts.reloadNotice"),
+            onUndo: async () => {
+              await promptsApi.enablePrompt("pi", id);
+              afterUndo();
+            },
+          });
+          return;
+        }
+        const after = getLatestPrompts() ?? {};
+        const backup = Object.entries(after).find(
+          ([key]) => !(key in before) && key.startsWith("backup-"),
+        );
+        const description = [
+          backup ? t("prompts.toast.backup", { name: backup[1].name }) : "",
+          t("pi.prompts.reloadNotice"),
+        ]
+          .filter(Boolean)
+          .join(t("prompts.toast.joiner"));
+        const onUndo = previousActive
+          ? async () => {
+              await promptsApi.enablePrompt("pi", previousActive[0]);
+              afterUndo();
+            }
+          : fileWasMissing && !backup
+            ? async () => {
+                const latest =
+                  (await promptsApi.getPrompts("pi"))[id] ?? target;
+                await promptsApi.upsertPrompt("pi", id, {
+                  ...latest,
+                  enabled: false,
+                });
+                afterUndo();
+              }
+            : undefined;
         showPromptToast(t, {
-          title: t("prompts.toast.disabledPi", { name: target.name }),
-          description: t("pi.prompts.reloadNotice"),
+          title: t("prompts.toast.enabledPi", { name: target.name }),
+          description,
+          onUndo,
+        });
+      });
+    },
+    [
+      prompts,
+      currentFileContent,
+      interactionBlocked,
+      runWrite,
+      toggleEnabled,
+      getLatestPrompts,
+      afterUndo,
+      t,
+    ],
+  );
+
+  const performDelete = React.useCallback(
+    (id: string) => {
+      const original = prompts[id];
+      if (!original || original.enabled) return;
+      void runWrite(async () => {
+        await deletePrompt(id);
+        showPromptToast(t, {
+          title: t("prompts.toast.deleted", { name: original.name }),
+          description: t("prompts.toast.deletedPiSub"),
+          undoneTitle: t("prompts.toast.restored", { name: original.name }),
           onUndo: async () => {
-            await promptsApi.enablePrompt("pi", id);
+            await promptsApi.upsertPrompt("pi", id, original);
             afterUndo();
           },
         });
-        return;
-      }
-      const after = getLatestPrompts() ?? {};
-      const backup = Object.entries(after).find(
-        ([key]) => !(key in before) && key.startsWith("backup-"),
-      );
-      const description = [
-        backup ? t("prompts.toast.backup", { name: backup[1].name }) : "",
-        t("pi.prompts.reloadNotice"),
-      ]
-        .filter(Boolean)
-        .join(t("prompts.toast.joiner"));
-      const onUndo = previousActive
-        ? async () => {
-            await promptsApi.enablePrompt("pi", previousActive[0]);
-            afterUndo();
-          }
-        : fileWasMissing && !backup
-          ? async () => {
-              const latest = (await promptsApi.getPrompts("pi"))[id] ?? target;
-              await promptsApi.upsertPrompt("pi", id, {
-                ...latest,
-                enabled: false,
-              });
-              afterUndo();
-            }
-          : undefined;
-      showPromptToast(t, {
-        title: t("prompts.toast.enabledPi", { name: target.name }),
-        description,
-        onUndo,
       });
-    });
-  };
-
-  const performDelete = (id: string) => {
-    const original = prompts[id];
-    if (!original || original.enabled) return;
-    void runWrite(async () => {
-      await deletePrompt(id);
-      showPromptToast(t, {
-        title: t("prompts.toast.deleted", { name: original.name }),
-        description: t("prompts.toast.deletedPiSub"),
-        undoneTitle: t("prompts.toast.restored", { name: original.name }),
-        onUndo: async () => {
-          await promptsApi.upsertPrompt("pi", id, original);
-          afterUndo();
-        },
-      });
-    });
-  };
+    },
+    [prompts, runWrite, deletePrompt, afterUndo, t],
+  );
 
   const handleSave = async (id: string, prompt: Prompt) => {
     const isNew = !(id in prompts);

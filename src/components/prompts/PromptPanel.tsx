@@ -121,27 +121,30 @@ const StandardPromptPanel: React.FC<PromptPanelProps> = ({
     }
   }, []);
 
-  const beginWrite = () => {
+  const beginWrite = React.useCallback(() => {
     if (loading || reloadLockRef.current || writeLockRef.current) return false;
     writeLockRef.current = true;
     setWritePending(true);
     return true;
-  };
+  }, [loading]);
 
-  const endWrite = () => {
+  const endWrite = React.useCallback(() => {
     writeLockRef.current = false;
     setWritePending(false);
     invalidate();
     if (externalReloadQueuedRef.current) {
       void runExternalReload();
     }
-  };
+  }, [invalidate, runExternalReload]);
 
   /** 撤销等页外写入之后：刷新缓存；还停在同一个应用就重读列表。 */
-  const afterUndo = (app: AppId) => {
-    invalidate();
-    if (appIdRef.current === app) void runExternalReload();
-  };
+  const afterUndo = React.useCallback(
+    (app: AppId) => {
+      invalidate();
+      if (appIdRef.current === app) void runExternalReload();
+    },
+    [invalidate, runExternalReload],
+  );
 
   useEffect(() => {
     if (open) void runExternalReload();
@@ -181,23 +184,28 @@ const StandardPromptPanel: React.FC<PromptPanelProps> = ({
 
   useTauriEvent("profile-applied", runExternalReload);
 
-  const handleAdd = () => {
+  const handleClearSearch = React.useCallback(() => setSearchQuery(""), []);
+
+  const handleAdd = React.useCallback(() => {
     if (reloadLockRef.current || writeLockRef.current || interactionBlocked) {
       return;
     }
     overlayOpenRef.current = true;
     setEditingId(null);
     setIsFormOpen(true);
-  };
+  }, [interactionBlocked]);
 
-  const handleEdit = (id: string) => {
-    if (reloadLockRef.current || writeLockRef.current || interactionBlocked) {
-      return;
-    }
-    overlayOpenRef.current = true;
-    setEditingId(id);
-    setIsFormOpen(true);
-  };
+  const handleEdit = React.useCallback(
+    (id: string) => {
+      if (reloadLockRef.current || writeLockRef.current || interactionBlocked) {
+        return;
+      }
+      overlayOpenRef.current = true;
+      setEditingId(id);
+      setIsFormOpen(true);
+    },
+    [interactionBlocked],
+  );
 
   const closeOverlay = () => {
     overlayOpenRef.current = false;
@@ -207,110 +215,130 @@ const StandardPromptPanel: React.FC<PromptPanelProps> = ({
   };
 
   // 删除不弹确认框：只删库、不碰文件，toast 给「撤销」（原 id、原位置、原更新时间写回）
-  const performDelete = async (id: string) => {
-    const original = prompts[id];
-    if (!original || original.enabled) return;
-    if (!beginWrite()) return;
-    const app = appId;
-    try {
-      const refreshed = await deletePrompt(id);
-      if (refreshed === false) {
-        externalReloadQueuedRef.current = true;
-      }
-      showPromptToast(t, {
-        title: t("prompts.toast.deleted", { name: original.name }),
-        description: t("prompts.toast.deletedSub", { path: displayPath }),
-        undoneTitle: t("prompts.toast.restored", { name: original.name }),
-        onUndo: async () => {
-          await promptsApi.upsertPrompt(app, id, original);
-          afterUndo(app);
-        },
-      });
-    } catch {
-      // Error handled by hook
-    } finally {
-      endWrite();
-    }
-  };
-
-  const handleDelete = (id: string) => {
-    if (reloadLockRef.current || writeLockRef.current || interactionBlocked) {
-      return;
-    }
-    void performDelete(id);
-  };
-
-  const handleToggle = async (id: string, enabled: boolean) => {
-    const before = prompts;
-    const target = before[id];
-    if (!target) return;
-    const previousActive = Object.entries(before).find(
-      ([key, prompt]) => key !== id && prompt.enabled,
-    );
-    const fileWasBlank = !currentFileContent?.trim();
-    if (!beginWrite()) return;
-    const app = appId;
-    try {
-      const refreshed = await toggleEnabled(id, enabled);
-      if (refreshed === false) {
-        externalReloadQueuedRef.current = true;
-      }
-      const effect = toggleEffectText(t, app, enabled);
-      if (!enabled) {
+  const performDelete = React.useCallback(
+    async (id: string) => {
+      const original = prompts[id];
+      if (!original || original.enabled) return;
+      if (!beginWrite()) return;
+      const app = appId;
+      try {
+        const refreshed = await deletePrompt(id);
+        if (refreshed === false) {
+          externalReloadQueuedRef.current = true;
+        }
         showPromptToast(t, {
-          title: t("prompts.toast.disabled", {
-            name: target.name,
-            path: displayPath,
-          }),
-          description: effect || undefined,
+          title: t("prompts.toast.deleted", { name: original.name }),
+          description: t("prompts.toast.deletedSub", { path: displayPath }),
+          undoneTitle: t("prompts.toast.restored", { name: original.name }),
           onUndo: async () => {
-            await promptsApi.enablePrompt(app, id);
+            await promptsApi.upsertPrompt(app, id, original);
             afterUndo(app);
           },
         });
+      } catch {
+        // Error handled by hook
+      } finally {
+        endWrite();
+      }
+    },
+    [appId, prompts, t, displayPath, beginWrite, endWrite],
+  );
+
+  const handleDelete = React.useCallback(
+    (id: string) => {
+      if (reloadLockRef.current || writeLockRef.current || interactionBlocked) {
         return;
       }
-      // 启用前文件里有库里没有的内容，后端会先存成一条「原始提示词」
-      const after = getLatestPrompts() ?? {};
-      const backup = Object.entries(after).find(
-        ([key]) => !(key in before) && key.startsWith("backup-"),
+      void performDelete(id);
+    },
+    [interactionBlocked, performDelete],
+  );
+
+  const handleToggle = React.useCallback(
+    async (id: string, enabled: boolean) => {
+      const before = prompts;
+      const target = before[id];
+      if (!target) return;
+      const previousActive = Object.entries(before).find(
+        ([key, prompt]) => key !== id && prompt.enabled,
       );
-      const description = [
-        backup ? t("prompts.toast.backup", { name: backup[1].name }) : "",
-        effect,
-      ]
-        .filter(Boolean)
-        .join(t("prompts.toast.joiner"));
-      // 撤销只给能原样还原的：之前有启用中的就换回去；之前文件是空的就停用
-      const onUndo = previousActive
-        ? async () => {
-            await promptsApi.enablePrompt(app, previousActive[0]);
-            afterUndo(app);
-          }
-        : fileWasBlank && !backup
+      const fileWasBlank = !currentFileContent?.trim();
+      if (!beginWrite()) return;
+      const app = appId;
+      try {
+        const refreshed = await toggleEnabled(id, enabled);
+        if (refreshed === false) {
+          externalReloadQueuedRef.current = true;
+        }
+        const effect = toggleEffectText(t, app, enabled);
+        if (!enabled) {
+          showPromptToast(t, {
+            title: t("prompts.toast.disabled", {
+              name: target.name,
+              path: displayPath,
+            }),
+            description: effect || undefined,
+            onUndo: async () => {
+              await promptsApi.enablePrompt(app, id);
+              afterUndo(app);
+            },
+          });
+          return;
+        }
+        // 启用前文件里有库里没有的内容，后端会先存成一条「原始提示词」
+        const after = getLatestPrompts() ?? {};
+        const backup = Object.entries(after).find(
+          ([key]) => !(key in before) && key.startsWith("backup-"),
+        );
+        const description = [
+          backup ? t("prompts.toast.backup", { name: backup[1].name }) : "",
+          effect,
+        ]
+          .filter(Boolean)
+          .join(t("prompts.toast.joiner"));
+        // 撤销只给能原样还原的：之前有启用中的就换回去；之前文件是空的就停用
+        const onUndo = previousActive
           ? async () => {
-              const latest = (await promptsApi.getPrompts(app))[id] ?? target;
-              await promptsApi.upsertPrompt(app, id, {
-                ...latest,
-                enabled: false,
-              });
+              await promptsApi.enablePrompt(app, previousActive[0]);
               afterUndo(app);
             }
-          : undefined;
-      showPromptToast(t, {
-        title: t("prompts.toast.enabled", {
-          name: target.name,
-          path: displayPath,
-        }),
-        description: description || undefined,
-        onUndo,
-      });
-    } catch {
-      // Error handled by hook
-    } finally {
-      endWrite();
-    }
-  };
+          : fileWasBlank && !backup
+            ? async () => {
+                const latest = (await promptsApi.getPrompts(app))[id] ?? target;
+                await promptsApi.upsertPrompt(app, id, {
+                  ...latest,
+                  enabled: false,
+                });
+                afterUndo(app);
+              }
+            : undefined;
+        showPromptToast(t, {
+          title: t("prompts.toast.enabled", {
+            name: target.name,
+            path: displayPath,
+          }),
+          description: description || undefined,
+          onUndo,
+        });
+      } catch {
+        // Error handled by hook
+      } finally {
+        endWrite();
+      }
+    },
+    [
+      prompts,
+      beginWrite,
+      endWrite,
+      appId,
+      t,
+      displayPath,
+      currentFileContent,
+      toggleEnabled,
+      getLatestPrompts,
+      afterUndo,
+    ],
+  );
 
   const handleSave = async (id: string, prompt: Prompt) => {
     if (!beginWrite()) return false;
@@ -376,27 +404,33 @@ const StandardPromptPanel: React.FC<PromptPanelProps> = ({
     }
   };
 
-  const handleCopyContent = (id: string) => {
-    const prompt = prompts[id];
-    if (!prompt) return;
-    void copyText(prompt.content).then((ok) => {
-      if (ok) {
-        showPromptToast(t, {
-          title: t("prompts.copiedContent", { name: prompt.name }),
-        });
-      } else {
-        toast.error(t("prompts.copyFailed"));
-      }
-    });
-  };
+  const handleCopyContent = React.useCallback(
+    (id: string) => {
+      const prompt = prompts[id];
+      if (!prompt) return;
+      void copyText(prompt.content).then((ok) => {
+        if (ok) {
+          showPromptToast(t, {
+            title: t("prompts.copiedContent", { name: prompt.name }),
+          });
+        } else {
+          toast.error(t("prompts.copyFailed"));
+        }
+      });
+    },
+    [prompts, t],
+  );
 
-  const handleOpenCopy = (id: string) => {
-    if (reloadLockRef.current || writeLockRef.current || interactionBlocked) {
-      return;
-    }
-    overlayOpenRef.current = true;
-    setCopyingId(id);
-  };
+  const handleOpenCopy = React.useCallback(
+    (id: string) => {
+      if (reloadLockRef.current || writeLockRef.current || interactionBlocked) {
+        return;
+      }
+      overlayOpenRef.current = true;
+      setCopyingId(id);
+    },
+    [interactionBlocked],
+  );
 
   const handleCopyToApps = async (targets: AppId[]) => {
     const source = copyingId ? prompts[copyingId] : undefined;
@@ -544,8 +578,8 @@ const StandardPromptPanel: React.FC<PromptPanelProps> = ({
           searchQuery={searchQuery}
           listLabel={t("prompts.listLabel", { app: APP_DISPLAY_NAME[appId] })}
           disabled={controlsDisabled}
-          onClearSearch={() => setSearchQuery("")}
-          onToggle={(id, enabled) => void handleToggle(id, enabled)}
+          onClearSearch={handleClearSearch}
+          onToggle={handleToggle}
           onEdit={handleEdit}
           onDelete={handleDelete}
           onCopyToApps={apps.length > 1 ? handleOpenCopy : undefined}

@@ -13,14 +13,13 @@ import { HoverTip } from "@/components/ui/hover-tip";
 import type { Prompt } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { promptMenuContentClass, promptMenuItemClass } from "./PromptPageFrame";
+import { firstLine, formatSize, formatUpdated, utf8Bytes } from "./promptUtils";
 
 interface PromptListItemProps {
   id: string;
   prompt: Prompt;
   /** 启用中的那条：常驻浅底 +「已启用」徽标，按钮变「停用」 */
   active: boolean;
-  /** 第二行：说明（没有就用正文第一行）· 大小 · 更新时间 */
-  detail: string;
   first: boolean;
   disabled?: boolean;
   onToggle: (id: string, enabled: boolean) => void;
@@ -28,16 +27,13 @@ interface PromptListItemProps {
   onDelete: (id: string) => void;
   onCopyToApps?: (id: string) => void;
   onCopyContent?: (id: string) => void;
-  /** 删除不能用时的原因（启用中的不能删） */
-  deleteBlockedReason?: string;
 }
 
 /** 提示库的一行（高 60）：点行打开编辑抽屉，右边是启用 / 停用、编辑、⋯。 */
-const PromptListItem: React.FC<PromptListItemProps> = ({
+const PromptListItem = React.memo(function PromptListItem({
   id,
   prompt,
   active,
-  detail,
   first,
   disabled = false,
   onToggle,
@@ -45,9 +41,26 @@ const PromptListItem: React.FC<PromptListItemProps> = ({
   onDelete,
   onCopyToApps,
   onCopyContent,
-  deleteBlockedReason,
-}) => {
-  const { t } = useTranslation();
+}: PromptListItemProps) {
+  const { t, i18n } = useTranslation();
+
+  // 第二行：说明（没有就用正文第一行）· 大小 · 更新时间。
+  // 由行自己算：父组件搜索词每变一次都会重渲染，逐行重算整篇正文的
+  // 字节数在这里只发生在 prompt 真正变化时。
+  const detail = [
+    prompt.description?.trim() ||
+      firstLine(prompt.content) ||
+      t("prompts.emptyContent"),
+    formatSize(utf8Bytes(prompt.content)),
+    formatUpdated(t, i18n.language, prompt.updatedAt),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  // 删除 repl 不能用：启用中的那条要写进目标文件，删了会让文件空掉。
+  const deleteBlockedReason = prompt.enabled
+    ? t("prompts.deleteBlocked")
+    : undefined;
 
   return (
     <li
@@ -176,6 +189,6 @@ const PromptListItem: React.FC<PromptListItemProps> = ({
       </div>
     </li>
   );
-};
+});
 
 export default PromptListItem;

@@ -1,17 +1,11 @@
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Download, FileText, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { APP_DISPLAY_NAME } from "@/components/shell/AppGlyph";
 import type { AppId, Prompt } from "@/lib/api";
 import PromptListItem from "./PromptListItem";
-import {
-  firstLine,
-  formatSize,
-  formatUpdated,
-  renderSegs,
-  utf8Bytes,
-} from "./promptUtils";
+import { formatSize, renderSegs, utf8Bytes } from "./promptUtils";
 
 interface PromptLibraryProps {
   prompts: Record<string, Prompt>;
@@ -24,8 +18,6 @@ interface PromptLibraryProps {
   onDelete: (id: string) => void;
   onCopyToApps?: (id: string) => void;
   onCopyContent?: (id: string) => void;
-  /** 删除不能用时的原因；默认启用中的不能删 */
-  getDeleteBlockedReason?: (id: string, prompt: Prompt) => string | undefined;
 }
 
 export function filterPromptEntries(
@@ -42,7 +34,7 @@ export function filterPromptEntries(
 }
 
 /** 提示库列表（Prompts.dc.html 第 165–190 行）。空库由页面自己画空状态，这里只管有条目时。 */
-export function PromptLibrary({
+export const PromptLibrary = memo(function PromptLibrary({
   prompts,
   searchQuery,
   listLabel,
@@ -53,9 +45,8 @@ export function PromptLibrary({
   onDelete,
   onCopyToApps,
   onCopyContent,
-  getDeleteBlockedReason,
 }: PromptLibraryProps) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const entries = useMemo(() => Object.entries(prompts), [prompts]);
   const filtered = useMemo(
     () => filterPromptEntries(entries, searchQuery),
@@ -81,26 +72,12 @@ export function PromptLibrary({
       className="m-0 min-h-0 shrink list-none overflow-y-auto scroll-stable rounded-panel border border-border bg-surface p-0"
     >
       {filtered.map(([id, prompt], index) => {
-        const summary =
-          prompt.description?.trim() ||
-          firstLine(prompt.content) ||
-          t("prompts.emptyContent");
-        const updated = formatUpdated(t, i18n.language, prompt.updatedAt);
-        const detail = [summary, formatSize(utf8Bytes(prompt.content)), updated]
-          .filter(Boolean)
-          .join(" · ");
-        const blocked = getDeleteBlockedReason
-          ? getDeleteBlockedReason(id, prompt)
-          : prompt.enabled
-            ? t("prompts.deleteBlocked")
-            : undefined;
         return (
           <PromptListItem
             key={id}
             id={id}
             prompt={prompt}
             active={prompt.enabled}
-            detail={detail}
             first={index === 0}
             disabled={disabled}
             onToggle={onToggle}
@@ -108,13 +85,14 @@ export function PromptLibrary({
             onDelete={onDelete}
             onCopyToApps={onCopyToApps}
             onCopyContent={onCopyContent}
-            deleteBlockedReason={blocked}
           />
         );
       })}
     </ul>
   );
-}
+});
+
+export default PromptLibrary;
 
 interface PromptEmptyStateProps {
   app: AppId;
