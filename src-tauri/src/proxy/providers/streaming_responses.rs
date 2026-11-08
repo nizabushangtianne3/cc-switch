@@ -2665,9 +2665,6 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
     async_stream::stream! {
         let mut buffer = String::new();
         let mut utf8_tail = Utf8TailDecoder::default();
-        // 增量探针的载荷文本框：每个块清空重用，容量留着下个块用。探针的借阅
-        // 字段指向它，因此它必须比块循环活得更久。
-        let mut scratch = String::new();
         let mut message_id: Option<String> = None;
         let mut current_model: Option<String> = None;
         let mut has_sent_message_start = false;
@@ -2776,13 +2773,11 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                         // 增量事件先用只读探针判一刀：命中就一棵 Value 都不建。探针
                         // 能解析成功意味着整份 JSON 语法合法，完整路径必然也能解析，
                         // 不会漏事件；类型不在增量名单、或字段类型意外（探针解析失败）
-                        // 时下面照旧走完整解析。载荷文本抄进复用缓冲，探针借的是它，
-                        // 与 buffer 的存亡解耦（drain 已推迟到整个 chunk 末）。
+                        // 时下面照旧走完整解析。探针直接借 payload（块循环不 drain，
+                        // 借用活到 chunk 末才失效），连载荷拷贝都省掉。
                         let mut probe = None;
                         if let Some(payload_text) = payload.as_deref() {
-                            scratch.clear();
-                            scratch.push_str(payload_text);
-                            probe = serde_json::from_str::<ResponsesDeltaProbe<'_>>(&scratch)
+                            probe = serde_json::from_str::<ResponsesDeltaProbe<'_>>(payload_text)
                                 .ok()
                                 .filter(|probe| {
                                     probe
