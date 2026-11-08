@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   CalendarDays,
@@ -111,7 +111,7 @@ function resolveCalendarRange(selection: UsageRangeSelection) {
   return { startDate: r.endDate - 30 * 24 * 60 * 60, endDate: r.endDate };
 }
 
-export function UsageDateRangePicker({
+export const UsageDateRangePicker = memo(function UsageDateRangePicker({
   selection,
   onApply,
   triggerLabel,
@@ -531,4 +531,4 @@ export function UsageDateRangePicker({
       </PopoverContent>
     </Popover>
   );
-}
+});

@@ -194,12 +194,14 @@ export function UsageDashboard({
       "today",
     ),
   }));
-  const applyRange = (next: UsageRangeSelection) => {
+  // useCallback：UsageDateRangePicker 是 memo 组件，内联函数每次渲染新建
+  // 会让 memo 永远失效。setRange 是 useState setter、常量都是模块级。
+  const applyRange = useCallback((next: UsageRangeSelection) => {
     setRange(next);
     if (next.preset !== "custom") {
       writeRememberedChoice(USAGE_CHOICE_KEYS.range, next.preset);
     }
-  };
+  }, []);
   const [appType, setAppType] = useState<AppTypeFilter>(initialAppType);
   const [providerName, setProviderName] = useState<string | undefined>(
     undefined,
