@@ -22,7 +22,7 @@ use super::transform_codex_chat::{
 };
 use super::transform_responses::sanitize_anthropic_tool_use_input_json;
 use crate::proxy::json_canonical::canonicalize_tool_arguments_str;
-use crate::proxy::sse::{next_sse_block_range, scan_sse_block, Utf8TailDecoder};
+use crate::proxy::sse::{next_sse_block_range, scan_sse_block_ref, Utf8TailDecoder};
 use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
 use serde::Deserialize;
@@ -680,7 +680,9 @@ fn process_anthropic_sse_block(
     if block.trim().is_empty() {
         return (Vec::new(), false);
     }
-    let (event_name, payload) = scan_sse_block(block);
+    // 借用版：块处理期间不 drain（drain 推迟到整个 chunk 末），事件名不再
+    // 每块分配一个 String。
+    let (event_name, payload) = scan_sse_block_ref(block);
     let Some(payload) = payload else {
         return (Vec::new(), false);
     };
@@ -695,7 +697,7 @@ fn process_anthropic_sse_block(
         .r#type
         .as_deref()
         .map(str::to_string)
-        .or(event_name)
+        .or_else(|| event_name.map(str::to_string))
         .unwrap_or_default();
 
     let events = match msg_type.as_str() {
