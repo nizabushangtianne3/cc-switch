@@ -433,65 +433,74 @@ export function SessionManagerPage({
     [copyText],
   );
 
-  const handleLaunch = async (session: SessionMeta) => {
-    const command = session.resumeCommand;
-    if (!command) return;
-    if (!terminalName) {
-      handleCopy(
-        command,
-        t("sessionManager.resumeCopiedNoLaunch", {
-          defaultValue:
-            "已复制恢复命令。这个平台暂不支持一键恢复，请在项目目录下粘贴到终端运行",
-        }),
-      );
-      return;
-    }
-    try {
-      await sessionsApi.launchTerminal({
-        command,
-        cwd: session.projectDir ?? undefined,
-      });
-      toast.success(
-        t("sessionManager.launchedIn", {
-          defaultValue: "已在 {{terminal}} 中运行恢复命令",
-          terminal: terminalName,
-        }),
-      );
-    } catch (error) {
-      try {
-        await navigator.clipboard.writeText(command);
-      } catch {
-        // 复制失败时错误信息里照样给出原因
+  // useCallback：SessionItem 是 memo 组件，内联函数每次渲染新建会让 memo
+  // 永远失效。handler 一律带 session 参数（父组件侧稳定，SessionItem 内部
+  // 的 DOM 包装是局部的，不参与 props 比较）。
+  const handleLaunch = useCallback(
+    async (session: SessionMeta) => {
+      const command = session.resumeCommand;
+      if (!command) return;
+      if (!terminalName) {
+        handleCopy(
+          command,
+          t("sessionManager.resumeCopiedNoLaunch", {
+            defaultValue:
+              "已复制恢复命令。这个平台暂不支持一键恢复，请在项目目录下粘贴到终端运行",
+          }),
+        );
+        return;
       }
-      toast.error(
-        t("sessionManager.launchFailed", {
-          defaultValue:
-            "无法打开 {{terminal}}：{{error}}。恢复命令已复制，可以粘贴到任意终端运行。",
-          terminal: terminalName,
-          error:
-            extractErrorMessage(error) ||
-            t("common.unknown", { defaultValue: "未知" }),
-        }),
-        onOpenTerminalSettings
-          ? {
-              action: {
-                label: t("sessionManager.changeTerminalAction", {
-                  defaultValue: "更换终端",
-                }),
-                onClick: onOpenTerminalSettings,
-              },
-            }
-          : undefined,
-      );
-    }
-  };
+      try {
+        await sessionsApi.launchTerminal({
+          command,
+          cwd: session.projectDir ?? undefined,
+        });
+        toast.success(
+          t("sessionManager.launchedIn", {
+            defaultValue: "已在 {{terminal}} 中运行恢复命令",
+            terminal: terminalName,
+          }),
+        );
+      } catch (error) {
+        try {
+          await navigator.clipboard.writeText(command);
+        } catch {
+          // 复制失败时错误信息里照样给出原因
+        }
+        toast.error(
+          t("sessionManager.launchFailed", {
+            defaultValue:
+              "无法打开 {{terminal}}：{{error}}。恢复命令已复制，可以粘贴到任意终端运行",
+            terminal: terminalName,
+            error:
+              extractErrorMessage(error) ||
+              t("common.unknown", { defaultValue: "未知" }),
+          }),
+          onOpenTerminalSettings
+            ? {
+                action: {
+                  label: t("sessionManager.changeTerminalAction", {
+                    defaultValue: "更换终端",
+                  }),
+                  onClick: onOpenTerminalSettings,
+                },
+              }
+            : undefined,
+        );
+      }
+    },
+    [terminalName, handleCopy, t, onOpenTerminalSettings],
+  );
 
-  const openReader = (session: SessionMeta, messageIndex?: number) => {
-    const key = getSessionKey(session);
-    setReaderJump(messageIndex === undefined ? null : { key, messageIndex });
-    setReaderKey(key);
-    focusSoon(["session-reader-back"]);
-  };
+  const openReader = useCallback(
+    (session: SessionMeta, messageIndex?: number) => {
+      const key = getSessionKey(session);
+      setReaderJump(messageIndex === undefined ? null : { key, messageIndex });
+      setReaderKey(key);
+      focusSoon(["session-reader-back"]);
+    },
+    [],
+  );
 
   const backToList = () => {
     const key = readerKey;
@@ -508,7 +517,7 @@ export function SessionManagerPage({
     }, 0);
   };
 
-  const enterSelection = (session?: SessionMeta) => {
+  const enterSelection = useCallback((session?: SessionMeta) => {
     setSelectionMode(true);
     setSelectedKeys(
       session && canDeleteSession(session)
@@ -516,23 +525,26 @@ export function SessionManagerPage({
         : new Set(),
     );
     setReaderKey(null);
-  };
+  }, []);
 
   const exitSelection = () => {
     setSelectionMode(false);
     setSelectedKeys(new Set());
   };
 
-  const toggleSelected = (session: SessionMeta, checked: boolean) => {
-    if (!canDeleteSession(session)) return;
-    const key = getSessionKey(session);
-    setSelectedKeys((current) => {
-      const next = new Set(current);
-      if (checked) next.add(key);
-      else next.delete(key);
-      return next;
-    });
-  };
+  const toggleSelected = useCallback(
+    (session: SessionMeta, checked: boolean) => {
+      if (!canDeleteSession(session)) return;
+      const key = getSessionKey(session);
+      setSelectedKeys((current) => {
+        const next = new Set(current);
+        if (checked) next.add(key);
+        else next.delete(key);
+        return next;
+      });
+    },
+    [],
+  );
 
   const selectedSessions = useMemo(
     () =>
@@ -550,12 +562,64 @@ export function SessionManagerPage({
     (session) => !matchKeys.has(getSessionKey(session)),
   ).length;
 
-  const openDelete = (targets: SessionMeta[], source: DeleteSource) => {
-    const deletable = targets.filter(canDeleteSession);
-    if (deletable.length === 0) return;
-    deleteSourceRef.current = source;
-    setDeleteTargets(deletable);
-  };
+  // useCallback：SessionItem 是 memo 组件，以下 row handler 要作为稳定
+  // props 传下去。签名一律带 session（父侧稳定，行内 DOM 包装是局部的）。
+  const openDelete = useCallback(
+    (targets: SessionMeta[], source: DeleteSource) => {
+      const deletable = targets.filter(canDeleteSession);
+      if (deletable.length === 0) return;
+      deleteSourceRef.current = source;
+      setDeleteTargets(deletable);
+    },
+    [],
+  );
+
+  const handleDeleteRow = useCallback(
+    (session: SessionMeta) => openDelete([session], "row"),
+    [openDelete],
+  );
+
+  const handleCopyResume = useCallback(
+    (session: SessionMeta) => {
+      if (!session.resumeCommand) return;
+      handleCopy(
+        session.resumeCommand,
+        terminalName
+          ? t("sessionManager.resumeCommandCopied", {
+              defaultValue: "已复制恢复命令",
+            })
+          : t("sessionManager.resumeCopiedNoLaunch", {
+              defaultValue:
+                "已复制恢复命令。这个平台暂不支持一键恢复，请在项目目录下粘贴到终端运行",
+            }),
+      );
+    },
+    [handleCopy, terminalName, t],
+  );
+
+  const handleCopyId = useCallback(
+    (session: SessionMeta) =>
+      handleCopy(
+        session.sessionId,
+        t("sessionManager.sessionIdCopied", {
+          defaultValue: "已复制会话 ID",
+        }),
+      ),
+    [handleCopy, t],
+  );
+
+  const handleCopySource = useCallback(
+    (session: SessionMeta) => {
+      if (!session.sourcePath) return;
+      handleCopy(
+        session.sourcePath,
+        t("sessionManager.sourcePathCopied", {
+          defaultValue: "已复制源文件路径",
+        }),
+      );
+    },
+    [handleCopy, t],
+  );
 
   const cancelDelete = () => {
     if (isDeleting) return;
@@ -747,43 +811,15 @@ export function SessionManagerPage({
         launchTerminal={terminalName}
         bordered={bordered}
         openButtonId={openButtonId(key)}
-        onOpen={() => openReader(session)}
-        onOpenAt={(messageIndex) => openReader(session, messageIndex)}
-        onToggleChecked={(checked) => toggleSelected(session, checked)}
-        onStartSelect={() => enterSelection(session)}
-        onLaunch={() => void handleLaunch(session)}
-        onCopyResume={() =>
-          session.resumeCommand &&
-          handleCopy(
-            session.resumeCommand,
-            terminalName
-              ? t("sessionManager.resumeCommandCopied", {
-                  defaultValue: "已复制恢复命令",
-                })
-              : t("sessionManager.resumeCopiedNoLaunch", {
-                  defaultValue:
-                    "已复制恢复命令。这个平台暂不支持一键恢复，请在项目目录下粘贴到终端运行",
-                }),
-          )
-        }
-        onCopyId={() =>
-          handleCopy(
-            session.sessionId,
-            t("sessionManager.sessionIdCopied", {
-              defaultValue: "已复制会话 ID",
-            }),
-          )
-        }
-        onCopySource={() =>
-          session.sourcePath &&
-          handleCopy(
-            session.sourcePath,
-            t("sessionManager.sourcePathCopied", {
-              defaultValue: "已复制源文件路径",
-            }),
-          )
-        }
-        onDelete={() => openDelete([session], "row")}
+        onOpen={openReader}
+        onOpenAt={openReader}
+        onToggleChecked={toggleSelected}
+        onStartSelect={enterSelection}
+        onLaunch={handleLaunch}
+        onCopyResume={handleCopyResume}
+        onCopyId={handleCopyId}
+        onCopySource={handleCopySource}
+        onDelete={handleDeleteRow}
       />
     );
   };

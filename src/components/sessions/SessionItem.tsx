@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { memo, useId, useState } from "react";
 import { Copy, Folder, MoreHorizontal, Play } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -65,23 +65,25 @@ interface SessionItemProps {
   searchQuery?: string;
   /** 正文搜索命中：第二行改显示最相关的摘录，其余摘录列在行下方 */
   contentHit?: SessionContentHit;
-  /** 点行下方的摘录：打开会话并跳到那条消息 */
-  onOpenAt?: (messageIndex: number) => void;
+  /** 点行下方的摘录：打开会话并跳到那条消息。
+   * 回调一律带上 session：父组件把这些 handler 做成 useCallback 稳定引用，
+   * 本组件包 memo 才不会被每次渲染新建的内联箭头破功。 */
+  onOpenAt?: (session: SessionMeta, messageIndex: number) => void;
   /** 一键恢复用的终端名；为空表示这个平台不能一键恢复 */
   launchTerminal: string | null;
   bordered: boolean;
   openButtonId: string;
-  onOpen: () => void;
-  onToggleChecked: (checked: boolean) => void;
-  onStartSelect: () => void;
-  onLaunch: () => void;
-  onCopyResume: () => void;
-  onCopyId: () => void;
-  onCopySource: () => void;
-  onDelete: () => void;
+  onOpen: (session: SessionMeta) => void;
+  onToggleChecked: (session: SessionMeta, checked: boolean) => void;
+  onStartSelect: (session: SessionMeta) => void;
+  onLaunch: (session: SessionMeta) => void;
+  onCopyResume: (session: SessionMeta) => void;
+  onCopyId: (session: SessionMeta) => void;
+  onCopySource: (session: SessionMeta) => void;
+  onDelete: (session: SessionMeta) => void;
 }
 
-export function SessionItem({
+export const SessionItem = memo(function SessionItem({
   session,
   showAppIcon,
   showDir,
@@ -180,7 +182,7 @@ export function SessionItem({
             aria-disabled={deletable ? undefined : true}
             aria-describedby={deletable ? undefined : whyId}
             onCheckedChange={(checked) => {
-              if (deletable) onToggleChecked(checked);
+              if (deletable) onToggleChecked(session, checked);
             }}
             className={cn("relative z-[1]", !deletable && "opacity-45")}
           />
@@ -193,7 +195,7 @@ export function SessionItem({
             aria-label={title}
             aria-describedby={hasMeta ? metaId : undefined}
             title={tip}
-            onClick={onOpen}
+            onClick={() => onOpen(session)}
             className="absolute inset-0 cursor-pointer rounded-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
           />
           <Checkbox
@@ -203,7 +205,7 @@ export function SessionItem({
               defaultValue: "选择 {{title}}",
               title,
             })}
-            onCheckedChange={onStartSelect}
+            onCheckedChange={() => onStartSelect(session)}
             className="relative z-[1] opacity-0 transition-opacity group-hover:opacity-100"
           />
         </>
@@ -318,7 +320,7 @@ export function SessionItem({
                     terminal: launchTerminal,
                     title,
                   })}
-                  onClick={onLaunch}
+                  onClick={() => onLaunch(session)}
                   className={rowIconButton}
                 >
                   <Play className="h-[15px] w-[15px]" strokeWidth={1.5} />
@@ -337,7 +339,7 @@ export function SessionItem({
                     defaultValue: "复制「{{title}}」的恢复命令",
                     title,
                   })}
-                  onClick={onCopyResume}
+                  onClick={() => onCopyResume(session)}
                   className={rowIconButton}
                 >
                   <Copy className="h-[15px] w-[15px]" strokeWidth={1.5} />
@@ -368,7 +370,7 @@ export function SessionItem({
               >
                 <DropdownMenuItem
                   className={sessionMenuItemClass}
-                  onSelect={onCopyId}
+                  onSelect={() => onCopyId(session)}
                 >
                   {t("sessionManager.copySessionId", {
                     defaultValue: "复制会话 ID",
@@ -377,7 +379,7 @@ export function SessionItem({
                 <DropdownMenuItem
                   className={sessionMenuItemClass}
                   disabled={!session.sourcePath}
-                  onSelect={onCopySource}
+                  onSelect={() => onCopySource(session)}
                 >
                   {t("sessionManager.copySourcePath", {
                     defaultValue: "复制源文件路径",
@@ -390,7 +392,7 @@ export function SessionItem({
                     deletable ? "text-danger-text" : "text-fg-3",
                   )}
                   disabled={!deletable}
-                  onSelect={onDelete}
+                  onSelect={() => onDelete(session)}
                 >
                   {t("sessionManager.deleteEllipsis", {
                     defaultValue: "删除…",
@@ -427,7 +429,7 @@ export function SessionItem({
             <button
               type="button"
               title={item.text}
-              onClick={() => onOpenAt?.(item.messageIndex)}
+              onClick={() => onOpenAt?.(session, item.messageIndex)}
               className="block h-5 w-full truncate rounded-control text-left text-caption text-fg-2 transition-colors hover:bg-subtle hover:text-fg-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {searchQuery
@@ -439,4 +441,4 @@ export function SessionItem({
       </ul>
     </div>
   );
-}
+});
