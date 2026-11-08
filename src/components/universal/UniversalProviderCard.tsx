@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { useTranslation } from "react-i18next";
 import { Edit2, Trash2, RefreshCw, Globe, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,7 +14,8 @@ interface UniversalProviderCardProps {
   onDuplicate: (provider: UniversalProvider) => void;
 }
 
-export function UniversalProviderCard({
+// memo：面板开合表单 / 确认框时整页重渲染，卡片 props 一个都没变，不该连带。
+export const UniversalProviderCard = memo(function UniversalProviderCard({
   provider,
   onEdit,
   onDelete,
@@ -136,4 +138,4 @@ export function UniversalProviderCard({
       )}
     </div>
   );
-}
+});
