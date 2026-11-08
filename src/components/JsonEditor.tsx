@@ -29,7 +29,7 @@ interface JsonEditorProps {
   readOnly?: boolean;
 }
 
-function minimalTextChange(current: string, next: string) {
+export function minimalTextChange(current: string, next: string) {
   let from = 0;
   const sharedLength = Math.min(current.length, next.length);
   while (from < sharedLength && current[from] === next[from]) from += 1;
@@ -52,14 +52,17 @@ function minimalTextChange(current: string, next: string) {
   };
 }
 
-function uniqueContextIndex(value: string, context: string): number | null {
+export function uniqueContextIndex(
+  value: string,
+  context: string,
+): number | null {
   if (!context) return null;
   const index = value.indexOf(context);
   if (index < 0 || value.indexOf(context, index + 1) >= 0) return null;
   return index;
 }
 
-function mapPositionByContext(
+export function mapPositionByContext(
   current: string,
   next: string,
   position: number,
