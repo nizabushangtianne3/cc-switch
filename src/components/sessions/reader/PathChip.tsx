@@ -52,7 +52,7 @@ export const shortenPath = (path: string, projectDir?: string) => {
 };
 
 /** 默认的「在 Finder 中显示」：调用后端 `reveal_session_path` 命令 */
-export const revealSessionPath = async (path: string) => {
+const revealSessionPath = async (path: string) => {
   await invoke("reveal_session_path", { path });
 };
 

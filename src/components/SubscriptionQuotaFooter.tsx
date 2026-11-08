@@ -45,7 +45,7 @@ interface SubscriptionQuotaViewProps {
 }
 
 /** 已知 tier 名称的显示映射（官方订阅 + Token Plan 共用） */
-export const TIER_I18N_KEYS: Record<string, string> = {
+const TIER_I18N_KEYS: Record<string, string> = {
   five_hour: "subscription.fiveHour",
   seven_day: "subscription.sevenDay",
   seven_day_fable: "subscription.sevenDayFable",
@@ -142,7 +142,7 @@ export function tierShortLabel(t: TFunction, name: string): string {
 }
 
 /** 已知档位 → 额度行 */
-export function tierLines(
+function tierLines(
   t: TFunction,
   tiers: QuotaTier[],
   {

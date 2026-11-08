@@ -14,7 +14,7 @@ export interface CheckOptions {
   channel?: UpdateChannel;
 }
 
-export async function getCurrentVersion(): Promise<string> {
+async function getCurrentVersion(): Promise<string> {
   try {
     return await getVersion();
   } catch {

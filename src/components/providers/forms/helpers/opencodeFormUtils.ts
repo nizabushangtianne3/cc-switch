@@ -35,11 +35,7 @@ export const OPENCODE_DEFAULT_CONFIG = JSON.stringify(
   null,
   2,
 );
-export const OPENCODE_KNOWN_OPTION_KEYS = [
-  "baseURL",
-  "apiKey",
-  "headers",
-] as const;
+const OPENCODE_KNOWN_OPTION_KEYS = ["baseURL", "apiKey", "headers"] as const;
 
 // Contains ":", which is not valid in an HTTP field name, so it cannot
 // collide with a legitimate custom header from an existing configuration.
@@ -166,7 +162,7 @@ export function getOpencodeDeclaredModels(
   );
 }
 
-export function isKnownOpencodeOptionKey(key: string): boolean {
+function isKnownOpencodeOptionKey(key: string): boolean {
   return OPENCODE_KNOWN_OPTION_KEYS.includes(
     key as (typeof OPENCODE_KNOWN_OPTION_KEYS)[number],
   );
@@ -222,7 +218,7 @@ export function parseOpencodeConfigStrict(
   };
 }
 
-export const OPENCODE_KNOWN_MODEL_KEYS = ["name", "limit", "options"] as const;
+const OPENCODE_KNOWN_MODEL_KEYS = ["name", "limit", "options"] as const;
 
 export function isKnownModelKey(key: string): boolean {
   return OPENCODE_KNOWN_MODEL_KEYS.includes(
@@ -359,7 +355,7 @@ export function getModelExtraFields(
   return extra;
 }
 
-export function formatOpencodeExtraOptionValue(value: unknown): string {
+function formatOpencodeExtraOptionValue(value: unknown): string {
   return typeof value === "string" ? value : JSON.stringify(value);
 }
 

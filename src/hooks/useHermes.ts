@@ -18,7 +18,7 @@ import { extractErrorMessage } from "@/utils/errorUtils";
  * `/api/status` fails. Must match the string constant in
  * `src-tauri/src/commands/hermes.rs`.
  */
-export const HERMES_WEB_OFFLINE_ERROR = "hermes_web_offline";
+const HERMES_WEB_OFFLINE_ERROR = "hermes_web_offline";
 
 /**
  * Centralized query keys for all Hermes-related queries.

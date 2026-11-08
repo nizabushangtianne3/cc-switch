@@ -65,10 +65,7 @@ export function isGptModelId(modelId: string): boolean {
 }
 
 /** GPT 模型的窗口按 {@link GPT_CONTEXT_WINDOW_CAP} 封顶，本来就小的不动。 */
-export function capGptContextWindow(
-  modelId: string,
-  contextWindow: number,
-): number {
+function capGptContextWindow(modelId: string, contextWindow: number): number {
   return isGptModelId(modelId)
     ? Math.min(contextWindow, GPT_CONTEXT_WINDOW_CAP)
     : contextWindow;

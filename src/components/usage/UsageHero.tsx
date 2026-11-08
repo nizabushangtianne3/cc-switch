@@ -43,7 +43,7 @@ interface UsageHeroProps {
  * `cacheHitRate` and `successRate` must be re-derived from the summed counts
  * rather than averaged across rows.
  */
-export function aggregateSummaries(items: UsageSummary[]): UsageSummary {
+function aggregateSummaries(items: UsageSummary[]): UsageSummary {
   let totalRequests = 0;
   let successCount = 0;
   let totalCostNum = 0;

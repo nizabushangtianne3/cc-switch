@@ -456,7 +456,7 @@ export type PlainTextBlock =
   | { type: "code"; language: string; code: string };
 
 /** 把内容切成纯文本段与围栏代码段；未闭合的围栏一直延续到末尾 */
-export const splitFencedCode = (content: string): PlainTextBlock[] => {
+const splitFencedCode = (content: string): PlainTextBlock[] => {
   const blocks: PlainTextBlock[] = [];
   const lines = content.replace(/\r\n/g, "\n").split("\n");
   let text: string[] = [];

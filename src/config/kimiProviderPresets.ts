@@ -75,7 +75,7 @@ export interface KimiProviderPreset
 }
 
 export const KIMI_ACCOUNT_PRESET_ID = "kimi-official-account";
-export const KIMI_OFFICIAL_PROVIDER_NAME = "Kimi Official";
+const KIMI_OFFICIAL_PROVIDER_NAME = "Kimi Official";
 
 // An action in the account-login group, separate from the API-key catalog.
 export const kimiAccountPreset: KimiProviderPreset = {

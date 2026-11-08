@@ -8,7 +8,7 @@ export const PROVIDER_TYPES = {
 // 托管 OAuth 供应商类型：真实凭据由本地代理按请求注入，因此无论上游是否
 // 需要格式转换，都必须开启路由接管才能通过认证。新增此类预设时只需把
 // providerType 加进本数组，needsRouting 判定即自动覆盖，无需逐个特判。
-export const OAUTH_PROVIDER_TYPES: readonly string[] = [
+const OAUTH_PROVIDER_TYPES: readonly string[] = [
   PROVIDER_TYPES.GITHUB_COPILOT,
   PROVIDER_TYPES.CODEX_OAUTH,
   PROVIDER_TYPES.XAI_OAUTH,

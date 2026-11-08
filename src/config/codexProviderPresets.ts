@@ -57,7 +57,7 @@ export interface CodexProviderPreset extends PresetFamilyFields {
 /**
  * 生成第三方供应商的 auth.json
  */
-export function generateThirdPartyAuth(apiKey: string): Record<string, any> {
+function generateThirdPartyAuth(apiKey: string): Record<string, any> {
   return {
     OPENAI_API_KEY: apiKey || "",
   };

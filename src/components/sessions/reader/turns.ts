@@ -1074,7 +1074,7 @@ export const findMatchRowIndex = (
 };
 
 /** 行高估算（§6.2），配合 useVirtualizer 的动态测量 */
-export const ROW_HEIGHT_ESTIMATE: Record<ReaderRow["kind"], number> = {
+const ROW_HEIGHT_ESTIMATE: Record<ReaderRow["kind"], number> = {
   question: 96,
   timeline: 36,
   step: 32,

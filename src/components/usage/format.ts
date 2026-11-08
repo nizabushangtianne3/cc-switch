@@ -39,7 +39,7 @@ export type DisplayCurrency = (typeof DISPLAY_CURRENCIES)[number];
  * 用户没填汇率、也还没自动取到时用的起点，按 2026-07~09 的报价取整。
  * 改这里只影响手填和自动都没值的用户。
  */
-export const DEFAULT_EXCHANGE_RATES: Record<
+const DEFAULT_EXCHANGE_RATES: Record<
   Exclude<DisplayCurrency, "USD">,
   number
 > = { CNY: 6.8, EUR: 0.87, JPY: 158, TWD: 32, TRY: 48 };
@@ -50,7 +50,7 @@ export const RATE_SOURCES = ["auto", "manual"] as const;
 export type RateSource = (typeof RATE_SOURCES)[number];
 
 /** 自动获取的汇率多久算旧：两个源都每天更新一次，半天刷一次足够跟上 */
-export const AUTO_RATE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+const AUTO_RATE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 
 /**
  * 汇率来源：显式设置优先，没设置过一律按手动。
@@ -259,9 +259,7 @@ interface OutputTokensPerSecondInput {
  * 只算路由服务记的请求：会话日志的耗时和首字都是按时间戳估的，不算精确速度
  * （会话日志另有估算，见 [getEstimatedTokensPerSecond]）；非流式请求没有首字。
  */
-export function getGenerationMs(
-  log: OutputTokensPerSecondInput,
-): number | null {
+function getGenerationMs(log: OutputTokensPerSecondInput): number | null {
   if (isSessionLogRequest(log)) return null;
   const latencyMs = parseFiniteNumber(log.latencyMs);
   const firstTokenMs = parseFiniteNumber(log.firstTokenMs);
@@ -272,10 +270,10 @@ export function getGenerationMs(
 
 // 生成窗口短于此值时不算速度：中转站缓冲后一次性吐出、或短回复整段落在
 // 同一个网络包里，窗口只剩几毫秒，算出来的是传输突发而不是生成速度。
-export const SPEED_MIN_GENERATION_MS = 100;
+const SPEED_MIN_GENERATION_MS = 100;
 
 /** 这条请求能不能算速度：输出不少于 100 token，且生成时间不短于 100 毫秒。 */
-export function isSpeedEligible(log: OutputTokensPerSecondInput): boolean {
+function isSpeedEligible(log: OutputTokensPerSecondInput): boolean {
   const outputTokens = parseFiniteNumber(log.outputTokens);
   const generationMs = getGenerationMs(log);
   return (
@@ -304,7 +302,7 @@ export function getOutputTokensPerSecond(
 export const SPEED_ESTIMATE_MIN_OUTPUT_TOKENS = 200;
 
 /** 估算耗时短于此值时不估速度：输出 200 token 以上却不到 1 秒，多半是起点取晚了。 */
-export const SPEED_ESTIMATE_MIN_DURATION_MS = 1000;
+const SPEED_ESTIMATE_MIN_DURATION_MS = 1000;
 
 /** 这条请求是不是从会话日志导入的（不是路由服务记的）。 */
 export function isSessionLogRequest(log: { dataSource?: unknown }): boolean {
@@ -319,9 +317,7 @@ export function isSessionLogRequest(log: { dataSource?: unknown }): boolean {
  * 这条请求能不能估速度（和后端 `speed_estimate_eligible_sql` 同口径）：会话日志导入、
  * 输出不少于 200 token、估算耗时不短于 1 秒。推出了首字的也照样按整段耗时算。
  */
-export function isSpeedEstimateEligible(
-  log: OutputTokensPerSecondInput,
-): boolean {
+function isSpeedEstimateEligible(log: OutputTokensPerSecondInput): boolean {
   const outputTokens = parseFiniteNumber(log.outputTokens);
   const latencyMs = parseFiniteNumber(log.latencyMs);
   return (

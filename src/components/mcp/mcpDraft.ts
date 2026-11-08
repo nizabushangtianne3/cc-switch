@@ -167,7 +167,7 @@ function fromOpenCode(value: Record<string, unknown>): McpServerSpec {
   return spec;
 }
 
-export function normalizeSpec(value: Record<string, unknown>): McpServerSpec {
+function normalizeSpec(value: Record<string, unknown>): McpServerSpec {
   if (
     Array.isArray(value.command) ||
     value.type === "local" ||

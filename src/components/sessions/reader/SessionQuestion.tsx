@@ -18,7 +18,7 @@ import type { TurnQuestion } from "./turns";
 export const COLLAPSE_THRESHOLD = 3000;
 export const COLLAPSED_LENGTH = 1500;
 
-export const formatCharCount = (count: number) =>
+const formatCharCount = (count: number) =>
   count >= 1000 ? `${(count / 1000).toFixed(1)}k` : String(count);
 
 export const rowIconButton =

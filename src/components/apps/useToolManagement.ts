@@ -222,7 +222,7 @@ export const ONE_CLICK_INSTALL_COMMANDS = isWindows()
   ? WINDOWS_ONE_CLICK_INSTALL_COMMANDS
   : POSIX_ONE_CLICK_INSTALL_COMMANDS;
 
-export const TOOL_DISPLAY_NAMES: Record<ToolName, string> = {
+const TOOL_DISPLAY_NAMES: Record<ToolName, string> = {
   claude: "Claude Code",
   codex: "Codex",
   gemini: "Gemini CLI",

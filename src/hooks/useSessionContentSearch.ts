@@ -7,7 +7,7 @@ import type { SessionContentHit, SessionIndexStatus } from "@/types";
 /** 输入停顿多久后才查正文（毫秒） */
 const SEARCH_DEBOUNCE_MS = 250;
 
-export const sessionContentKeys = {
+const sessionContentKeys = {
   all: ["sessionContentSearch"] as const,
   search: (query: string, providerIds: string[]) =>
     ["sessionContentSearch", query, providerIds] as const,

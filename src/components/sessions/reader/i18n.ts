@@ -7,9 +7,9 @@ import type { Translate } from "./toolSummary";
  * 这里的简体中文是各 key 的 defaultValue：语言包缺 key（含单测）时仍有可读文案。
  * 四套语言包里的取值以 src/i18n/locales/*.json 为准。
  */
-export const READER_I18N_PREFIX = "sessionManager.reader.";
+const READER_I18N_PREFIX = "sessionManager.reader.";
 
-export const READER_DEFAULTS: Record<string, string> = {
+const READER_DEFAULTS: Record<string, string> = {
   timelineSummary: "执行过程 · {{steps}} 步",
   summaryCommands: "{{count}} 个命令",
   summaryFiles: "改了 {{count}} 个文件",

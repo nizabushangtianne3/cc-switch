@@ -228,7 +228,7 @@ export const SessionEventRow = memo(function SessionEventRow({
 // ─── 注入的上下文（决策 D10：默认隐藏，菜单开关显示） ────────────────────
 
 /** 注入内容的标签：AGENTS.md / environment_context / system-reminder / developer… */
-export const injectedLabel = (message: SessionMessage) => {
+const injectedLabel = (message: SessionMessage) => {
   const text = messageText(message).trim();
   const agents = /^#\s*(AGENTS\.md|CLAUDE\.md|GEMINI\.md)\b/.exec(text);
   if (agents) return agents[1];

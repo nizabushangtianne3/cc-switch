@@ -125,11 +125,7 @@ export type StackAppId = Extract<
   "claude" | "codex" | "claude-desktop"
 >;
 
-export const STACK_APP_IDS: StackAppId[] = [
-  "claude",
-  "codex",
-  "claude-desktop",
-];
+const STACK_APP_IDS: StackAppId[] = ["claude", "codex", "claude-desktop"];
 
 export function isStackAppId(appId: string): appId is StackAppId {
   return (STACK_APP_IDS as string[]).includes(appId);
@@ -140,7 +136,7 @@ export type AdditiveAppId = Extract<
   "opencode" | "openclaw" | "hermes" | "pi" | "mcode" | "kimi" | "dsh" | "omp"
 >;
 
-export const ADDITIVE_APP_IDS: AdditiveAppId[] = [
+const ADDITIVE_APP_IDS: AdditiveAppId[] = [
   "mcode",
   "kimi",
   "dsh",
@@ -156,7 +152,7 @@ export function isAdditiveAppId(appId: string): appId is AdditiveAppId {
 }
 
 /** Oh My Pi 是 Pi 的分支：供应商表单、启用状态和用量脚本命令与 Pi 共用。 */
-export const PI_FAMILY_APP_IDS: PiFamilyAppId[] = ["pi", "omp"];
+const PI_FAMILY_APP_IDS: PiFamilyAppId[] = ["pi", "omp"];
 
 export function isPiFamilyApp(appId: string): appId is PiFamilyAppId {
   return (PI_FAMILY_APP_IDS as string[]).includes(appId);
@@ -166,12 +162,7 @@ export function isPiFamilyApp(appId: string): appId is PiFamilyAppId {
  * 切换只替换关键字段的应用：供应商编辑器显示「切到这个供应商之后配置文件的样子」，由后端
  * `ProviderService::editor_view` 投影。
  */
-export const EDITOR_VIEW_APP_IDS: AppId[] = [
-  "claude",
-  "codex",
-  "gemini",
-  "grokbuild",
-];
+const EDITOR_VIEW_APP_IDS: AppId[] = ["claude", "codex", "gemini", "grokbuild"];
 
 export function usesEditorView(appId: AppId): boolean {
   return EDITOR_VIEW_APP_IDS.includes(appId);
@@ -202,7 +193,7 @@ export function usesGeminiStyleForm(appId: string): boolean {
   return appId === "gemini" || appId === "agy";
 }
 
-export const APP_ICON_MAP: Record<AppId, AppConfig> = {
+const APP_ICON_MAP: Record<AppId, AppConfig> = {
   claude: {
     label: "Claude",
     icon: <ClaudeIcon size={14} />,

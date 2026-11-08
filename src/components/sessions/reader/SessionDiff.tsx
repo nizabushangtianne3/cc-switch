@@ -23,7 +23,7 @@ const HUNK_HEADER = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
 const PATCH_FILE = /^\*\*\* (?:Add|Update|Delete) File: (.+)$/;
 
 /** 解析 unified diff（git diff、Codex FileChange）与 Codex apply_patch 文本 */
-export const parseDiff = (text: string): DiffLine[] => {
+const parseDiff = (text: string): DiffLine[] => {
   const lines: DiffLine[] = [];
   let oldNo: number | undefined;
   let newNo: number | undefined;

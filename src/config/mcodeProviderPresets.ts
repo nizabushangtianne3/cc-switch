@@ -6,7 +6,7 @@ import {
 import { piModel } from "./piModelCatalog";
 import type { PiThinkingLevel } from "./piThinkingProfiles";
 
-export const MCODE_API_FORMATS = [
+const MCODE_API_FORMATS = [
   "anthropic-messages",
   "openai-completions",
   "openai-responses",

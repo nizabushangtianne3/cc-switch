@@ -13,7 +13,7 @@ export interface SkillError {
  * 尝试解析后端返回的错误字符串
  * 如果是 JSON 格式，返回结构化错误；否则返回 null
  */
-export function parseSkillError(errorString: string): SkillError | null {
+function parseSkillError(errorString: string): SkillError | null {
   try {
     const parsed = JSON.parse(errorString);
     if (parsed.code && parsed.context) {

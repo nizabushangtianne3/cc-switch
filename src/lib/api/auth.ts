@@ -96,7 +96,7 @@ export async function authCancelLogin(
   });
 }
 
-export async function authListAccounts(
+async function authListAccounts(
   authProvider: ManagedAuthProvider,
 ): Promise<ManagedAuthAccount[]> {
   return invoke<ManagedAuthAccount[]>("auth_list_accounts", {

@@ -71,7 +71,7 @@ const readExpandAll = () => {
 const EMPTY_OVERRIDES: ReadonlyMap<string, boolean> = new Map();
 
 /** 会话标题：会话自带标题 → 第一条提问 → 项目目录名 → 会话 ID 前 8 位 */
-export const readerTitle = (session: SessionMeta, turns: TurnIndex[]) =>
+const readerTitle = (session: SessionMeta, turns: TurnIndex[]) =>
   session.title?.trim() ||
   turns[0]?.questionPreview ||
   getBaseName(session.projectDir) ||

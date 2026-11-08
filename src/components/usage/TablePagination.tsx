@@ -140,7 +140,7 @@ export function TablePagination({
   );
 }
 
-export const TABLE_PAGE_SIZE = 20;
+const TABLE_PAGE_SIZE = 20;
 
 /**
  * 前端分页：数据一次性拿到、在客户端切页的表格（供应商、模型、定价）用。

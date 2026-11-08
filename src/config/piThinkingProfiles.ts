@@ -370,7 +370,7 @@ export interface ResolvedPiThinkingProfile {
   };
 }
 
-export function clonePiThinkingLevelMap(
+function clonePiThinkingLevelMap(
   map: Readonly<PiThinkingLevelMap>,
 ): PiThinkingLevelMap {
   return { ...map };

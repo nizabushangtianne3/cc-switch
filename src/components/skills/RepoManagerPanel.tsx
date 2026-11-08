@@ -38,9 +38,7 @@ interface RepoManagerPanelProps {
   onClose: () => void;
 }
 
-export function parseRepoUrl(
-  url: string,
-): { owner: string; name: string } | null {
+function parseRepoUrl(url: string): { owner: string; name: string } | null {
   let cleaned = url.trim();
   cleaned = cleaned.replace(/^https?:\/\/github\.com\//, "");
   cleaned = cleaned.replace(/\.git$/, "").replace(/\/+$/, "");

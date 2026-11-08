@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { customIconsApi } from "@/lib/api/customIcons";
 
-export const customIconKeys = {
+const customIconKeys = {
   all: ["customIcons"] as const,
 };
 

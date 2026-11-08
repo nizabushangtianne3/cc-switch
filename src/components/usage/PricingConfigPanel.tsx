@@ -62,7 +62,7 @@ const errorText = (error: unknown) =>
       : "Unknown error";
 
 /** 「$4.00」「$0.075」：至少两位小数，多余的 0 去掉，最多 4 位。 */
-export function formatUnitPrice(value: string): string {
+function formatUnitPrice(value: string): string {
   const num = parseFiniteNumber(value);
   if (num == null) return `$${value}`;
   const fixed = num.toFixed(4).replace(/0+$/, "");

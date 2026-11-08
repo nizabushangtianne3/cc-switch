@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { ProviderIcon } from "./ProviderIcon";
 
 /** 和后端 `MAX_LIBRARY_NAME_CHARS` 一致 */
-export const MAX_CUSTOM_ICON_NAME_CHARS = 64;
+const MAX_CUSTOM_ICON_NAME_CHARS = 64;
 
 interface CustomIconNameDialogProps {
   /** 有值即打开 */

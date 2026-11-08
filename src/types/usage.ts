@@ -331,7 +331,7 @@ export function getFreshInputTokens(log: CacheNormalizableLog): number {
   return log.inputTokens;
 }
 
-export const NON_NEGATIVE_DECIMAL_REGEX = /^\d+(?:\.\d+)?$/;
+const NON_NEGATIVE_DECIMAL_REGEX = /^\d+(?:\.\d+)?$/;
 
 export function isNonNegativeDecimalString(value: string): boolean {
   const trimmed = value.trim();
@@ -350,7 +350,7 @@ type UsageCostLog = Pick<
 > &
   Partial<Pick<RequestLog, "costMultiplier">>;
 
-export function hasUsageTokens(log: UsageCostLog): boolean {
+function hasUsageTokens(log: UsageCostLog): boolean {
   return (
     log.inputTokens > 0 ||
     log.outputTokens > 0 ||

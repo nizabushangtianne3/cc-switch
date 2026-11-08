@@ -90,7 +90,7 @@ export function formatLogTime(createdAt: number, now = new Date()): string {
 }
 
 /** 「2026-09-30 14:21:05」：悬停时看完整的本地时间。 */
-export function formatLogFullTime(createdAt: number): string {
+function formatLogFullTime(createdAt: number): string {
   const date = new Date(createdAt * 1000);
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(
     date.getDate(),
@@ -99,7 +99,7 @@ export function formatLogFullTime(createdAt: number): string {
   )}`;
 }
 
-export function isKnownAppId(appType: string): appType is AppId {
+function isKnownAppId(appType: string): appType is AppId {
   return appType in APP_DISPLAY_NAME;
 }
 
@@ -140,7 +140,7 @@ const DEFAULT_COLUMNS = resolveRequestLogColumns(undefined);
  * 单条请求的缓存命中率，口径与用量页「缓存命中率」相同：
  * 缓存命中 ÷（新增输入 + 缓存写入 + 缓存命中）。没有可缓存的输入时返回 null。
  */
-export function getRequestCacheHitRate(
+function getRequestCacheHitRate(
   log: RequestLog,
 ): { rate: number; cacheable: number } | null {
   const cacheable =

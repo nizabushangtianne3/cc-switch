@@ -903,7 +903,7 @@ export const piModelCatalog = {
 
 export type PiModelCatalogKey = keyof typeof piModelCatalog;
 
-export const PI_MODEL_CATALOG_REFERENCE: unique symbol = Symbol(
+const PI_MODEL_CATALOG_REFERENCE: unique symbol = Symbol(
   "piModelCatalogReference",
 );
 

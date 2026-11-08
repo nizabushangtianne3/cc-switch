@@ -61,7 +61,7 @@ export interface QuotaBreakdownItem {
   tone: QuotaTone;
 }
 
-export const WARN_BELOW_PERCENT = 20;
+const WARN_BELOW_PERCENT = 20;
 
 export function toneForLeft(left: number): QuotaTone {
   if (left <= 0) return "danger";
@@ -181,7 +181,7 @@ export function lineHint(t: TFunction, line: QuotaLine, now = Date.now()) {
 }
 
 /** 最早那次重置三天内就过期时加深提醒 */
-export const RESET_EXPIRING_SOON_MS = 3 * 24 * 60 * 60 * 1000;
+const RESET_EXPIRING_SOON_MS = 3 * 24 * 60 * 60 * 1000;
 
 /** 排在所有档位之后：卡片合并时跟在每周那档后面（「每周 64% · 重置 1 次」） */
 const RESET_CREDITS_WINDOW = UNKNOWN_WINDOW + 1;
@@ -263,7 +263,7 @@ export function resetCreditsLine(
  * （GPT-6 Astra 输入 250 Credits ↔ $10，Sol、Luna 同比），即 1 Credit = $0.04。
  * 接口不给这个比例，OpenAI 改价时只改这里
  */
-export const CODEX_USD_PER_CREDIT = 0.04;
+const CODEX_USD_PER_CREDIT = 0.04;
 
 /** 排在重置次数之后 */
 const CREDITS_WINDOW = RESET_CREDITS_WINDOW + 1;

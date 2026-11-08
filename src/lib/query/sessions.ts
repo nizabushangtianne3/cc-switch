@@ -221,7 +221,7 @@ export const useSessionTranscript = (
 /** 单次取的字符数（§5.1 默认 512KB） */
 export const BLOCK_PAGE_CHARS = 512 * 1024;
 /** 前端累计超过 2MB 停止加载，提示复制源文件路径（规则 12） */
-export const BLOCK_MAX_CHARS = 2 * 1024 * 1024;
+const BLOCK_MAX_CHARS = 2 * 1024 * 1024;
 
 export interface BlockContentResult {
   text: string;

@@ -16,7 +16,7 @@ export function isValidHttpHeaderName(name: string): boolean {
   return /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(name);
 }
 
-export const PROTECTED_LOCAL_PROXY_HEADER_NAMES = new Set([
+const PROTECTED_LOCAL_PROXY_HEADER_NAMES = new Set([
   "host",
   "content-length",
   "transfer-encoding",

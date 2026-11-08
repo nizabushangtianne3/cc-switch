@@ -32,7 +32,7 @@ export function parseOpenClawEnvEditorValue(raw: string): OpenClawEnvConfig {
   return parsed as OpenClawEnvConfig;
 }
 
-export function isOpenClawToolsProfile(
+function isOpenClawToolsProfile(
   profile?: string,
 ): profile is OpenClawToolsProfile {
   return (

@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { highlightText } from "../utils";
 
 /** 行内 `code` 与代码块共用的边框与底色，保证两处观感一致 */
-export const SESSION_CODE_SURFACE = "border border-border bg-subtle";
+const SESSION_CODE_SURFACE = "border border-border bg-subtle";
 
 /** 行内代码样式（Markdown 正文与纯文本提问共用） */
 export const SESSION_INLINE_CODE_CLASS = cn(
