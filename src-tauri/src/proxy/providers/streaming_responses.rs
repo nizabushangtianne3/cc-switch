@@ -2761,16 +2761,23 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                     }
 
                     // SSE 事件由 \n\n 分隔
-                    while let Some((end, delim)) = next_sse_block_range(&buffer) {
-                        let block = &buffer[..end];
+                    // 块循环只推进消费游标，drain 留给整个 chunk 一次（与透传
+                    // scanner 同构）：一个 chunk 含多块时逐块 drain 会把剩余
+                    // 缓冲反复搬移。只有最外层块循环直属的 continue（不落到
+                    // 循环尾的几处）需要在该处补推进游标。
+                    let mut consumed = 0usize;
+                    while let Some((block_end, delim)) = next_sse_block_range(&buffer[consumed..])
+                    {
+                        let end = consumed + block_end;
+                        let block = &buffer[consumed..end];
                         // 拆出 event: 与 data:：单行 data 是借支，不为它拷贝一份
                         let (event_type, payload) = scan_sse_block(block);
 
                         // 增量事件先用只读探针判一刀：命中就一棵 Value 都不建。探针
                         // 能解析成功意味着整份 JSON 语法合法，完整路径必然也能解析，
                         // 不会漏事件；类型不在增量名单、或字段类型意外（探针解析失败）
-                        // 时下面照旧走完整解析。探针的借阅字段要活到 drain 之后，
-                        // 载荷文本先抄进复用缓冲（一份拷贝，换掉整棵树十来个分配）。
+                        // 时下面照旧走完整解析。载荷文本抄进复用缓冲，探针借的是它，
+                        // 与 buffer 的存亡解耦（drain 已推迟到整个 chunk 末）。
                         let mut probe = None;
                         if let Some(payload_text) = payload.as_deref() {
                             scratch.clear();
@@ -2791,7 +2798,6 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                 .map(serde_json::from_str::<Value>)
                                 .transpose()
                         };
-                        buffer.drain(..end + delim);
 
                         // 没有 data 行或 data 不是合法 JSON：这个块没有可转换的内容
                         let data: Value = if probe.is_some() {
@@ -2830,6 +2836,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                         // do not synthesize message_start if a broken gateway emits a
                         // late delta after response.failed/error.
                         if terminated {
+                            consumed = end + delim;
                             continue;
                         }
 
@@ -2925,6 +2932,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                                         &mut fallback_open_index,
                                                     ));
                                             }
+                                            consumed = end + delim;
                                             continue;
                                         }
 
@@ -2942,6 +2950,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                         };
 
                                         if open_indices.contains(&index) {
+                                            consumed = end + delim;
                                             continue;
                                         }
 
@@ -2977,6 +2986,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                             ));
                                         }
                                         yield Ok(anthropic_ping_sse());
+                                        consumed = end + delim;
                                         continue;
                                     }
                                     streamed_text.record_delta(event.keys(), delta);
@@ -3176,6 +3186,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                         last_tool_index = Some(index);
 
                                         if open_indices.contains(&index) {
+                                            consumed = end + delim;
                                             continue;
                                         }
 
@@ -3265,6 +3276,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                             },
                                         );
                                         if disposition == WebSearchCallDisposition::Ignored {
+                                            consumed = end + delim;
                                             continue;
                                         }
                                         web_search_index_by_item_id
@@ -3441,6 +3453,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                     tool_had_delta.insert(index);
 
                                     if tool_name_by_index.get(&index).map(String::as_str) == Some("Read") {
+                                        consumed = end + delim;
                                         continue;
                                     }
 
@@ -3472,6 +3485,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                 .or(last_tool_index);
                                 if let Some(index) = index {
                                     if !open_indices.remove(&index) {
+                                        consumed = end + delim;
                                         continue;
                                     }
                                     if tool_name_by_index.get(&index).map(String::as_str) == Some("Read") {
@@ -3550,6 +3564,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                 });
                                 if let Some(index) = index {
                                     if !open_indices.remove(&index) {
+                                        consumed = end + delim;
                                         continue;
                                     }
                                     let event = json!({
@@ -3573,6 +3588,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                             | "response.reasoning.delta" => {
                                 if let Some(event) = &delta_event {
                                     let Some(delta) = event.delta_or_text() else {
+                                        consumed = end + delim;
                                         continue;
                                     };
                                     if let Some(index) = current_text_index.take() {
@@ -3748,6 +3764,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                     );
                                     yield Ok(anthropic_error_sse(&message, &error_type));
                                     terminated = true;
+                                    consumed = end + delim;
                                     continue;
                                 }
                                 if next_content_index == 0
@@ -3775,6 +3792,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                         yield Ok(event);
                                     }
                                     terminated = true;
+                                    consumed = end + delim;
                                     continue;
                                 }
                                 if !has_sent_message_start {
@@ -4209,6 +4227,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                         "api_error",
                                     ));
                                     terminated = true;
+                                    consumed = end + delim;
                                     continue;
                                 }
 
@@ -4283,6 +4302,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                             "response.output_text.done" => {
                                 if preserve_web_search_citations {
                                     buffered_citation_text.record_done_event(&data);
+                                    consumed = end + delim;
                                     continue;
                                 }
                                 streamed_text.finish_part(&data);
@@ -4302,6 +4322,7 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                             }
                             "response.output_item.done" => {
                                 let Some(item) = data.get("item") else {
+                                    consumed = end + delim;
                                     continue;
                                 };
                                 let item_type = item.get("type").and_then(Value::as_str);
@@ -4466,9 +4487,11 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                                             },
                                         );
                                         if disposition == WebSearchCallDisposition::Ignored {
+                                            consumed = end + delim;
                                             continue;
                                         }
                                         if web_search_ids_completed.contains(&search_id) {
+                                            consumed = end + delim;
                                             continue;
                                         }
 
@@ -4775,7 +4798,18 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                             // Any other unknown/future events — silently skip.
                             _ => {}
                         }
+                            consumed = end + delim;
                     }
+
+                        // 整个 chunk 处理完才动一次缓冲：全吃掉就清空，否则只
+                        // 搬走未构成完整块的尾部。
+                        if consumed > 0 {
+                            if consumed == buffer.len() {
+                                buffer.clear();
+                            } else {
+                                buffer.drain(..consumed);
+                            }
+                        }
                 }
                 Err(e) => {
                     // A late transport failure cannot invalidate an already emitted
