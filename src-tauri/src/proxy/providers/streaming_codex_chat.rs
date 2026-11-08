@@ -1987,4 +1987,61 @@ mod tests {
         assert_eq!(expected.matches("event: response.failed").count(), 1);
         assert_eq!(terminal_special_output(false, prefix, true).await, expected);
     }
+
+    // ---- temporary bench scaffolding (removed before commit) ----
+
+    /// 确定性伪随机分片（1~64 字节），模拟真实 TCP 分片：块边界任意落点，
+    /// 多字节 UTF-8 字符会被切断，正好压 Utf8TailDecoder 与块扫描的边界路径。
+    fn jitter_chunks(input: &str) -> Vec<Bytes> {
+        let bytes = input.as_bytes();
+        let mut out = Vec::new();
+        let mut pos = 0usize;
+        let mut seed = 0x1234_5678u32;
+        while pos < bytes.len() {
+            seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12345);
+            let len = 1 + ((seed >> 16) % 64) as usize;
+            let end = (pos + len).min(bytes.len());
+            out.push(Bytes::copy_from_slice(&bytes[pos..end]));
+            pos = end;
+        }
+        out
+    }
+
+    /// 真实网络分片（1~64 字节任意边界、中文内容跨多字节切断）与整块喂的输出
+    /// 必须逐字节一致：UTF-8 尾解析与块边界扫描都不能因分片落点改变结果。
+    #[tokio::test]
+    async fn jittered_fragments_produce_identical_output() {
+        let mut input = String::new();
+        for d in 0..40 {
+            input.push_str(&format!(
+                "data: {{\"id\":\"chatcmpl-j\",\"created\":1,\"model\":\"gpt-5\",\"choices\":[{{\"index\":0,\"delta\":{{\"content\":\"第{d}句中文字符串，含一些长度 \"}}}}]}}\n\n"
+            ));
+        }
+        input.push_str("data: {\"id\":\"chatcmpl-j\",\"created\":1,\"model\":\"gpt-5\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":12000,\"completion_tokens\":3400,\"total_tokens\":15400}}\n\n");
+        input.push_str("data: [DONE]\n\n");
+
+        let (_, monolithic_bytes) =
+            drain_codex_chat(vec![Bytes::from(input.as_bytes().to_vec())]).await;
+        let (_, jittered_bytes) = drain_codex_chat(jitter_chunks(&input)).await;
+        assert_eq!(
+            jittered_bytes, monolithic_bytes,
+            "jittered output differs from monolithic"
+        );
+        assert!(monolithic_bytes > 0);
+    }
+    async fn drain_codex_chat(chunks: Vec<Bytes>) -> (usize, usize) {
+        let upstream = futures::stream::iter(chunks.into_iter().map(Ok::<_, std::io::Error>));
+        let converted = create_responses_sse_stream_from_chat_with_context(
+            upstream,
+            CodexToolContext::default(),
+        );
+        futures::pin_mut!(converted);
+        let mut total = 0usize;
+        let mut bytes = 0usize;
+        while let Some(chunk) = converted.next().await {
+            bytes += chunk.unwrap().len();
+            total += 1;
+        }
+        (total, bytes)
+    }
 }
