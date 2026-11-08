@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/lib/toast";
@@ -209,7 +209,11 @@ export function UsageDashboard({
   const [statusCode, setStatusCode] = useState<number | undefined>(undefined);
 
   // 请求日志显示哪些列在「设置」页签里改，这里只按设置画
-  const logColumns = resolveRequestLogColumns(usageDisplay?.requestLogColumns);
+  // memo：RequestLogTable 是 memo 组件，列数组每次重建会让 memo 永远失效。
+  const logColumns = useMemo(
+    () => resolveRequestLogColumns(usageDisplay?.requestLogColumns),
+    [usageDisplay?.requestLogColumns],
+  );
   const [tab, setTab] = useRememberedChoice<UsageTab>(
     USAGE_CHOICE_KEYS.tab,
     TABS,
@@ -229,6 +233,14 @@ export function UsageDashboard({
       "20",
     );
   const logPageSize = Number(logPageSizeChoice);
+  // useCallback：RequestLogTable 是 memo 组件，内联箭头每次渲染新建会让 memo
+  // 永远失效（setLogPageSizeChoice 已由 useRememberedChoice 稳定成 useCallback）。
+  const handleLogPageSizeChange = useCallback(
+    (size: number) => {
+      setLogPageSizeChoice(String(size) as LogPageSize);
+    },
+    [setLogPageSizeChoice],
+  );
   // 定价对话框：抽屉里和空状态都能打开，新装的人往往先配好 models.dev 同步再开始用
   const [pricingOpen, setPricingOpen] = useState(false);
   const [refreshIntervalMs, setRefreshIntervalMs] = useState(() =>
@@ -904,9 +916,7 @@ export function UsageDashboard({
             columns={logColumns}
             pageSize={logPageSize}
             pageSizeOptions={LOG_PAGE_SIZE_OPTIONS}
-            onPageSizeChange={(size) =>
-              setLogPageSizeChoice(String(size) as LogPageSize)
-            }
+            onPageSizeChange={handleLogPageSizeChange}
           />
         )}
         {tab === "providers" && (

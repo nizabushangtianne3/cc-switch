@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { memo, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronDown } from "lucide-react";
 import { useUsageSummaryByApp } from "@/lib/query/usage";
@@ -204,7 +204,7 @@ function SubMetric({
  * 点一格切换下方图表的指标。Tokens 的 4 个组成部分（新增输入、输出、缓存写入、缓存命中）
  * 是可选的展示项：默认收起，点分隔线正中的箭头展开成第二行，和上面 4 列对齐。
  */
-export function UsageHero({
+export const UsageHero = memo(function UsageHero({
   range,
   appType,
   providerName,
@@ -384,4 +384,4 @@ export function UsageHero({
       </HoverTip>
     </section>
   );
-}
+});

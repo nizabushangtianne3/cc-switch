@@ -67,12 +67,18 @@ vi.mock("@/lib/query/usage", async () => {
   };
 });
 
-vi.mock("@/components/usage/UsageHero", () => ({
-  UsageHero: (props: unknown) => {
-    usageHeroMock(props);
-    return <div data-testid="usage-hero" />;
-  },
-}));
+vi.mock("@/components/usage/UsageHero", async () => {
+  const { memo } = await vi.importActual<typeof import("react")>("react");
+  return {
+    // mock 也要包 memo：否则父组件重渲染时必然调用它，基准测不到真实组件的
+    // memo 契约（ProviderList 基准能测到，是 SortableProviderCard 那层真实
+    // memo 挡住了渲染）。
+    UsageHero: memo((props: unknown) => {
+      usageHeroMock(props);
+      return <div data-testid="usage-hero" />;
+    }),
+  };
+});
 
 vi.mock("@/components/usage/UsageTrendChart", () => ({
   UsageTrendChart: () => <div data-testid="usage-trend" />,
@@ -82,16 +88,20 @@ vi.mock("@/components/usage/UsageHeatmap", () => ({
   UsageHeatmap: () => <div data-testid="usage-heatmap" />,
 }));
 
-vi.mock("@/components/usage/RequestLogTable", () => ({
-  RequestLogTable: (props: { onOpenDetail?: (id: string) => void }) => {
-    requestLogTableMock(props);
-    return (
-      <button type="button" onClick={() => props.onOpenDetail?.("req-1")}>
-        open-row
-      </button>
-    );
-  },
-}));
+vi.mock("@/components/usage/RequestLogTable", async () => {
+  const { memo } = await vi.importActual<typeof import("react")>("react");
+  return {
+    // mock 也要包 memo：理由同 UsageHero（否则基准测不到 memo 契约）。
+    RequestLogTable: memo((props: { onOpenDetail?: (id: string) => void }) => {
+      requestLogTableMock(props);
+      return (
+        <button type="button" onClick={() => props.onOpenDetail?.("req-1")}>
+          open-row
+        </button>
+      );
+    }),
+  };
+});
 
 vi.mock("@/components/usage/RequestDetailPanel", () => ({
   RequestDetailPanel: (props: { requestId: string | null }) => {
@@ -221,6 +231,29 @@ describe("UsageDashboard", () => {
       deferredFiles: 0,
       errors: [],
     });
+  });
+
+  // 渲染基准：父组件重渲染（props 未变）时，分区组件不得连带渲染。
+  // rerender 必须每次构造新 element：复用同一 element 引用时 React 对整棵
+  // 子树 bailout，计数恒不增长，基准会失去意义。
+  it("re-renders no dashboard section when the parent re-renders (section memo baseline)", () => {
+    const { rerender } = renderDashboard();
+    const heroCalls = usageHeroMock.mock.calls.length;
+    const tableCalls = requestLogTableMock.mock.calls.length;
+    expect(heroCalls).toBeGreaterThan(0);
+    expect(tableCalls).toBeGreaterThan(0);
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <UsageDashboard />
+      </QueryClientProvider>,
+    );
+
+    expect(usageHeroMock.mock.calls.length).toBe(heroCalls);
+    expect(requestLogTableMock.mock.calls.length).toBe(tableCalls);
   });
 
   it("swaps the trend chart for the heatmap on the all-time range", async () => {

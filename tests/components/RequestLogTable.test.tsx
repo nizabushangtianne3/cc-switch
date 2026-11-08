@@ -158,11 +158,20 @@ describe("RequestLogTable", () => {
       );
     });
 
+    // 表格是 memo 组件：props 完全相同时父组件重渲染会被 bailout，而这里
+    // total 收缩要驱动组件重渲染去收敛页码。refreshIntervalMs 来自设置、
+    // 本来就不是恒定 0，用它当"父组件重渲染时至少一个 prop 变化"的载体。
+    const step = (refreshIntervalMs: number) => (
+      <RequestLogTable
+        range={range}
+        appType="all"
+        refreshIntervalMs={refreshIntervalMs}
+      />
+    );
+
     // 「今天」跨日后只剩 5 条：只有一页、翻页条不画，必须自己回到第一页
     total = 5;
-    rerender(
-      <RequestLogTable range={range} appType="all" refreshIntervalMs={0} />,
-    );
+    rerender(step(1));
     await waitFor(() => {
       expect(useRequestLogsMock).toHaveBeenLastCalledWith(
         expect.objectContaining({ page: 0 }),
@@ -174,7 +183,7 @@ describe("RequestLogTable", () => {
 
     // 还剩几页时收回到最后一页，而不是第一页
     total = 120;
-    rerender(table);
+    rerender(step(2));
     fireEvent.click(screen.getByRole("button", { name: "usage.nextPage" }));
     fireEvent.click(screen.getByRole("button", { name: "usage.nextPage" }));
     fireEvent.click(screen.getByRole("button", { name: "usage.nextPage" }));
@@ -184,9 +193,7 @@ describe("RequestLogTable", () => {
       );
     });
     total = 50;
-    rerender(
-      <RequestLogTable range={range} appType="all" refreshIntervalMs={0} />,
-    );
+    rerender(step(3));
     await waitFor(() => {
       expect(useRequestLogsMock).toHaveBeenLastCalledWith(
         expect.objectContaining({ page: 2 }),

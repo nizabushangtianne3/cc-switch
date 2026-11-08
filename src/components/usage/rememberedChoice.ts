@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 /**
  * 用量页「上次的选择」（页签、时间范围、趋势 / 热力图指标）记在本机 localStorage：
@@ -51,9 +51,14 @@ export function useRememberedChoice<T extends string>(
   const [value, setValue] = useState<T>(() =>
     readRememberedChoice(key, allowed, fallback),
   );
-  const update = (next: T) => {
-    setValue(next);
-    writeRememberedChoice(key, next);
-  };
+  // useCallback：调用方的 memo 子组件常把这个 setter 当 prop 传，每次渲染
+  // 重建会让它们的 memo 永远失效。key 不变时语义也不变。
+  const update = useCallback(
+    (next: T) => {
+      setValue(next);
+      writeRememberedChoice(key, next);
+    },
+    [key],
+  );
   return [value, update] as const;
 }

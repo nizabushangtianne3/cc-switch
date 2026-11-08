@@ -1,5 +1,6 @@
 import {
   cloneElement,
+  memo,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -177,7 +178,7 @@ function StatusBadge({
   );
 }
 
-export function RequestLogTable({
+export const RequestLogTable = memo(function RequestLogTable({
   range,
   appType: dashboardAppType,
   providerName,
@@ -718,4 +719,4 @@ export function RequestLogTable({
       />
     </div>
   );
-}
+});
