@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useTranslation } from "react-i18next";
 import {
@@ -277,7 +277,7 @@ function useContainerWidth() {
   return [ref, width] as const;
 }
 
-export function UsageTrendChart({
+export const UsageTrendChart = memo(function UsageTrendChart({
   range,
   metric,
   appType,
@@ -467,4 +467,4 @@ export function UsageTrendChart({
       </div>
     </section>
   );
-}
+});

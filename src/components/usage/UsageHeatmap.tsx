@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronDown, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -244,7 +244,7 @@ function buildSpan(
   return { start, end, weeks, monthLabels, totals };
 }
 
-export function UsageHeatmap({
+export const UsageHeatmap = memo(function UsageHeatmap({
   metric,
   appType,
   providerName,
@@ -476,4 +476,4 @@ export function UsageHeatmap({
       </div>
     </section>
   );
-}
+});
