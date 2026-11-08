@@ -1,8 +1,4 @@
 {
-  "app": {
-    "title": "CC Switch",
-    "description": "Claude Code, Codex ve Gemini CLI için Hepsi Bir Arada Asistan"
-  },
   "common": {
     "unsavedLeaveTitle": "Kaydedilmemiş değişiklikler",
     "unsavedLeaveMessage": "Ayrılırsanız bu editör sayfasındaki değişiklikler kaydedilmeyecektir.",
@@ -17,15 +13,11 @@
     "confirm": "Onayla",
     "close": "Kapat",
     "done": "Tamam",
-    "settings": "Ayarlar",
-    "about": "Hakkında",
     "version": "Sürüm",
     "loading": "Yükleniyor...",
     "notInstalled": "Kurulu değil",
-    "success": "Başarı",
     "error": "Hata",
     "unknown": "Bilinmiyor",
-    "enterValidValue": "Lütfen geçerli bir değer girin",
     "clear": "Temizle",
     "format": "Biçim",
     "formatSuccess": "Başarıyla biçimlendirildi",
@@ -34,10 +26,6 @@
     "view": "Görüntüle",
     "back": "Geri",
     "refresh": "Yenile",
-    "refreshing": "Yenileniyor...",
-    "import": "İçe aktar",
-    "all": "Tümü",
-    "search": "Ara",
     "enableAllForApp": "{{app}} için tümünü etkinleştir",
     "disableAllForApp": "{{app}} için tümünü devre dışı bırak",
     "bulkToggleFailed": "{{count}} öğeleri güncellenemedi",
@@ -45,12 +33,10 @@
     "actions": "Eylemler",
     "deleting": "Siliniyor...",
     "auto": "Otomatik",
-    "enabled": "Etkin",
     "notSet": "Ayarlanmadı",
     "collapse": "Daralt",
     "more": "Diğer",
-    "retry": "Yeniden dene",
-    "required": "gerekli"
+    "retry": "Yeniden dene"
   },
   "firstRunNotice": {
     "title": "CC Switch’e hoş geldiniz",
@@ -85,14 +71,6 @@
     "addToGlobalSettings": "Genel ayarlara ekle"
   },
   "header": {
-    "viewOnGithub": "GitHub’da görüntüle",
-    "toggleDarkMode": "Koyu moda geç",
-    "toggleLightMode": "Açık moda geç",
-    "addProvider": "Sağlayıcı Ekle",
-    "switchToChinese": "Çinceye geç",
-    "switchToEnglish": "İngilizceye geç",
-    "enterEditMode": "Düzenleme Moduna Girin",
-    "exitEditMode": "Düzenleme Modundan Çık",
     "windowMinimize": "Pencereyi simge durumuna küçült",
     "windowMaximize": "Pencereyi büyüt",
     "windowRestore": "Pencereyi geri yükle",
@@ -272,19 +250,9 @@
     "editCurrentNoticeFileEnd": "hemen; sonraki istek bunu kullanır.",
     "editCurrentNotice": "Bu, kullanımda olan sağlayıcıdır. Kaydetme hemen etkili olur; sonraki istek yeni ayarları kullanır."
   },
-  "claudeCode": {
-    "needsRouting": "Yönlendirme Gerekiyor",
-    "noRoutingSupport": "Yönlendirme Desteği Yok"
-  },
   "codex": {
-    "needsRouting": "Yönlendirme Gerekiyor",
-    "noRoutingSupport": "Yönlendirme Desteği Yok",
-    "officialRouting": "Resmi Hesap Yönlendirme",
-    "nativeLogin": "Codex Oturum aç",
-    "followCodexLogin": "Codex girişini takip edin",
     "followCodexLoginDescription": "Hesap mevcut Codex CLI giriş bilgileri ile değişir",
     "openAiAccount": "OpenAI hesabı",
-    "accountNotSelected": "Hesap seçilmedi",
     "chooseAccount": "Hesap seçin",
     "accountStatusUnavailable": "Hesap ayrıntıları yüklenemiyor",
     "boundAccountUnavailable": "Bağlı hesap kullanılamıyor",
@@ -296,10 +264,6 @@
     "modelModeDirect": "Doğrudan",
     "modelModeProxy": "Model Eşleme",
     "officialNotice": "Claude Desktop resmi sağlayıcıları yerleşik 1P oturum açma özelliğini kullanır. API anahtarı veya uç nokta URL'si gerekli değildir.",
-    "mode": "Model kullanımı",
-    "modeDirect": "Doğrudan",
-    "modeProxy": "Yönlendirme gerektirir",
-    "modelMappingToggle": "Model eşlemeye ihtiyaç var",
     "modelModeHint": "Sağlayıcınız yerel Claude modelleri sunuyorsa Doğrudan bağlantıyı kullanabilirsiniz. DeepSeek veya Kimi gibi üçüncü taraf modeller için Model eşleme kullanın.",
     "routeMapTitle": "Model eşleme",
     "routeMapHint": "Sonnet, Opus ve Haiku katmanlarının her biri için istekte kullanılacak gerçek modeli girin. DeepSeek veya Kimi gibi markalı modeller için menüde görünecek adı kullanın. Boş bırakılan katman, Sonnet katmanındaki modeli (veya ilk doldurduğunuz katmanın modelini) kullanır; böylece alt ajanların çağırdığı Haiku her zaman kullanılabilir.",
@@ -313,31 +277,19 @@
     "supports1mLabel": "1 milyon beyan edin",
     "supports1mShort": "1 milyon",
     "directModelListTitle": "Model Listesi",
-    "directModelListCollapsedHint": "Yerel Claude modeli sağlayıcılarında buna genellikle gerek yoktur. Claude Desktop, /v1/models uç noktasını otomatik sorgular.",
     "directModelListHint": "Claude Desktop için kullanılabilen Sonnet, Opus ve Haiku modellerini yapılandırın. Claude Desktop’ın /v1/models uç noktasını otomatik sorgulaması için boş bırakın. 1M seçeneğini işaretlemek, 1 milyon token bağlam desteğini bildirir.",
     "directModelInvalid": "Doğrudan modeller Claude Desktop tarafından tanınan Sonnet / Opus / Haiku model kimliklerini kullanmalıdır",
     "addModel": "Model ekle",
-    "addRoute": "Model ekle",
-    "routeInvalid": "Bir model rolü seçin ve istenen modeli girin",
     "routesRequired": "En az bir model eşlemesi gerekli",
     "statusTitle": "Claude Desktop yapılandırmasına dikkat edilmesi gerekiyor",
     "statusUnsupported": "Bu platform henüz Claude Desktop 3P konfigürasyonunun yazılmasını desteklemiyor.",
     "statusStaleRawModels": "Claude Desktop profili, Sonnet / Opus / Haiku rol ailelerinin dışındaki model kimliklerini içerir. Daha yeni Claude Desktop sürümleri bunu reddedebilir; onarmak için tekrar mevcut sağlayıcıya geçin.",
     "statusMissingRouteMappings": "Geçerli sağlayıcının model eşlemesi etkin ancak geçerli rota yok. Sağlayıcıyı düzenleyin ve en az bir eşleme ekleyin.",
     "statusGatewayTokenMissing": "Yerel yönlendirme belirteci henüz oluşturulmadı. Bu sağlayıcıya tekrar geçiş yapmak yeni bir yerel token yazacaktır.",
-    "statusBaseUrlMismatch": "Claude Desktop profili mevcut sağlayıcıdan farklı bir URL'ye işaret ediyor. Güncel: {{actual}}; beklenen: {{expected}}. Onarmak için tekrar mevcut sağlayıcıya geçin.",
-    "route": {
-      "tooltip": {
-        "active": "Claude Desktop yerel yönlendirme çalışıyor - {{address}}:{{port}}",
-        "inactive": "Model eşlemeye veya biçim dönüştürmeye ihtiyaç duyan sağlayıcılar için Claude Desktop yerel yönlendirmeyi açın. Yapılandırılmış adres: {{address}}:{{port}}"
-      },
-      "stopBlockedByTakeover": "Diğer uygulamalar hâlâ Yönlendirme modunda. Yönlendirme hizmetini durdurmadan önce onları Doğrudan bağlantı moduna döndürün."
-    }
+    "statusBaseUrlMismatch": "Claude Desktop profili mevcut sağlayıcıdan farklı bir URL'ye işaret ediyor. Güncel: {{actual}}; beklenen: {{expected}}. Onarmak için tekrar mevcut sağlayıcıya geçin."
   },
   "notifications": {
     "providerAdded": "Sağlayıcı eklendi",
-    "providerSaved": "Sağlayıcı yapılandırması kaydedildi",
-    "providerDeleted": "Sağlayıcı başarıyla silindi",
     "switchSuccess": "Geçiş başarılı!",
     "codexRestartRequired": "Başarıyla değiştirildi. Değişiklikleri uygulamak için istemciyi yeniden başlatın.",
     "geminiRestartRequired": "Başarıyla değiştirildi. Değişiklikleri uygulamak için Gemini CLI'yi yeniden başlatın.",
@@ -348,12 +300,8 @@
     "removeFromConfigFailed": "Sağlayıcı kaldırılamadı",
     "switchFailedTitle": "Geçiş başarısız oldu",
     "switchFailed": "Geçiş başarısız oldu: {{error}}",
-    "autoImported": "Mevcut yapılandırmadan oluşturulan varsayılan sağlayıcı",
     "addFailed": "Sağlayıcı eklenemedi: {{error}}",
-    "saveFailed": "Kaydetme başarısız oldu: {{error}}",
     "saveFailedGeneric": "Kaydetme başarısız oldu, lütfen tekrar deneyin",
-    "appliedToClaudePlugin": "Claude eklentisine uygulandı",
-    "removedFromClaudePlugin": "Claude eklentisinden kaldırıldı",
     "syncClaudePluginFailed": "Claude eklentisinin eşitlemeu başarısız oldu",
     "skipClaudeOnboardingFailed": "Claude Code ilk çalıştırma onayı atlanamadı",
     "clearClaudeOnboardingSkipFailed": "Claude Code ilk çalıştırma onayı geri yüklenemedi",
@@ -372,8 +320,6 @@
     "proxyReasonDesktopMapping": "model eşlemesi kullanıyor (Claude Desktop yalnızca Claude model adlarını kabul eder)",
     "proxyReasonManagedOAuth": "yönetilen OAuth oturum açma bilgilerini kullanır (yerel yönlendirme tarafından enjekte edilen token)",
     "proxyReasonRoutingRequired": "istekleri işlemek için yerel yönlendirme gerektirir",
-    "openAIFormatHint": "Bu sağlayıcı OpenAI uyumlu format kullanıyor ve yönlendirme hizmetinin etkinleştirilmesini gerektiriyor",
-    "copilotProxyHint": "GitHub Copilot, bir Claude sağlayıcısı olarak her zaman yerel yönlendirme gerektirir; yönlendirme, mevcut modele göre Sohbet Tamamlamalarını veya Yanıtlarını otomatik olarak seçer.",
     "openLinkFailed": "Bağlantı açılamadı",
     "openclawModelsRegistered": "Modeller /model listesine kaydedildi",
     "openclawDefaultModelSet": "Varsayılan model olarak ayarla",
@@ -392,11 +338,6 @@
     "removeProvider": "Sağlayıcıyı Kaldır",
     "removeProviderMessage": "\"{{name}}\" sağlayıcısını yapılandırmadan kaldırmak istediğinizden emin misiniz?\n\nKaldırma işleminden sonra bu sağlayıcı artık etkin olmayacak ancak yapılandırma verileri CC Switch’te saklanacak. İstediğiniz zaman yeniden ekleyebilirsiniz.",
     "piDefaultProviderWarning": "Pi'nin genel varsayılanı şu anda bu sağlayıcıyı işaret ediyor. Devam ederseniz Pi mevcut başka bir modeli deneyecektir; Bir sağlayıcıyı seçmek için /model'i veya başka bir sağlayıcıda oturum açmak için /login'i kullanın.",
-    "proxy": {
-      "title": "Yerel Yönlendirmeyi Etkinleştir",
-      "message": "Yerel yönlendirme gelişmiş bir özelliktir. Lütfen etkinleştirmeden önce nasıl çalıştığını anladığınızdan emin olun.\n\nDoğru yapılandırma için ilgili belgelere veya sağlayıcınıza danışmanızı öneririz.",
-      "confirm": "Anladım, etkinleştir"
-    },
     "failover": {
       "title": "Yedek Sağlayıcıya Geçişyi Etkinleştir",
       "message": "Yedek sağlayıcıya geçiş gelişmiş bir özelliktir. Lütfen etkinleştirmeden önce nasıl çalıştığını anladığınızdan emin olun.\n\nÖncelikle yedek sağlayıcıya geçiş kuyruğunda sağlayıcı önceliklerini yapılandırmanızı öneririz.",
@@ -426,7 +367,6 @@
     }
   },
   "settings": {
-    "title": "Ayarlar",
     "general": {
       "appearance": "Görünüm",
       "quotaDisplay": "Kota gösterimi",
@@ -453,41 +393,14 @@
       "minimizeToTrayHelp": "Açık olduğunda, kapat düğmesi yalnızca pencereyi gizler ve CC Switch sistem tepsisinde çalışmaya devam eder (hafif mod tepsi menüsündedir). Kapatıldığında kapatma düğmesi kapanır.",
       "terminalHelp": "Sağlayıcı kartlarındaki “Açık terminal”in kullandığı terminal. Mevcut değilse sistemin varsayılan terminali kullanılır."
     },
-    "tabGeneral": "Genel",
-    "tabAuth": "Kimlik doğrulama",
-    "tabAdvanced": "Gelişmiş",
-    "tabProxy": "Yönlendirme",
     "authCenter": {
       "description": "Sağlayıcı olarak GitHub Copilot, ChatGPT ve xAI aboneliklerini kullanın. Yönlendirme hizmeti kimlik bilgilerini enjekte eder, böylece bu sağlayıcılar Yönlendirme modunda çalışır (Codex'in resmî oturum açma entegrasyonu hariç). Antigravity hesapları agy'nin resmî oturum açma hesabını değiştirir.",
       "beta": "beta",
-      "copilotDescription": "GitHub Copilot hesaplarını yönetin",
-      "codexOauthDescription": "ChatGPT hesaplarını yönetin",
       "xaiOauthDescription": "xAI / Grok hesaplarını yönetin"
     },
     "advanced": {
-      "configDir": {
-        "title": "Yapılandırma Dizini",
-        "description": "Claude, Codex ve Gemini yapılandırmaları için depolama yollarını yönetin"
-      },
-      "proxy": {
-        "title": "Yerel Yönlendirme",
-        "description": "Yönlendirme hizmeti geçişini kontrol edin, durumu ve bağlantı noktası bilgilerini görüntüleyin",
-        "enableFeature": "Ana Sayfada Yönlendirme Geçişini Göster",
-        "enableFeatureDescription": "Etkinleştirildiğinde yönlendirme ve yedek sağlayıcıya geçiş geçişleri ana sayfanın üst kısmında görünecektir",
-        "enableStackMode": "Birleştirme modu anahtarını ana sayfada göster",
-        "enableStackModeDescription": "Açık olduğunda, Claude Code ve Codex için ana sayfa anahtarı Birleştirme moduna dönüşür: OpenCode'deki gibi birkaç sağlayıcı ekleyin ve bunların tüm modelleri istemcinin model listesinde görünür (Codex'nin önce yeniden başlatılması gerekir). Yedek sağlayıcıya geçiş yok. Bu ve yerel yönlendirme anahtarı birbirini dışlar; geçiş, önce Claude Code ve Codex uygulamasını doğrudan yönlendirmeye gönderir",
-        "enableFailoverToggle": "Yedek Sağlayıcıya Geçiş Geçişini Ana Sayfada Göster",
-        "enableFailoverToggleDescription": "Etkinleştirildiğinde, yedek sağlayıcıya geçiş geçişi ana sayfanın üst kısmında bağımsız olarak görünecektir",
-        "running": "Çalışıyor",
-        "stopped": "Durduruldu"
-      },
       "failover": {
-        "title": "Otomatik yedek sağlayıcıya geçiş",
-        "description": "Yedek sağlayıcıya geçiş kuyruğunu ve devre kesici stratejisini yapılandırma"
-      },
-      "pricing": {
-        "title": "Maliyet Fiyatlandırması",
-        "description": "Her model için token fiyatlandırma kurallarını yönetin"
+        "title": "Otomatik yedek sağlayıcıya geçiş"
       },
       "globalProxy": {
         "title": "Genel çıkış proxy’si",
@@ -510,7 +423,6 @@
         "description": "API isteği uyumluluk sorunlarını otomatik olarak düzeltin",
         "enabled": "Uyumluluk düzelticiyi etkinleştir",
         "requestGroup": "İstek düzeltme",
-        "responseGroup": "Yanıt düzeltme",
         "thinkingSignature": "Düşünme imzası düzeltme",
         "thinkingSignatureDescription": "Anthropic tipi bir sağlayıcı, düşünce imzası uyumsuzluğu veya yasa dışı istek hataları döndürdüğünde, düşünmeyle ilgili uyumsuz blokları otomatik olarak kaldırır ve aynı sağlayıcıyla bir kez daha dener",
         "thinkingBudget": "Düşünme bütçesi düzeltme",
@@ -555,9 +467,7 @@
       }
     },
     "language": "Dil",
-    "languageHint": "Arayüz dilini geçişten hemen sonra önizleyin, kaydettikten sonra kalıcı olarak etkili olur.",
     "theme": "Açık ve koyu",
-    "themeHint": "Uygulamanın görünüm temasını seçin, hemen geçerli olur.",
     "themeLight": "Ay'ın Aydınlık Yüzü",
     "themeDark": "Ay'ın Karanlık Yüzü",
     "themeSystem": "Sistem",
@@ -565,12 +475,10 @@
     "importExportHint": "Geçiş veya geri yükleme için veritabanı SQL yedeklerini içe veya dışa aktarın (içe aktarma yalnızca CC Switch tarafından dışa aktarılan yedeklemeleri destekler).",
     "exportConfig": "SQL Yedeklemesini Dışa Aktar",
     "selectConfigFile": "SQL Dosyasını Seçin",
-    "noFileSelected": "Hiçbir yapılandırma dosyası seçilmedi.",
     "import": "İçe aktar",
     "importing": "İçe aktarılıyor...",
     "importSuccess": "İçe Aktarma Başarılı!",
     "importFailed": "İçe Aktarma Başarısız",
-    "syncLiveFailed": "İçe aktarıldı ancak geçerli sağlayıcıyla eşitle edilemedi. Lütfen sağlayıcıyı manuel olarak yeniden seçin.",
     "importPartialSuccess": "Yapılandırma içe aktarıldı ancak geçerli sağlayıcıyla eşitle edilemedi.",
     "importPartialHint": "Canlı yapılandırmayı yenilemek için lütfen sağlayıcıyı manuel olarak yeniden seçin.",
     "configExported": "Yapılandırma şuraya aktarıldı:",
@@ -580,7 +488,6 @@
     "backupId": "Yedekleme Kimliği",
     "backupManager": {
       "title": "Veritabanı Yedeklemeleri",
-      "description": "Önceki bir duruma geri dönmek için otomatik veritabanı anlık görüntüleri",
       "empty": "Henüz yedekleme yok",
       "restore": "Geri yükle",
       "restoring": "Geri yükleniyor...",
@@ -786,7 +693,6 @@
         "customHint": "S3 uyumlu herhangi bir hizmet. Özel uç nokta gerekli."
       },
       "region": "Bölge",
-      "regionPlaceholder": "örneğin us-east-1",
       "bucket": "Bucket",
       "bucketPlaceholder": "örneğin my-cc-switch-bucket",
       "accessKeyId": "Erişim Anahtarı Kimliği",
@@ -804,10 +710,7 @@
       "enabledHint": "Manuel ve otomatik bulut işlemleri için S3 eşitlemeunu açın.",
       "mutualExclusionTitle": "Eşitleme Türünü Değiştir",
       "mutualExclusionMessage": "S3 eşitlemeunun etkinleştirilmesi mevcut WebDAV eşitlemeunu devre dışı bırakacaktır. Devam etmek?",
-      "mutualExclusionMessageReverse": "WebDAV eşitlemeunun etkinleştirilmesi mevcut S3 eşitlemeunu devre dışı bırakacaktır. Devam etmek?",
       "mutualExclusionFailed": "Eşitleme türü değiştirilemedi: {{error}}",
-      "testConnection": "Bağlantıyı Test Et",
-      "connectionOk": "S3 bağlantısı başarılı",
       "test": "Bağlantıyı Test Et",
       "testing": "Test ediliyor...",
       "testSuccess": "S3 bağlantısı başarılı",
@@ -838,8 +741,6 @@
       "saveBeforeSync": "Yüklemeyi/indirmeyi etkinleştirmek için önce yapılandırmayı kaydedin.",
       "fetchingRemote": "Uzak bilgiler getiriliyor...",
       "fetchRemoteFailed": "Uzak bilgiler getirilemedi. Lütfen yapılandırmayı ve ağı kontrol edin.",
-      "notConfigured": "S3 eşitlemeu yapılandırılmadı",
-      "disabled": "S3 eşitlemeu devre dışı",
       "confirmDownload": {
         "title": "S3'ten geri yükleme",
         "deviceName": "Yükleyen:",
@@ -867,22 +768,17 @@
     "languageOptionEnglish": "English",
     "languageOptionJapanese": "日本語",
     "languageOptionTurkish": "Türkçe",
-    "windowBehavior": "Pencere Davranışı",
-    "windowBehaviorHint": "Pencere simge durumuna küçültme ve Claude eklenti entegrasyon ilkelerini yapılandırın.",
     "launchOnStartup": "Sistem açılışında başlat",
-    "launchOnStartupDescription": "Sistem başlatıldığında CC Switch'yi otomatik olarak çalıştır",
     "silentStartup": "Sessiz Başlangıç",
     "silentStartupDescription": "Ana pencereyi göstermeden arka plan modunda başlat",
     "autoLaunchFailed": "Otomatik başlatma ayarlanamadı",
     "minimizeToTray": "Kapatıldığında tepsiye küçült",
-    "minimizeToTrayDescription": "İşaretlendiğinde kapat düğmesine basıldığında sistem tepsisinde gizlenir, aksi halde uygulama doğrudan çıkar.",
     "useAppWindowControls": "Uygulama düzeyinde pencere kontrollerini etkinleştir",
     "useAppWindowControlsDescription": "Uygulama başlığındaki yerleşik küçültme, büyütme/geri yükleme ve kapatma düğmelerini kullanın.",
     "enableClaudePluginIntegration": "Claude Code uzantısına uygula",
     "enableClaudePluginIntegrationDescription": "Etkinleştirildiğinde VS Code Claude Code uzantı sağlayıcısı bu uygulamayla geçiş yapacak",
     "skipClaudeOnboarding": "Claude Code ilk çalıştırma onayını atla",
     "skipClaudeOnboardingDescription": "İlk başlatmada Claude Code, bir tema seçmenizi ve bir Anthropic hesabında oturum açmanızı isteyen bir katılım akışı çalıştırır. Üçüncü taraf bir sağlayıcı kullanıyorsanız bu oturum açma işlemine ihtiyacınız yoktur; bu nedenle, bunu açmak doğrudan atlar. ~/.claude.json'a hasCompletedOnboarding: true yazılarak çalışır; kapatıldığında bu alan kaldırılır ve bir sonraki başlatmada katılım yeniden görünür.",
-    "codexAuth": "Codex Uygulama Geliştirmeleri",
     "codexQuotaProtection": {
       "title": "Resmî kota koruması",
       "help": "Kullanım eşiklerinden birine ulaşıldığında yeni resmî istekleri durdurur; üçüncü taraf modeller kullanılabilir kalır. Yalnızca CC Switch yerel yönlendirmesinden geçen Codex resmî isteklerini kapsar. Kullanım, resmî yanıtların zaten taşıdığı kota bilgisinden okunur; normal kullanımda ek istek gönderilmez. Yalnızca ilk istekte veya yaklaşık 5 dakikalık boşta kalmanın ardından ayrı bir kota sorgusu yapılır. Kullanım belirlenemezse (ağ sorunu, oturumun süresinin dolması vb.) istekler engellenmez, normal şekilde geçer. Önceden kabul edilmiş istekler ve diğer uygulamalar kullanımı eşiğin üzerine çıkarabilir; duraklatma sırasında normal kotanın tükenmesi Luna Reserve'i etkinleştirmez.",
@@ -910,12 +806,6 @@
     "unifyCodexHistoryRestoreNothing": "Geçerli Codex dizini için geri yüklenebilir geçiş yedeği yok",
     "unifyCodexHistoryRestoreSkippedToggleOn": "Birleşik oturum geçmişi yeniden etkinleştirildi; geri yükleme atlandı",
     "appVisibility": {
-      "title": "Ana Sayfa Ekranı",
-      "description": "Ana sayfada hangi uygulamaların gösterileceğini seçin",
-      "claudeDesc": "Anthropic Claude Code CLI",
-      "codexDesc": "OpenAI Codex CLI",
-      "geminiDesc": "Google Gemini CLI",
-      "opencodeDesc": "OpenCode CLI",
       "showProfileSwitcher": "Proje değiştiriciyi göster",
       "showProfileSwitcherDescription": "Proje değiştiriciyi ana sayfa başlığında göster",
       "showProviderSearch": "Sağlayıcı aramasını göster",
@@ -923,8 +813,6 @@
     },
     "terminal": {
       "title": "Tercih edilen terminal",
-      "description": "Terminal düğmesine tıklandığında hangi terminal uygulamasının kullanılacağını seçin",
-      "fallbackHint": "Seçilen terminal kullanılamıyorsa sistem varsayılanı kullanılacaktır",
       "options": {
         "macos": {
           "terminal": "Terminal.app",
@@ -958,19 +846,12 @@
     "appConfigDirDescription": "CC Switch yapılandırması için depolama konumunu özelleştirin (yapılandırma eşitlemeunu etkinleştirmek için bulut eşitleme klasörünü işaretleyin)",
     "browsePlaceholderApp": "örneğin, C:\\Users\\Administrator\\.cc-switch",
     "claudeConfigDir": "Claude Code Yapılandırma Dizini",
-    "claudeConfigDirDescription": "Claude yapılandırma dizinini (settings.json) geçersiz kılın. Özel dizinler .claude.json'u (MCP) dizinin içinde saklar; varsayılan ~/.claude dizini Claude Code'nin bölünmüş ~/.claude.json yolunu korur.",
     "codexConfigDir": "Codex Yapılandırma Dizini",
-    "codexConfigDirDescription": "Codex yapılandırma dizinini geçersiz kılın.",
     "geminiConfigDir": "Gemini Yapılandırma Dizini",
-    "geminiConfigDirDescription": "Gemini yapılandırma dizinini (.env) geçersiz kılın.",
     "grokConfigDir": "Grok Build Yapılandırma Dizini",
-    "grokConfigDirDescription": "Grok Build yapılandırma dizinini (config.toml) geçersiz kılın.",
     "opencodeConfigDir": "OpenCode Yapılandırma Dizini",
-    "opencodeConfigDirDescription": "OpenCode yapılandırma dizinini (opencode.json / opencode.jsonc) geçersiz kılın.",
     "openclawConfigDir": "OpenClaw Yapılandırma Dizini",
-    "openclawConfigDirDescription": "OpenClaw yapılandırma dizinini (openclaw.json) geçersiz kılın.",
     "hermesConfigDir": "Hermes Yapılandırma Dizini",
-    "hermesConfigDirDescription": "Hermes yapılandırma dizinini (config.yaml) geçersiz kılın.",
     "piConfigDir": "Pi Yapılandırma Dizini",
     "piConfigDirDescription": "Pi yapılandırma dizinini (models.json, talimat dosyaları, istemler, beceriler ve oturumlar) geçersiz kılın.",
     "ompConfigDir": "Oh My Pi Yapılandırma Dizini",
@@ -990,17 +871,13 @@
     "updating": "Güncelleniyor...",
     "checking": "Kontrol ediliyor...",
     "upToDate": "Güncel",
-    "aboutHint": "Sürüm bilgilerini ve güncelleme durumunu görüntüleyin.",
     "portableMode": "Taşınabilir mod: Güncellemeler manuel olarak indirilmeyi gerektirir.",
     "portableUpdateHint": "Taşınabilir modda yukarıdaki düğme yeni ZIP dosyasını indirir. ZIP'i açıp mevcut cc-switch.exe dosyasını yenisiyle değiştirin. Ayarlarınız ve verileriniz kullanıcı klasörünüzdeki .cc-switch dizininde bulunur ve etkilenmez.",
     "updateAvailable": "Yeni sürüm mevcut: {{version}}",
-    "updateBadge": "Güncelleme mevcut",
     "updateFailed": "Güncelleme yüklemesi başarısız oldu, indirme sayfası açılmaya çalışıldı.",
     "checkUpdateFailed": "Güncellemeler kontrol edilemedi. Lütfen daha sonra tekrar deneyin.",
     "openReleaseNotesFailed": "Sürüm notları açılamadı",
     "releaseNotes": "Sürüm Notları",
-    "viewReleaseNotes": "Bu sürümün sürüm notlarını görüntüle",
-    "viewCurrentReleaseNotes": "Mevcut sürüm sürüm notlarını görüntüle",
     "officialWebsite": "Resmi Web Sitesi",
     "github": "GitHub",
     "starPrompt": "CC Switch size yardımcı olduysa lütfen GitHub’da bize yıldız verin — bu bizim için çok şey ifade ediyor",
@@ -1018,11 +895,7 @@
     "uninstallCommandCopied": "Kaldırma komutu kopyalandı",
     "uninstallCommandCopyFailed": "Kopyalama başarısız. Komutu seçip elle kopyalayın.",
     "oneClickInstallHint": "Claude Code / Codex / Gemini CLI / Grok Build / OpenCode / OpenClaw / Hermes / Pi / MiniMax Code'yi yükleyin veya yükseltin",
-    "localEnvCheck": "Yerel ortam kontrolü",
     "updateAllTools": "Tümünü Güncelle ({{count}})",
-    "currentVersion": "Güncel Sürüm",
-    "latestVersion": "Son Sürüm",
-    "updateAvailableShort": "Güncelle",
     "toolInstall": "Yükle",
     "toolUninstall": "Kaldır",
     "toolUninstallConfirmTitle": "{{tool}} kaldırılsın mı?",
@@ -1038,7 +911,6 @@
     "toolUninstallRemaining": "Seçilen kurulum kaldırıldı; diğer kurulumlar duruyor",
     "toolUninstallCheckFailed": "Kaldırma sonrasında kurulum durumu doğrulanamadı. Yeniden denemek için “Güncellemeleri kontrol et” seçeneğine tıklayın.",
     "toolUpdate": "Güncelle",
-    "toolReady": "Hazır",
     "toolActionDone": "{{action}}, {{count}} takım(lar)ı için tamamlandı",
     "toolActionPartial": "{{action}}, {{succeeded}} için başarılı oldu, {{failed}} için başarısız oldu",
     "toolActionFailed": "Yükleme/güncelleme komutu başarısız oldu",
@@ -1048,12 +920,7 @@
     "toolActionVersionUnchangedTitle": "Sürüm değişmedi",
     "toolActionVersionUnchanged": "Hala {{version}}'de (en son: {{latest}}). Güncelleyici, güncellemeyi uygulamadan başarı bildirmiş olabilir.",
     "toolActionInstalledNotRunnable": "Yüklendi ancak mevcut ortamda çalışamıyor; lütfen kontrol edin",
-    "installedNotRunnable": "Yüklendi · çalıştırılamıyor",
-    "toolCheckEnv": "Ortamı kontrol edin",
     "toolDiagnose": "Yüklemeleri teşhis edin",
-    "toolDiagnosing": "Teşhis ediliyor…",
-    "toolConflictTitle": "Birden fazla kurulum algılandı",
-    "toolConflictHint": "Komut satırı Varsayılan olarak işaretlenmiş olanı kullanır; bir yükseltme diğerine yazılmış olabilir.",
     "toolConflictDefault": "Varsayılan",
     "toolConflictNotRunnable": "çalıştırılamıyor",
     "toolDiagnoseNoConflict": "Çakışan kurulum bulunamadı",
@@ -1072,8 +939,6 @@
       "macos": "macOS",
       "linux": "Linux"
     },
-    "wslShell": "Kabuk",
-    "wslShellFlag": "Bayrak",
     "installCommandsCopied": "Kurulum komutları kopyalandı",
     "installCommandsCopyFailed": "Kopyalama başarısız oldu, lütfen manuel olarak kopyalayın.",
     "importFailedError": "Yapılandırma içe aktarılamadı: {{message}}",
@@ -1084,9 +949,7 @@
     "restartLater": "Daha Sonra Yeniden Başlat",
     "restartFailed": "Uygulama yeniden başlatılamadı. Lütfen manuel olarak kapatıp yeniden açın.",
     "devModeRestartHint": "Geliştirici Modu: Otomatik yeniden başlatma desteklenmiyor, lütfen uygulamayı manuel olarak yeniden başlatın.",
-    "saving": "Kaydediliyor...",
     "globalProxy": {
-      "label": "Küresel Vekil",
       "hint": "Tüm istekleri proxy olarak gönderin (API, Beceri indirme vb.). Yerel yönlendirme etkinleştirildiğinde uygulama trafiği de bu proxy üzerinden yönlendirilir. Doğrudan bağlantı için boş bırakın.",
       "username": "Kullanıcı adı (isteğe bağlı)",
       "password": "Şifre (isteğe bağlı)",
@@ -1100,11 +963,9 @@
       "testFailed": "Bağlantı başarısız oldu: {{error}}",
       "pricingDefaultsTitle": "Fiyatlandırma Varsayılanları",
       "pricingDefaultsDescription": "Her uygulamanın fiyatlandırmanın istek modeline mi yoksa yanıt modeline göre mi eşleşeceğini seçin. Yalnızca yerel yönlendirmeden geçen istekler için geçerlidir.",
-      "pricingAppLabel": "Uygulama",
       "pricingModelSourceLabel": "Fiyatlandırma Modeli Kaynağı",
       "pricingModelSourceRequest": "İstek modeli",
       "pricingModelSourceResponse": "Yanıt modeli",
-      "pricingSave": "Fiyatlandırma Varsayılanlarını Kaydet",
       "pricingSaved": "Fiyatlandırma varsayılanları kaydedildi",
       "pricingSaveFailed": "Fiyatlandırma varsayılanları kaydedilemedi: {{error}}",
       "pricingLoadFailed": "Fiyatlandırma varsayılanları yüklenemedi: {{error}}"
@@ -1121,12 +982,18 @@
     "appConfig": {
       "configDir": "Yapılandırma dizini"
     },
-    "routing": {
-      "service": "Hizmet"
-    },
     "data": {
       "location": "Konum"
-    }
+    },
+    "currentVersion": "Güncel Sürüm",
+    "latestVersion": "Son Sürüm",
+    "updateAvailableShort": "Güncelle",
+    "toolReady": "Hazır",
+    "installedNotRunnable": "Yüklendi · çalıştırılamıyor",
+    "toolCheckEnv": "Ortamı kontrol edin",
+    "toolDiagnosing": "Teşhis ediliyor…",
+    "toolConflictTitle": "Birden fazla kurulum algılandı",
+    "toolConflictHint": "Komut satırı Varsayılan olarak işaretlenmiş olanı kullanır; bir yükseltme diğerine yazılmış olabilir."
   },
   "apps": {
     "claude": "Claude",
@@ -1152,13 +1019,9 @@
   },
   "pi": {
     "empty": {
-      "title": "Henüz API anahtar sağlayıcısı yok",
-      "description": "Ön ayar veya özel sağlayıcı eklemek için sağ üst köşedeki + düğmesini kullanın."
+      "title": "Henüz API anahtar sağlayıcısı yok"
     },
     "provider": {
-      "enabled": "Pi'de etkinleştirildi",
-      "enableFailed": "Bu sağlayıcı Pi'de etkinleştirilemedi",
-      "removed": "Pi'den kaldırıldı",
       "writeConflict": "Başka bir işlem Pi'nin yapılandırmasını güncellemektir. Kısa süre sonra tekrar deneyin."
     },
     "form": {
@@ -1171,7 +1034,6 @@
       "credentialRequired": "Bu ön ayar için API anahtarını girin",
       "absoluteHttpUrlRequired": "{{label}}, mutlak bir HTTP veya HTTPS URL'si olmalıdır",
       "positiveNumberRequired": "{{label}} 0'dan büyük bir sayı olmalıdır",
-      "models": "Model konfigürasyonu",
       "noModels": "Yapılandırılmış model yok",
       "addModel": "Model ekle",
       "removeModel": "Modeli kaldır",
@@ -1218,7 +1080,6 @@
       "providerKeyDuplicate": "Bu sağlayıcı anahtarı zaten mevcut"
     },
     "current": {
-      "readFailed": "Pi'nin sağlayıcı yapılandırması okunamadı",
       "stateUnavailableHint": "CC Switch, Pi'nin sağlayıcı yapılandırmasını okuyabilene kadar sağlayıcı değişiklikleri devre dışı bırakılır."
     },
     "prompts": {
@@ -1298,14 +1159,9 @@
       "templateRestored": "~/.pi/agent/prompts/{{slug}}.md geri yazdı"
     }
   },
-  "appSwitcher": {
-    "more": "Daha fazla uygulama"
-  },
   "grokBuild": {
-    "apiBackend": "API arka uç",
     "contextWindow": "Bağlam penceresi",
     "contextWindowInvalid": "Bağlam penceresi pozitif bir tam sayı olmalıdır",
-    "profile": "Müşteri modeli profili",
     "rawConfig": "config.toml",
     "invalidToml": "Geçersiz config.toml: {{error}}",
     "defaultModelPlaceholder": "örneğin grok-4.5",
@@ -1342,12 +1198,8 @@
     "minutesAgo": "{{count}} dakika önce",
     "hoursAgo": "{{count}} saat önce",
     "daysAgo": "{{count}} gün önce",
-    "roleSystem": "Sistem",
-    "roleTool": "Araç",
     "noResumeCommand": "Bu oturum sürdürülemez",
     "messageCopied": "Mesaj kopyalandı",
-    "expandContent": "Tüm içeriği genişlet",
-    "collapseContent": "Daralt",
     "helpTitle": "Oturumların nereden geldiği",
     "helpBody": "CC Switch, her uygulamanın bu bilgisayarda tuttuğu oturum kayıtlarını okur. ⋯ menüsündeki “Oturumların nerede saklandığı” konusuna bakın. Claude Desktop'nin kendine ait oturum kaydı yoktur.",
     "moreActions": "Daha fazla oturum eylemi",
@@ -1414,10 +1266,7 @@
     "nextSession": "Sonraki oturum",
     "prevShort": "Önceki",
     "nextShort": "Sonraki",
-    "copyPathAria": "{{path}} yolunu kopyala",
-    "copyPathTitle": "Yolu kopyala",
     "pathCopied": "{{path}} kopyalandı",
-    "messageCount": "{{count}} mesajları",
     "moreResumeOptions": "Devam etmenin diğer yolları",
     "copyCdResume": "“Cd ve devam ettir” komutunu kopyalayın",
     "cdResumeCopied": "“cd ve devam ettir” komutu kopyalandı",
@@ -1428,9 +1277,6 @@
     "noResumeHermes": "Hermes oturumlarının komut satırından sürdürülmesi henüz desteklenmiyor",
     "launchedIn": "{{terminal}}'de devam komutunu çalıştırdı",
     "launchFailed": "{{terminal}} açılamadı: {{error}}. Devam komutu kopyalandı; herhangi bir terminale yapıştırın.",
-    "onlyChat": "Yalnızca sohbet",
-    "questions": "İstemler",
-    "questionsMenu": "İsteme atla",
     "findInSession": "Oturumda bul",
     "findShort": "Bul",
     "findLabel": "Metin bul",
@@ -1449,11 +1295,6 @@
     "copyCode": "Kodu kopyala",
     "codeCopied": "Kod kopyalandı",
     "codeRegion": "{{lang}} kodu",
-    "toolCalls": "Araç çağrıları:",
-    "toolOutput": "Takım çıkışı · {{size}} karakterleri",
-    "toolOutputRegion": "Takım çıkışı",
-    "toolOutputMore": "{{count}} daha fazla satır",
-    "showAll": "Tümünü göster",
     "jumpLatest": "En son mesaja atla",
     "latest": "En son",
     "deleteOneTitle": "“{{title}}” oturumu silinsin mi?",
@@ -1468,36 +1309,9 @@
     "sessionDeletedNamed": "Silinen oturum “{{title}}”",
     "remoteImage": "Uzak görüntü",
     "reader": {
-      "timelineSummary": "Adımlar · {{steps}}",
-      "summaryCommands": "{{count}} komutları",
-      "summaryFiles": "{{count}} dosyaları değiştirildi",
-      "summaryErrors": "{{count}} başarısız oldu",
-      "summaryDuration": "⏱{{duration}}",
-      "summaryTokens": "{{tokens}} tok",
-      "expandTimeline": "Adımları genişlet",
-      "collapseTimeline": "Adımları daralt",
-      "expandAllTimelines": "Tüm adımları genişlet",
-      "moreFailures": "{{count}} daha başarısız oldu",
-      "stepExpand": "{{title}} ayrıntılarını göster",
-      "stepCollapse": "Gizle",
       "status": {
-        "success": "Başarılı",
-        "error": "Başarısız",
-        "interrupted": "Kesintiye uğradı",
-        "pending": "Çalışıyor",
-        "unknown": "Bilinmiyor"
+        "error": "Başarısız"
       },
-      "exitCode": "{{code}}'den çık",
-      "lines": "{{count}} hatları",
-      "moreLines": "{{count}} daha fazla satır",
-      "showAll": "Tümünü göster",
-      "loadMore": "Daha fazlasını yükle",
-      "tooLarge": "İçerik 2 MB'ı aşıyor. Kaynak dosya yolunu kopyalayın ve yerel olarak görüntüleyin.",
-      "loading": "Yükleniyor…",
-      "loadFailed": "İçeriğin tamamı yüklenemedi",
-      "params": "Girdi",
-      "output": "Çıktı",
-      "diff": "Değişiklikler",
       "thinking": {
         "claude": "Düşünüyorum…",
         "codex": "muhakeme",
@@ -1506,135 +1320,25 @@
         "pi": "Düşünüyorum…",
         "generic": "Düşünme"
       },
-      "thinkingMeta": "{{chars}} karakterleri · {{duration}}",
-      "thinkingChars": "{{chars}} karakterleri",
-      "thinkingRedacted": "Görünmüyor düşünmek",
-      "note": "Not",
-      "noteExpand": "Notun tamamını göster",
-      "noFinalReply": "Bu aşamada son yanıt yok",
-      "turnAborted": "Kesintiye uğradı",
-      "event": {
-        "compaction": "Bağlam sıkıştırılmış",
-        "modelChange": "Model {{model}} olarak değiştirildi",
-        "thinkingLevel": "Düşünme seviyesi: {{level}}",
-        "hookError": "Hook başarısız oldu",
-        "prLink": "Bağlantılı Halkla İlişkiler #{{number}}",
-        "prLinkPlain": "PR bağlantılı",
-        "slashCommand": "{{command}} koştu",
-        "subAgent": "Alt ajan {{name}}"
-      },
-      "injectedToggle": "Enjekte edilen bağlamı göster",
-      "injectedRow": "Bağlam · {{label}} · {{chars}} karakterleri",
       "image": {
-        "alt": "Resim {{index}}",
-        "open": "Daha büyük görüntüle",
-        "close": "Resmi kapat",
-        "copy": "Resmi kopyala",
-        "copied": "Resim kopyalandı",
-        "failed": "Resim yüklenemedi",
-        "loadRemote": "Uzak görüntüyü yükle",
-        "fit": "Pencereye sığdır",
-        "actualSize": "Gerçek boyut"
-      },
-      "link": {
-        "openExternal": "{{url}}'yi tarayıcıda açın"
+        "loadRemote": "Uzak görüntüyü yükle"
       },
       "path": {
         "copy": "Yolu kopyala",
         "reveal": "Finder'da Göster"
-      },
-      "merged": {
-        "explored": "{{files}} dosyalarını okuyun, {{searches}} kez arandı",
-        "mcpTimes": "{{server}} {{count}} kez çağrıldı"
-      },
-      "turnsCount": "{{turns}} dönüşleri · {{messages}} mesajları",
-      "questionsCount": "{{count}} istemleri",
-      "toolsCount": "{{count}} araç çağrıları",
-      "usage": {
-        "tokens": "{{tokens}} tokenleri",
-        "detail": "{{requests}} istekleri · API fiyatlarıyla tahmin edilmiştir\nGiriş {{input}} · Çıkış {{output}}\nÖnbelleğe yazma {{cacheWrite}} · Önbelleğe okuma {{cacheRead}}"
-      },
-      "loadingProgress": "Yüklendi {{loaded}} / {{total}}",
-      "verb": {
-        "run": "Çalıştır",
-        "read": "Oku",
-        "search": "Ara",
-        "edit": "Düzenle",
-        "write": "Yaz",
-        "web": "ağ",
-        "mcp": "MCP",
-        "agent": "Alt ajan",
-        "ask": "Sor",
-        "todo": "Yapılacaklar",
-        "other": "Araç",
-        "output": "Takım çıkışı"
-      },
-      "copyTurn": "Bu dönüşü kopyala",
-      "turnCopied": "Bu sıra kopyalandı",
-      "copyWithThinking": "Kopyalarken düşünmeyi dahil edin",
-      "filterAll": "Tümü",
-      "filterChat": "Sohbet",
-      "filterChanges": "Değişiklikler",
-      "filterLabel": "Görüntüle",
-      "exportMarkdown": "Markdown dosyası olarak dışa aktar",
-      "exportShort": "Dışa aktar",
-      "exported": "{{path}}'ye aktarıldı",
-      "exportFailed": "Dışa aktarma başarısız oldu: {{error}}",
-      "conversationRegion": "Konuşma içeriği",
-      "outlineTitle": "Konuşma",
-      "outlineToggle": "Konuşma taslağı",
-      "outlineEmptyQuestion": "(yalnızca görseller)",
-      "outlineSteps": "{{count}} adımları",
-      "outlineFailed": "Başarısız adımlar var",
-      "outlineAborted": "Kesintiye uğradı",
-      "outlineNoReply": "Yanıt yok",
-      "viewOptions": "Görüntüleme seçenekleri",
-      "noChanges": "Bu oturumda dosya değişikliği yok",
-      "rawMatch": "Kaynaktaki eşleşmeler",
-      "expandContent": "İçeriğin tamamını göster",
-      "collapseContent": "Daralt"
+      }
     }
   },
-  "console": {
-    "providerSwitchReceived": "Alınan sağlayıcı değiştirme etkinliği:",
-    "setupListenerFailed": "Sağlayıcı değiştirme dinleyicisi kurulamadı:",
-    "updateProviderFailed": "Güncelleme sağlayıcısı başarısız oldu:",
-    "autoImportFailed": "Otomatik içe aktarma varsayılan yapılandırması başarısız oldu:",
-    "openLinkFailed": "Bağlantı açılamadı:",
-    "getVersionFailed": "Sürüm bilgisi alınamadı:",
-    "loadSettingsFailed": "Ayarlar yüklenemedi:",
-    "getConfigPathFailed": "Yapılandırma yolu alınamadı:",
-    "getConfigDirFailed": "Yapılandırma dizini alınamadı:",
-    "detectPortableFailed": "Taşınabilir mod algılanamadı:",
-    "saveSettingsFailed": "Ayarlar kaydedilemedi:",
-    "updateFailed": "Güncelleme başarısız oldu:",
-    "checkUpdateFailed": "Güncelleme kontrolü başarısız oldu:",
-    "openConfigFolderFailed": "Yapılandırma klasörü açılamadı:",
-    "selectConfigDirFailed": "Yapılandırma dizini seçilemedi:",
-    "getDefaultConfigDirFailed": "Varsayılan yapılandırma dizini alınamadı:",
-    "openReleaseNotesFailed": "Sürüm notları açılamadı:"
-  },
   "providerForm": {
-    "supplierName": "Sağlayıcı Adı",
-    "supplierNameRequired": "Sağlayıcı Adı *",
-    "supplierNamePlaceholder": "ör. Anthropic Resmi",
-    "websiteUrl": "Web sitesi URL'si",
     "websiteUrlPlaceholder": "https://example.com (isteğe bağlı)",
     "apiEndpoint": "API Uç Nokta",
     "apiEndpointPlaceholder": "https://your-api-endpoint.com",
     "codexApiEndpointPlaceholder": "https://your-api-endpoint.com/v1",
     "manageAndTest": "Yönet ve Test Et",
-    "configContent": "Yapılandırma İçeriği",
     "officialNoApiKey": "Resmi oturum açma API Anahtarını gerektirmez, doğrudan kaydedin",
     "codexOfficialNoApiKey": "Resmi API Anahtarı gerektirmez, doğrudan kaydedin",
     "codexApiKeyAutoFill": "Sadece burayı doldurun, aşağıdaki auth.json otomatik olarak doldurulacaktır.",
     "apiKeyAutoFill": "Sadece burayı doldurun, aşağıdaki yapılandırma otomatik olarak doldurulacaktır.",
-    "cnOfficialApiKeyHint": "💡 Yalnızca API Anahtarını doldurmanız yeterlidir, bitiş noktası önceden ayarlanmıştır",
-    "aggregatorApiKeyHint": "💡 Yalnızca API Anahtarını doldurmanız yeterlidir, bitiş noktası önceden ayarlanmıştır",
-    "thirdPartyApiKeyHint": "💡 Yalnızca API Anahtarını doldurmanız yeterlidir, bitiş noktası önceden ayarlanmıştır",
-    "customApiKeyHint": "💡 Özel yapılandırma, gerekli tüm alanların manuel olarak doldurulmasını gerektirir",
-    "omoHint": "💡 OMO yapılandırması, Aracı modeli atamalarını yönetir ve hem oh-my-openagent.jsonc hem de oh-my-opencode.jsonc'yi destekler",
-    "officialHint": "💡 Resmi sağlayıcı tarayıcı girişini kullanıyor, API Anahtarına gerek yok",
     "providerKeyStatusLoading": "Sağlayıcı tanımlayıcı durumu hâlâ yükleniyor. Lütfen kısa süre sonra tekrar deneyin.",
     "getApiKey": "API Anahtarını Alın",
     "partnerPromotion": {
@@ -1699,19 +1403,12 @@
       "tokenfactory": "TokenFactory"
     },
     "parameterConfig": "Parametre Yapılandırması - {{name}} *",
-    "mainModel": "Ana Model (isteğe bağlı)",
-    "mainModelPlaceholder": "örneğin GLM-4.6",
-    "fastModel": "Hızlı Model (isteğe bağlı)",
-    "fastModelPlaceholder": "örneğin, GLM-4.5-Air",
-    "modelHint": "💡 Sağlayıcının varsayılan modelini kullanmak için boş bırakın",
     "apiHint": "💡 Claude API uyumlu hizmet uç noktasını doldurun, sondaki eğik çizgiden kaçının",
     "apiHintOAI": "💡 OpenAI Sohbet Tamamlamaları uyumlu hizmet uç noktasını doldurun, sondaki eğik çizgiden kaçının",
     "apiHintGeminiNative": "💡 https://generativelanguage.googleapis.com veya https://generativelanguage.googleapis.com/v1beta; gibi bir Gemini Yerel temel URL'yi tercih edin; proxy, modelleri/*:generateContent'i otomatik olarak ekleyecektir",
     "codexApiHint": "💡 OpenAI Yanıt formatıyla uyumlu hizmet uç noktasını doldurun",
     "fillSupplierName": "Lütfen sağlayıcı adını girin",
-    "fillConfigContent": "Lütfen yapılandırma içeriğini doldurun",
     "fillParameter": "Lütfen {{label}}'yi doldurun",
-    "fillTemplateValue": "Lütfen {{label}}'yi doldurun",
     "endpointRequired": "Resmi olmayan sağlayıcılar için API uç noktası gereklidir",
     "apiKeyRequired": "Resmi olmayan sağlayıcılar için API Anahtarı gereklidir",
     "softValidation": {
@@ -1719,14 +1416,6 @@
       "hint": "Yine de kaydedilsin mi? Bu sağlayıcıya geçiş başarısız olabilir; bunları daha sonra doldurabilirsiniz.",
       "saveAnyway": "Yine de kaydet"
     },
-    "configJsonError": "Yapılandırma JSON biçim hatası, lütfen sözdizimini kontrol edin",
-    "authJsonRequired": "auth.json bir JSON nesnesi olmalıdır",
-    "authJsonError": "auth.json biçim hatası, lütfen JSON sözdizimini kontrol edin",
-    "fillAuthJson": "Lütfen auth.json yapılandırmasını doldurun",
-    "fillApiKey": "Lütfen OPENAI_API_KEY'i doldurun",
-    "visitWebsite": "{{url}}'yi ziyaret edin",
-    "anthropicModel": "Ana Model",
-    "anthropicSmallFastModel": "Hızlı Model",
     "apiFormat": "Yukarı Akış Formatı",
     "customUserAgent": "Özel Kullanıcı Aracısı",
     "customUserAgentInvalid": "Kullanıcı Aracısı kontrol karakterleri (ör. satır sonları) içermemelidir; aksi takdirde göz ardı edilecektir.",
@@ -1744,21 +1433,12 @@
     "apiFormatOpenAIChat": "OpenAI Sohbet Tamamlamaları (Yönlendirme gerektirir)",
     "apiFormatOpenAIResponses": "OpenAI Yanıtları API (Yönlendirme gerektirir)",
     "apiFormatGeminiNative": "Gemini yerel generateContent (Yönlendirme gerekir)",
-    "codexApiFormatResponses": "OpenAI Yanıtları API (Yerel)",
-    "codexApiFormatOpenAIChat": "OpenAI Sohbet Tamamlamaları (Yönlendirme gerektirir)",
-    "codexApiFormatHint": "Bu sağlayıcı tarafından gerçekten desteklenen Codex API biçimini seçin; yapılandırma, daha yeni Codex sürümleri için Yanıtlar'da kalırken Sohbet Tamamlamaları yerel yönlendirme yoluyla dönüştürülür.",
     "authField": "Kimlik Doğrulama Alanı",
     "authFieldAuthToken": "ANTHROPIC_AUTH_TOKEN (Varsayılan)",
     "authFieldApiKey": "ANTHROPIC_API_KEY",
     "authFieldHint": "Doğrudan modda bu, settings.json'a yazılan değişken adıdır; Yönlendirme yoluyla AUTH_TOKEN, Taşıyıcı olarak yukarı yönde ve API_KEY, x-api-key olarak gönderilir.",
     "apiHintResponses": "💡 OpenAI Yanıtlarını doldurun API uyumlu hizmet uç noktası, sondaki eğik çizgiden kaçının",
-    "anthropicDefaultHaikuModel": "Varsayılan Haiku Modeli",
-    "anthropicDefaultSonnetModel": "Varsayılan Sonnet Modeli",
-    "anthropicDefaultOpusModel": "Varsayılan Opus Modeli",
     "modelPlaceholder": "",
-    "smallModelPlaceholder": "",
-    "haikuModelPlaceholder": "",
-    "modelHelper": "İsteğe bağlı: Kullanılacak varsayılan Claude modelini belirtin, sistem varsayılanını kullanmak için boş bırakın.",
     "modelMappingLabel": "Model Eşleme",
     "modelMappingHint": "Görünen adlar yalnızca /model menüsünü etkiler; 1M yalnızca bir Claude Code bağlam yeteneği bildirimidir.",
     "stackModelsLabel": "Modeller",
@@ -1766,7 +1446,6 @@
     "stackModelDefaultHelp": "Bu modeller Claude Code'nin /model menüsünde görünür ve bir tanesini seçtiğinizde istekler doğrudan bu sağlayıcıya gönderilir. İlk satır varsayılan modeldir ve bu kartın ANTHROPIC_MODEL'i olarak da yazılır.",
     "stackModelsEmpty": "Yapılandırılmış model yok: Bu sağlayıcı, birleştirmeya eklendikten sonra model seçicide görünmeyecek",
     "stackModelPlaceholder": "örneğin deepseek-v4-pro",
-    "stackModelDefault": "Varsayılan model",
     "stackLayout": {
       "noModels": "Model listesi boş: Bu sağlayıcı, birleştirmeya eklendikten sonra model seçicide görünmeyecek"
     },
@@ -1836,36 +1515,15 @@
     "directModeFormatSwitch": "Bu biçim doğrudan modda çalışmaz; Bu kartı kullanmak için yönlendirmeye veya Birleştirme'ya geçin."
   },
   "copilot": {
-    "authSection": "GitHub Copilot Kimlik Doğrulaması",
-    "authStatus": "Kimlik Doğrulama Durumu",
-    "authenticated": "{{username}} olarak kimliği doğrulandı",
-    "notAuthenticated": "Kimliği doğrulanmadı",
     "loginWithGitHub": "GitHub ile giriş yapın",
     "githubAccount": "GitHub hesabı",
     "manageAccounts": "Hesapları yönet",
     "loginRequired": "Lütfen önce GitHub Copilot'de oturum açın",
     "statusLoading": "Hesap durumu yükleniyor...",
-    "statusUnavailable": "Durum kullanılamıyor",
     "statusLoadFailed": "GitHub Copilot hesap durumu yüklenemedi. Lütfen tekrar deneyin.",
-    "waitingForAuth": "Yetki bekleniyor...",
-    "enterCode": "Lütfen kodu tarayıcınıza girin:",
-    "logout": "Oturumu kapat",
-    "authSuccess": "GitHub Copilot kimlik doğrulaması başarılı",
-    "authFailed": "Kimlik doğrulama başarısız oldu: {{error}}",
-    "authTimeout": "Kimlik doğrulama zaman aşımına uğradı, lütfen tekrar deneyin",
-    "tokenExpired": "Belirtecin süresi doldu, lütfen yeniden kimlik doğrulaması yapın",
-    "accountCount": "{{count}} hesap(lar)ı",
-    "selectAccount": "Hesap Seçin",
     "selectAccountPlaceholder": "Bir GitHub hesabı seçin",
     "useDefaultAccount": "Varsayılan hesabı kullan",
-    "loggedInAccounts": "Oturum açmış hesaplar",
-    "defaultAccount": "Varsayılan",
-    "selected": "Seçildi",
-    "removeAccount": "Hesabı kaldır",
-    "setAsDefault": "Varsayılan olarak ayarla",
-    "addAnotherAccount": "Başka bir hesap ekle",
     "retry": "Yeniden dene",
-    "copyCode": "Kodu kopyala",
     "migrationFailed": "Eski kimlik doğrulama geçişi başarısız oldu: {{error}}",
     "loadModelsFailed": "Copilot modelleri yüklenemedi",
     "deploymentType": "GitHub Dağıtım Türü",
@@ -1876,47 +1534,28 @@
     "automaticFormatHint": "Yönlendirme, her model için Copilot üst akış biçimini seçer; elle belirlenen biçim ayarları yok sayılır."
   },
   "codexOauth": {
-    "authStatus": "Kimlik doğrulama durumu",
-    "notAuthenticated": "Kimliği doğrulanmadı",
     "loginRequired": "Lütfen önce ChatGPT'de oturum açın",
     "statusLoading": "Hesap durumu yükleniyor...",
-    "statusUnavailable": "Durum kullanılamıyor",
     "statusLoadFailed": "ChatGPT hesap durumu yüklenemedi. Lütfen tekrar deneyin.",
-    "waitingForAuth": "Yetki bekleniyor...",
-    "enterCode": "Kodu tarayıcınıza girin:",
-    "accountCount": "{{count}} hesap(lar)ı",
     "selectAccount": "Hesap seçin",
-    "chatgptAccount": "ChatGPT hesabı",
     "accountToUse": "Kullanılacak hesap",
     "signInMethod": "Oturum açma yöntemi",
-    "manageAccounts": "Hesapları yönet",
     "selectAccountPlaceholder": "Bir ChatGPT hesabı seçin",
     "officialAccountPlaceholder": "Bir oturum açma yöntemi seçin",
     "addOrManageAccounts": "ChatGPT hesaplarını ekleyin veya yönetin",
     "explicitSelectionRequired": "Bir oturum açma yöntemi seçin",
     "useDefaultAccount": "Varsayılan hesabı kullan",
     "noneOptionLabel": "Codex girişini takip edin",
-    "reauthDescription": "Tarayıcı oturum açma davranışına uyum sağlamak için bu hesapların, gerekli oturum açma kimlik bilgilerini (id_token) geri yüklemek üzere yeniden oturum açması gerekir. Yeniden kimlik doğrulaması yapıldıktan sonra yönetilen bağlama için kullanılabilirler.",
     "reauthBadge": "Yeniden giriş yapılması gerekiyor",
-    "reauthLogin": "Yeniden giriş yap",
     "reauthSelectHint": "Yönetilen bağlamayı etkinleştirmek için bu hesabın tekrar oturum açması gerekiyor.",
     "reauthNow": "Şimdi yeniden giriş yapın",
     "duplicateAccount": "Bu ChatGPT hesabı zaten eklenmiş. Mevcut hesabı kullanın.",
-    "loggedInAccounts": "Oturum açmış hesaplar",
-    "defaultAccount": "Varsayılan",
-    "selected": "Seçildi",
-    "removeAccount": "Hesabı kaldır",
-    "setAsDefault": "Varsayılan olarak ayarla",
-    "addAnotherAccount": "Başka bir hesap ekle",
-    "logoutAll": "Tüm hesaplardan çıkış yapın",
     "retry": "Yeniden dene",
-    "copyCode": "Kodu kopyala",
     "fastMode": "FAST modu",
     "fastModeDescription": "Daha düşük gecikme süresi için service_tier=\"priority\" gönderin. Varsayılan olarak kapalı — etkinleştirilmesi ChatGPT kotanızı daha yüksek oranda tüketir.",
     "loginMethod": "Oturum açma yöntemi",
     "browserLogin": "Tarayıcıyla oturum aç",
     "deviceCodeLogin": "Cihaz koduyla oturum aç",
-    "openBrowserLogin": "Tarayıcıda oturum açma sayfasını aç",
     "loginExpired": "Oturum süresi doldu. Lütfen yeniden deneyin."
   },
   "xaiOauth": {
@@ -1969,8 +1608,6 @@
     "testSpeed": "Test et",
     "testing": "Test etme",
     "addEndpointPlaceholder": "https://api.example.com",
-    "done": "Tamam",
-    "noEndpoints": "Uç nokta yok",
     "failed": "Başarısız",
     "enterValidUrl": "Lütfen geçerli bir URL girin",
     "invalidUrlFormat": "Geçersiz URL biçimi",
@@ -1978,12 +1615,7 @@
     "urlExists": "Bu URL zaten mevcut",
     "saveFailed": "Kaydetme başarısız oldu, lütfen tekrar deneyin",
     "loadEndpointsFailed": "Özel uç noktalar yüklenemedi:",
-    "addEndpointFailed": "Özel uç nokta eklenemedi:",
-    "removeEndpointFailed": "Özel uç nokta kaldırılamadı:",
-    "removeFailed": "Kaldırma başarısız oldu: {{error}}",
-    "updateLastUsedFailed": "Uç noktanın son kullanıldığı zaman güncellenemedi",
     "pleaseAddEndpoint": "Lütfen önce bir uç nokta ekleyin",
-    "testUnavailable": "Hız testi kullanılamıyor",
     "noResult": "Sonuç döndürülmedi",
     "testFailed": "Hız testi başarısız oldu: {{error}}",
     "empty": "Uç nokta yok"
@@ -2000,7 +1632,6 @@
     "enableRemoteCompaction": "Uzaktan sıkıştırmayı etkinleştir",
     "remoteCompactionHint": "Etkinleştirildiğinde, aktif model_providers giriş adı OpenAI olarak yazılır, böylece Codex uzaktan sıkıştırmayı deneyebilir.",
     "apiUrlLabel": "API İstek URL'si",
-    "saveFailed": "Kaydetme başarısız oldu: {{error}}",
     "upstreamFormatLabel": "Yukarı Akış Formatı",
     "upstreamFormatAuto": "Otomatik (model yetenekleri)",
     "upstreamFormatCopilotResponses": "Yanıtlar (yönlendirme gerekli)",
@@ -2026,7 +1657,6 @@
     "contextWindow1M": "1 Milyon Bağlam Penceresi",
     "contextWindowPlaceholder": "örneğin 128000",
     "autoCompactLimit": "Otomatik Sıkıştırma Limiti",
-    "autoCompactLimitPlaceholder": "örneğin 90000",
     "defaultModelLabel": "Varsayılan Model",
     "defaultModelPlaceholder": "örneğin gpt-5.6-sol",
     "defaultModelHint": "Codex modeli varsayılan olarak talep eder. Bir model listesi eklediğinizde ilk satırı varsayılan model olur.",
@@ -2101,7 +1731,6 @@
     "modelId": "Model Kimliği",
     "modelName": "Görünen Ad",
     "noModels": "Yapılandırılmış model yok",
-    "modelsRequired": "Lütfen en az bir model ekleyin",
     "toggleModelDetails": "Model ayrıntılarını değiştir",
     "providerKey": "Sağlayıcı Anahtarı",
     "providerKeyPlaceholder": "my-provider",
@@ -2138,15 +1767,8 @@
   "providerPreset": {
     "label": "Sağlayıcı Ön Ayarı",
     "custom": "Özel Yapılandırma",
-    "other": "Diğer",
-    "hint": "Bir ön ayar seçtikten sonra aşağıdaki alanları ayarlamaya devam edebilirsiniz.",
-    "searchTooltip": "Ön ayarları arayın",
     "searchAriaLabel": "Sağlayıcı ön ayarlarında arama yapın",
     "searchPlaceholder": "Adı veya URL'yi arayın, ör. kimi, zhipu, açık yönlendirici",
-    "sortAriaLabel": "Ön ayarlı sıralamayı değiştir",
-    "sortNameAscTooltip": "A'dan Z'ye ada göre sırala",
-    "sortOriginalTooltip": "Orijinal siparişi geri yükle",
-    "noSearchResults": "Aramanızla eşleşen hiçbir sağlayıcı ön ayarı yok.",
     "clearSearch": "Aramayı temizle",
     "categoriesLabel": "Önceden ayarlanmış kategoriler",
     "group": {
@@ -2195,7 +1817,6 @@
       "volcengine": "Volcengin",
       "tencent": "Tencent Bulutu"
     },
-    "version": {},
     "switchVersionTitle": "{{version}}'ye geçilsin mi?",
     "switchVersionMessage": "Yeni sürüm için form yeniden doldurulacaktır. Girdiğiniz API anahtarı ve diğer değişiklikler silinecektir.",
     "switchVersionConfirm": "Geçiş yap",
@@ -2219,11 +1840,7 @@
     "regionLabel": "Bölge"
   },
   "usage": {
-    "title": "Kullanım İstatistikleri",
     "subtitle": "Yapay zeka modeli kullanımını ve maliyet istatistiklerini görüntüleyin",
-    "today": "24 Saat",
-    "last7days": "7 Gün",
-    "last30days": "30 Gün",
     "presetToday": "Bugün",
     "preset1d": "Son 24 saat",
     "preset7d": "Son 7 gün",
@@ -2234,15 +1851,7 @@
     "totalCost": "Toplam Maliyet",
     "cost": "Maliyet",
     "unpriced": "Fiyatlandırılmamış",
-    "perMillion": "(milyon başına)",
-    "trends": "Kullanım Trendleri",
-    "rangeToday": "Son 24 saat (saatlik)",
-    "rangeLast7Days": "Son 7 gün",
-    "rangeLast30Days": "Son 30 gün",
-    "totalTokens": "Yeni Tokenlar (Giriş+Çıkış)",
-    "cacheTokens": "Önbellek Belirteçleri",
     "realTotal": "İşlenen Tokenlar",
-    "realTotalHint": "Giriş + Çıkış + Önbelleğe Yazma + Önbelle Okuma",
     "freshInput": "Önbelleksiz girdi",
     "cacheHitRate": "Önbellek İsabet Oranı",
     "requestLogs": "İstek günlüğü",
@@ -2250,16 +1859,10 @@
     "modelStats": "Model İstatistikleri",
     "time": "Zaman",
     "provider": "Sağlayıcı",
-    "billingModel": "Faturalandırma Modeli",
     "inputTokens": "Girdi",
     "outputTokens": "Çıktı",
     "cacheReadTokens": "Önbellek İsabeti",
-    "cacheCreationTokens": "Önbellek Oluşturma",
-    "timingInfo": "Süre/TTFT",
-    "status": "Durum",
-    "multiplier": "Çarpan",
     "requestModel": "Talep Modeli",
-    "responseModel": "Tepki Modeli",
     "noData": "Veri yok",
     "unknownProvider": "Bilinmeyen Sağlayıcı",
     "sessionProvider": {
@@ -2272,26 +1875,12 @@
       "label": "{{app}} · DeepSeek hesabı (OAuth)",
       "hint": "DeepSeek hesabı oturumuyla yapılan istekler için oturum günlüklerinden okunur; Web ve Desktop bu oturumu paylaştığından kullanımları birleştirilir"
     },
-    "stream": "Akış",
-    "nonStream": "Yayın dışı",
-    "source": "Kaynak",
-    "requestsLabel": "istekler",
-    "costLabel": "toplam maliyet",
     "appFilter": {
       "all": "Tümü",
-      "claude": "Claude Code",
-      "codex": "Codex",
-      "gemini": "Gemini",
-      "opencode": "OpenCode",
-      "grokbuild": "Grok Build",
-      "pi": "Pi",
-      "mcode": "MiniMax Code",
       "label": "Uygulamaya göre filtrele"
     },
     "rawInputLabel": "Ham",
     "sessionSync": {
-      "title": "Oturum Günlüklerini Otomatik Tarama",
-      "description": "Kullanımı izlemek için her istemcinin yerel oturum günlüklerini periyodik olarak tarar; kapalıyken günlükler yalnızca manuel eşitlemeda taranır",
       "syncNow": "Şimdi eşitle",
       "syncCompleted": "Eşitleme tamamlandı: {{imported}} içe aktarıldı, {{files}} dosyaları tarandı, {{errors}} hataları",
       "syncFailed": "Oturum kullanımı eşitlemeu başarısız oldu: {{error}}"
@@ -2300,7 +1889,6 @@
       "title": "Codex Kullanım Bakımı",
       "description": "Yerel kullanıma sunma günlüklerinden Codex oturum kullanımını yeniden oluşturun",
       "warning": "Öncelikle veritabanı yedeklenir. Kaynağı JSONL silinen geçmiş yeniden içe aktarılamaz.",
-      "action": "Codex Kullanımını Yeniden Oluşturun",
       "confirmTitle": "Codex kullanımı yeniden oluşturulsun mu?",
       "confirmMessage": "Bu, mevcut Codex oturum ayrıntılarını ve birleştirmeları temizler, ardından bunları yerel Codex günlüklerinden tekrar içe aktarır.\n\nSilinen günlüklerle geçmiş kaybolacak. Ana kullanıma sunumu eksik olan çatallar ertelenecektir.",
       "confirmAction": "Yedekleme ve Yeniden Oluşturma",
@@ -2309,11 +1897,9 @@
       "actionEllipsis": "Codex Kullanımını Yeniden Oluşturun"
     },
     "totalRecords": "Toplam {{total}} kayıt",
-    "goToPage": "Git",
     "pageInputPlaceholder": "Sayfa",
     "modelPricing": "Model Fiyatlandırması",
     "loadPricingError": "Fiyatlandırma verileri yüklenemedi",
-    "modelPricingDesc": "Her model için token maliyetlerini yapılandırma",
     "noPricingData": "Fiyatlandırma verisi yok. Model fiyatlandırma yapılandırmasını eklemek için \"Ekle\"yi tıklayın.",
     "model": "Model",
     "pricingModel": "Fiyatlandırma Modeli",
@@ -2325,7 +1911,6 @@
     "deleteConfirmTitle": "Silmeyi Onayla",
     "deleteConfirmDesc": "Bu model fiyatını silmek istediğinizden emin misiniz? Bu eylem geri alınamaz.",
     "queryFailed": "Sorgu başarısız oldu",
-    "refreshUsage": "Kullanımı yenile",
     "planUsage": "Kullanım planı",
     "invalid": "Süresi doldu",
     "total": "Toplam:",
@@ -2340,12 +1925,8 @@
     "collapse": "Daralt",
     "modelIdPlaceholder": "ör. claude-3-5-sonnet-20241022",
     "displayNamePlaceholder": "örneğin Claude 3.5 Sonnet",
-    "appType": "Uygulama Türü",
     "statusCode": "Durum Kodu",
-    "allSources": "Tüm Kaynaklar",
     "allModels": "Tüm Modeller",
-    "filterBySource": "Kaynağa göre filtrele",
-    "filterByModel": "Modele göre filtrele",
     "refreshInterval": "Oturum günlüğü tarama aralığı",
     "timeRange": "Zaman Aralığı",
     "customRange": "Takvim Filtresi",
@@ -2354,24 +1935,16 @@
     "endTime": "Bitiş Zamanı",
     "liveEndTime": "Bitiş zamanı şimdiki zamanı takip eder",
     "liveEndTimeNow": "Şimdi",
-    "input": "Girdi",
-    "output": "Çıktı",
     "cacheWrite": "Yaratılış",
     "cacheWriteNotReported": "OpenAI protokolü önbellek oluşturmayı ayırt etmez; yalnızca önbellek isabetleri raporlanır",
     "cacheWritePartial": "Bazı protokoller (örneğin OpenAI) önbellek oluşturulmasını bildirmez; değer eksik olabilir",
     "cacheRead": "Vur",
-    "baseCost": "Baz",
     "costMultiplier": "Maliyet Çarpanı",
     "withMultiplier": "çarpanlı",
     "requestDetail": "Talep Detayı",
     "requestNotFound": "İstek bulunamadı",
     "requestLoadFailed": "İstek ayrıntıları yüklenemedi",
     "basicInfo": "Temel Bilgiler",
-    "tokenUsage": "Token Kullanımı",
-    "cacheCreationCost": "Önbellek Oluşturma Maliyeti",
-    "costBreakdown": "Maliyet Dağılımı",
-    "performance": "Performans",
-    "latency": "Gecikme",
     "errorMessage": "Hata Mesajı",
     "requests": "İstekler",
     "tokens": "Tokenlar",
@@ -2379,15 +1952,12 @@
     "avgLatency": "Ortalama Gecikme",
     "successRate": "Başarı Oranı",
     "requestId": "Talep Kimliği",
-    "never": "Asla",
     "modelId": "Model Kimliği",
     "modelIdRequired": "Model kimliği gerekli",
     "inputCostPerMillion": "Girdi Maliyeti (milyon token başına, ABD Doları)",
     "outputCostPerMillion": "Çıktı Maliyeti (milyon token başına, ABD Doları)",
     "invalidPrice": "Fiyat negatif olmamalıdır",
-    "invalidTimeRange": "Lütfen tam başlangıç/bitiş zamanını seçin",
     "invalidTimeRangeOrder": "Başlangıç zamanı bitiş zamanından sonra olamaz",
-    "timeRangeTooLarge": "Zaman aralığı çok geniş, lütfen daraltın",
     "addPricing": "Fiyatlandırma Ekle",
     "editPricing": "Fiyatlandırmayı Düzenle",
     "pricingAdded": "Fiyatlandırma eklendi",
@@ -2408,7 +1978,6 @@
     "modelsDevDefaultHint": "En son piyasaya sürülen {{shown}} modelleri gösteriliyor ({{total}}'nin) — tümünü aramak için yazın",
     "modelsDevAutoSync": {
       "title": "Otomatik models.dev fiyatlandırma eşitlemeu",
-      "description": "Etkinleştirildiğinde, CC Switch piyasaya sürüldüğünde seçilen fiyatları periyodik olarak alın ve bunları yerel fiyatlandırma dosyanızda saklayın.",
       "enabled": "Etkin",
       "disabled": "Devre dışı",
       "enableConfirmTitle": "Otomatik fiyatlandırma eşitlemeu etkinleştirilsin mi?",
@@ -2429,8 +1998,6 @@
       "syncFailed": "Fiyatlandırma eşitlemeu başarısız oldu: {{error}}",
       "configLoadFailed": "Yerel fiyatlandırma yapılandırması yüklenemedi: {{error}}",
       "neverSynced": "Asla",
-      "lastSync": "Son eşitleme",
-      "commonStatus": "Ortak modeller",
       "lastError": "Son otomatik eşitleme başarısız oldu: {{error}}",
       "localFile": "Yerel fiyatlandırma dosyası",
       "openFolder": "Klasörü aç",
@@ -2469,7 +2036,6 @@
         "none": "Gizli"
       },
       "sidebarTodayLimit": "En fazla {{count}} öğe seçin",
-      "logColumns": "İstek günlüğü sütunları",
       "trendChartType": "Trend grafiği",
       "trendChartTypes": {
         "bar": "Çubuk",
@@ -2624,9 +2190,6 @@
     "title": "Kullanım Sorgusunu Yapılandır",
     "enableUsageQuery": "Kullanım sorgusunu etkinleştir",
     "presetTemplate": "Önceden ayarlanmış şablon",
-    "requestUrl": "URL'yi talep et",
-    "requestUrlPlaceholder": "örneğin https://api.example.com",
-    "method": "HTTP yöntemi",
     "templateCustom": "Özel",
     "templateGeneral": "Genel",
     "templateNewAPI": "YeniAPI",
@@ -2664,23 +2227,15 @@
     "projectIdPlaceholder": "örneğin proje-xxxxxx",
     "defaultPlan": "Varsayılan Plan",
     "queryFailedMessage": "Sorgu başarısız oldu",
-    "queryScript": "Sorgu betiği (JavaScript)",
     "timeoutSeconds": "Zaman aşımı (saniye)",
-    "headers": "Başlıklar",
-    "body": "Vücut",
-    "timeoutHint": "Aralık: 2-30 saniye",
     "timeoutMustBeInteger": "Zaman aşımı bir tamsayı olmalıdır; ondalık kısım göz ardı edilir",
     "timeoutCannotBeNegative": "Zaman aşımı negatif olamaz",
     "autoIntervalMinutes": "Otomatik sorgu aralığı (dakika, devre dışı bırakmak için 0)",
-    "autoQueryInterval": "Otomatik Sorgu Aralığı (dakika)",
-    "autoQueryIntervalHint": "Devre dışı bırakmak için 0; 5-60 dakika önerilir",
     "intervalMustBeInteger": "Aralık bir tamsayı olmalıdır; ondalık kısım göz ardı edilir",
     "intervalCannotBeNegative": "Aralık negatif olamaz",
     "intervalAdjusted": "Aralık {{value}} dakikaya ayarlandı",
     "scriptHelp": "Senaryo yazma talimatları:",
     "configFormat": "Yapılandırma formatı:",
-    "commentOptional": "isteğe bağlı",
-    "commentResponseIsJson": "yanıt, API tarafından döndürülen JSON verileridir",
     "extractorFormat": "Çıkarıcı dönüş formatı (tüm alanlar isteğe bağlıdır):",
     "tips": "💡 İpuçları:",
     "testing": "Test ediliyor...",
@@ -2694,8 +2249,6 @@
     "formatSuccess": "Biçimlendirme başarılı",
     "formatFailed": "Biçimlendirme başarısız oldu",
     "supportedVariables": "Desteklenen Değişkenler",
-    "variablesHint": "Desteklenen değişkenler: {{apiKey}}, {{baseUrl}} | çıkarıcı işlevi API yanıtını alır JSON nesnesi",
-    "scriptConfig": "Yapılandırma isteği",
     "extractorCode": "Çıkarıcı kodu",
     "extractorHint": "Dönüş nesnesi kalan kota alanlarını içermelidir",
     "fieldIsValid": "• isValid: Boolean, planın geçerli olup olmadığı",
@@ -2728,151 +2281,30 @@
     "quit": "Çık"
   },
   "errors": {
-    "usage_query_failed": "Kullanım sorgusu başarısız oldu",
     "configLoadFailedTitle": "Yapılandırma Yükleme Başarısız Oldu",
     "configLoadFailedMessage": "Yapılandırma dosyası okunamıyor:\n{{path}}\n\nHata ayrıntıları:\n{{detail}}\n\nLütfen JSON'nin geçerli olup olmadığını kontrol edin veya aynı dizindeki bir yedekleme dosyasından (örn. config.json.bak) geri yükleyin.\n\nBu sorunu düzeltebilmeniz için uygulamadan çıkılacaktır.",
     "frontendCrashTitle": "Arayüzde bir şeyler ters gitti",
     "frontendCrashMessage": "Hatayı uygulama tanılama günlüğüne yazma girişiminde bulunuldu. Arayüzü yeniden yükleyin ve sorun devam ederse sorunu açarken günlüğü ekleyin.",
     "reloadInterface": "Arayüzü yeniden yükle"
   },
-  "presetSelector": {
-    "title": "Konfigürasyon Türünü Seçin",
-    "custom": "Özel",
-    "customDescription": "Sağlayıcıyı manuel olarak yapılandırın, tam yapılandırma gerektirir",
-    "officialDescription": "Resmi giriş, API Anahtarına gerek yok",
-    "presetDescription": "Önceden ayarlanmış yapılandırmayı kullanın, yalnızca API Anahtarı gerekir"
-  },
   "mcp": {
-    "title": "MCP Yönetimi",
-    "import": "İçe aktar",
-    "importExisting": "Mevcut Olanı İçe Aktar",
-    "addMcp": "MCP'yi ekleyin",
-    "claudeTitle": "Claude Code MCP Yönetimi",
-    "codexTitle": "Codex MCP Yönetimi",
-    "geminiTitle": "Gemini MCP Yönetimi",
     "unifiedPanel": {
-      "title": "MCP Sunucu Yönetimi",
-      "addServer": "Sunucu Ekle",
-      "editServer": "Sunucuyu Düzenle",
-      "deleteServer": "Sunucuyu Sil",
-      "deleteConfirm": "\"{{id}}\" sunucusunu silmek istediğinizden emin misiniz? Bu eylem geri alınamaz.",
-      "noServers": "Henüz sunucu yok",
-      "enabledApps": "Etkin Uygulamalar",
-      "noImportFound": "İçe aktarılacak MCP sunucusu bulunamadı. Tüm sunucular zaten CC Switch tarafından yönetilmektedir.",
-      "importSuccess": "{{count}} MCP sunucuları başarıyla içe aktarıldı",
       "searchPlaceholder": "MCP adını, açıklamasını, etiketini veya komutunu arayın...",
       "searchAriaLabel": "Yönetilen MCP sunucularını arayın",
-      "noSearchResults": "Aramanızla eşleşen MCP sunucusu yok",
-      "apps": {
-        "claude": "Claude",
-        "codex": "Codex",
-        "gemini": "Gemini",
-        "grokbuild": "Grok Build",
-        "opencode": "OpenCode",
-        "openclaw": "OpenClaw",
-        "hermes": "Hermes",
-        "mcode": "MiniMax Code"
-      }
+      "noSearchResults": "Aramanızla eşleşen MCP sunucusu yok"
     },
-    "userLevelPath": "Kullanıcı düzeyinde MCP yapılandırma yolu",
-    "serverList": "Sunucular",
     "loading": "Yükleniyor...",
-    "empty": "MCP sunucusu yok",
-    "emptyDescription": "İlk MCP sunucunuzu eklemek için sağ üstteki düğmeye tıklayın",
-    "add": "MCP'yi ekleyin",
-    "addServer": "MCP'yi ekleyin",
-    "editServer": "MCP'yi düzenleyin",
-    "addClaudeServer": "Claude Code MCP'yi ekleyin",
-    "editClaudeServer": "Claude Code MCP'yi düzenleyin",
-    "addCodexServer": "Codex MCP'yi ekleyin",
-    "editCodexServer": "Codex MCP'yi düzenleyin",
-    "configPath": "Yapılandırma Yolu",
-    "serverCount": "{{count}} MCP sunucuları yapılandırılmış",
-    "enabledCount": "{{count}} etkin",
-    "template": {
-      "fetch": "Hızlı Şablon: mcp-fetch"
-    },
-    "form": {
-      "title": "MCP Başlığı (Benzersiz)",
-      "titlePlaceholder": "my-mcp-server",
-      "name": "Görünen Ad",
-      "namePlaceholder": "ör. mcp-server-time",
-      "enabledApps": "Uygulamalarda etkinleştir",
-      "noAppsWarning": "En az bir uygulama seçilmelidir",
-      "description": "Açıklama",
-      "descriptionPlaceholder": "İsteğe bağlı açıklama",
-      "tags": "Etiketler (virgülle ayrılmış)",
-      "tagsPlaceholder": "stdio, time, utility",
-      "homepage": "Ana sayfa",
-      "homepagePlaceholder": "https://example.com",
-      "docs": "Dokümanlar",
-      "docsPlaceholder": "https://example.com/docs",
-      "additionalInfo": "Ek Bilgi",
-      "jsonConfig": "Tam JSON Yapılandırması",
-      "jsonConfigOrPrefix": "Tam JSON yapılandırması veya kullanımı",
-      "tomlConfigOrPrefix": "Tam TOML yapılandırması veya kullanımı",
-      "jsonPlaceholder": "{\n  \"type\": \"stdio\",\n  \"command\": \"uvx\",\n  \"args\": [\"mcp-server-fetch\"]\n}",
-      "tomlConfig": "Tam TOML Yapılandırması",
-      "tomlPlaceholder": "type = \"stdio\"\ncommand = \"uvx\"\nargs = [\"mcp-server-fetch\"]",
-      "useWizard": "Yapılandırma Sihirbazı",
-      "syncOtherSide": "{{target}}'ye aynalama",
-      "syncOtherSideHint": "Aynı ayarları {{target}}'ye uygulayın; aynı kimliğe sahip mevcut girişlerin üzerine yazılacaktır.",
-      "willOverwriteWarning": "{{target}} içindeki aynı adlı yapılandırmanın üzerine yazılacak"
-    },
     "wizard": {
-      "title": "MCP Yapılandırma Sihirbazı",
-      "hint": "MCP sunucusunu hızla yapılandırın ve JSON yapılandırmasını otomatik olarak oluşturun",
-      "type": "Tür",
-      "typeStdio": "stdio",
-      "typeHttp": "http",
-      "typeSse": "sse",
-      "command": "Komut",
-      "commandPlaceholder": "npx veya uvx",
-      "args": "Argümanlar",
-      "argsPlaceholder": "arg1\narg2",
-      "env": "Ortam Değişkenleri",
       "envPlaceholder": "KEY1=value1\nKEY2=value2",
-      "url": "URL'si",
-      "urlPlaceholder": "https://api.example.com/mcp",
-      "urlRequired": "Lütfen URL'yi girin",
-      "headers": "Başlıklar (isteğe bağlı)",
-      "headersPlaceholder": "Authorization: Bearer your_token_here\nContent-Type: application/json",
-      "preview": "Yapılandırma Önizlemesi",
-      "apply": "Yapılandırmayı Uygula"
+      "urlRequired": "Lütfen URL'yi girin"
     },
-    "id": "Tanımlayıcı (benzersiz)",
-    "type": "Tür",
-    "command": "Komut",
-    "validateCommand": "Komutu Doğrula",
-    "args": "Argümanlar",
-    "argsPlaceholder": "örneğin, mcp-server-fetch --help",
-    "env": "Ortam değişkenleri (her satıra bir tane, KEY=VALUE)",
     "envPlaceholder": "FOO=bar\nHELLO=world",
-    "reset": "Sıfırla",
-    "msg": {
-      "saved": "Kaydedildi",
-      "deleted": "Silindi",
-      "enabled": "Etkin",
-      "disabled": "Devre dışı",
-      "templateAdded": "Şablon eklendi"
-    },
     "error": {
       "idRequired": "Lütfen tanımlayıcıyı girin",
-      "idExists": "Tanımlayıcı zaten mevcut. Lütfen başka bir tane seçin.",
       "jsonInvalid": "Geçersiz JSON biçimi",
       "tomlInvalid": "Geçersiz TOML biçimi",
       "commandRequired": "Lütfen komutu girin",
-      "singleServerObjectRequired": "Lütfen tek bir MCP sunucu nesnesi yapıştırın (üst düzey mcpServers alanını dahil etmeyin)",
-      "saveFailed": "Kaydetme başarısız oldu",
-      "deleteFailed": "Silinemedi"
-    },
-    "validation": {
-      "ok": "Komut mevcut",
-      "fail": "Komut bulunamadı"
-    },
-    "confirm": {
-      "deleteTitle": "MCP Sunucusunu Sil",
-      "deleteMessage": "MCP sunucusu \"{{id}}\"yi silmek istediğinizden emin misiniz? Bu eylem geri alınamaz."
+      "saveFailed": "Kaydetme başarısız oldu"
     },
     "presets": {
       "title": "MCP Türünü Seçin",
@@ -2930,7 +2362,6 @@
     "disableFailed": "Devre dışı bırakılamadı",
     "importSuccess": "Başarıyla içe aktarıldı",
     "importFailed": "İçe aktarma başarısız oldu",
-    "confirm": {},
     "appSelect": "Uygulamayı seçin",
     "helpTitle": "İstemler nasıl etkili olur?",
     "helpText": "Her uygulamanın aynı anda etkinleştirilmiş bir istemi vardır ve bu, hedef dosya haline gelir. Başka bir yerde yapılan düzenlemeler, bu sayfayı bir sonraki açışınızda etkinleştirilmiş istemin içine alınır; Henüz burada olmayan dosya içeriği, başka bir bilgi istemi etkinleştirilmeden önce \"Orijinal bilgi istemi\" olarak kaydedilir.",
@@ -3062,8 +2493,6 @@
     "clearSuccess": "Hiçbir projeye geçilmedi"
   },
   "workspace": {
-    "title": "Çalışma Alanı Dosyaları",
-    "manage": "Çalışma alanı",
     "files": {
       "agents": "Ajan talimatları ve kuralları",
       "soul": "Ajan kişiliği ve iletişim tarzı",
@@ -3082,12 +2511,10 @@
     "openDirectory": "Dosya yöneticisinde aç",
     "dailyMemory": {
       "title": "Günlük Hafıza",
-      "sectionTitle": "Günlük Hafıza",
       "cardTitle": "Günlük Bellek Dosyaları",
       "createToday": "Bellek Ekle",
       "empty": "Henüz günlük hafıza dosyası yok",
       "loadFailed": "Günlük bellek dosyaları yüklenemedi",
-      "createFailed": "Günlük hafıza dosyası oluşturulamadı",
       "deleteSuccess": "Günlük hafıza dosyası silindi",
       "deleteFailed": "Günlük hafıza dosyası silinemedi",
       "confirmDeleteTitle": "Günlük Hafızayı Sil",
@@ -3102,7 +2529,6 @@
     }
   },
   "openclaw": {
-    "backupCreated": "Yedekleme oluşturuldu: {{path}}",
     "providerKey": "Sağlayıcı Anahtarı",
     "providerKeyPlaceholder": "my-provider",
     "providerKeyHint": "Yapılandırma dosyasındaki benzersiz tanımlayıcı. Yalnızca küçük harf, rakam ve kısa çizgi kullanın.",
@@ -3141,13 +2567,8 @@
       "objectRequired": "OpenClaw env bir JSON nesnesi olmalıdır.",
       "invalidJson": "OpenClaw ortamı geçerli JSON olmalıdır.",
       "empty": "OpenClaw env boş olamaz. Boş bir nesne için {} kullanın.",
-      "keyPlaceholder": "Değişken adı",
-      "valuePlaceholder": "Değer",
-      "add": "Değişken Ekle",
       "saveSuccess": "Ortam değişkenleri kaydedildi",
-      "saveFailed": "Ortam değişkenleri kaydedilemedi",
-      "loadFailed": "Ortam değişkenleri yüklenemedi",
-      "duplicateKey": "Yinelenen değişken adı algılandı: {{key}}"
+      "saveFailed": "Ortam değişkenleri kaydedilemedi"
     },
     "tools": {
       "title": "Araç İzinleri",
@@ -3166,8 +2587,7 @@
       "addAllow": "İzin Ver Ekle",
       "addDeny": "Reddet Ekle",
       "saveSuccess": "Araç izinleri kaydedildi",
-      "saveFailed": "Araç izinleri kaydedilemedi",
-      "loadFailed": "Araç izinleri yüklenemedi"
+      "saveFailed": "Araç izinleri kaydedilemedi"
     },
     "agents": {
       "title": "Aracılar Yapılandırması",
@@ -3189,8 +2609,7 @@
       "legacyTimeoutTitle": "Eski zaman aşımı algılandı",
       "legacyTimeoutDescription": "Bu yapılandırma hala Agent.defaults.timeout'u kullanıyor. Buraya kaydetmek onu timeoutSeconds'a taşıyacaktır.",
       "saveSuccess": "Aracı yapılandırması kaydedildi",
-      "saveFailed": "Aracıların yapılandırması kaydedilemedi",
-      "loadFailed": "Aracıların yapılandırması yüklenemedi"
+      "saveFailed": "Aracıların yapılandırması kaydedilemedi"
     },
     "health": {
       "title": "OpenClaw yapılandırma uyarıları algılandı",
@@ -3237,7 +2656,6 @@
       "rateLimitDelayHint": "Ardışık istekler arasındaki saniye cinsinden minimum gecikme (isteğe bağlı). Sınırsız olarak boş bırakın."
     },
     "webui": {
-      "open": "Hermes Web kullanıcı arayüzünü açın",
       "offline": "Hermes Web kullanıcı arayüzü çalışmıyor. Önce `hermes dashboard` ile başlayın.",
       "openFailed": "Hermes Web kullanıcı arayüzü açılamadı",
       "launchConfirmTitle": "Hermes Kontrol Paneli çalışmıyor",
@@ -3314,48 +2732,26 @@
     }
   },
   "skills": {
-    "manage": "Beceriler",
-    "title": "Beceri Yönetimi",
-    "description": "Claude Code/Codex/Gemini yeteneklerini genişletmek için popüler veri havuzlarındaki becerileri keşfedin ve yükleyin",
-    "refresh": "Yenile",
-    "refreshing": "Yenileniyor...",
-    "repoManager": "Depo Yönetimi",
-    "count": "{{count}} becerileri",
-    "empty": "Kullanılabilir beceri yok",
-    "emptyDescription": "Mevcut becerileri keşfetmek için beceri havuzları ekleyin",
     "addRepo": "Beceri Havuzu Ekle",
     "loading": "Yükleniyor...",
-    "installed": "Yüklendi",
     "install": "Yükle",
-    "installing": "Yükleniyor...",
     "uninstall": "Kaldır",
-    "uninstalling": "Kaldırılıyor...",
-    "view": "Görüntüle",
-    "noDescription": "Açıklama yok",
-    "loadFailed": "Yüklenemedi",
-    "installSuccess": "Beceri {{name}} yüklü",
     "installFailed": "Yükleme başarısız oldu",
     "uninstallSuccess": "Beceri {{name}} kaldırıldı",
     "uninstallPiPreserved": "Pi kopyasının CC Switch tarafından yönetildiği doğrulanamadı ve yerinde bırakıldı: {{path}}",
     "uninstallPiCleanupIncomplete": "Pi temizliği tamamlanamadı. Kalan bir kopya için Pi Skills dizinini manuel olarak kontrol edin.",
-    "uninstallFailed": "Kaldırma işlemi başarısız oldu",
     "update": "Güncelle",
-    "updating": "Güncelleniyor...",
     "updateAvailable": "Güncelle",
     "updateSuccess": "Skill {{name}} en son sürüme güncellendi",
     "updateFailed": "Güncelleme başarısız oldu",
     "checkUpdates": "Güncellemeleri Kontrol Et",
     "checkingUpdates": "Kontrol ediliyor...",
     "noUpdates": "Tüm beceriler güncel",
-    "updateAll": "Tümünü Güncelle ({{count}})",
-    "updatingAll": "Güncelleniyor...",
     "updateAllSuccess": "{{count}} becerileri başarıyla güncellendi",
     "error": {
       "skillNotFound": "Beceri bulunamadı: {{directory}}",
       "missingRepoInfo": "Depo bilgileri eksik (sahip veya ad)",
       "downloadTimeout": "İndirme deposu {{owner}}/{{name}} zaman aşımı ({{timeout}}'ler)",
-      "downloadTimeoutHint": "Lütfen ağ bağlantısını kontrol edin veya daha sonra tekrar deneyin",
-      "skillPathNotFound": "Beceri yolu '{{path}}' {{owner}}/{{name}} deposunda bulunamadı",
       "skillDirNotFound": "Beceri dizini bulunamadı: {{path}}",
       "directoryConflict": "'{{directory}}' beceri dizini zaten {{existing_repo}} tarafından kullanılıyor, {{new_repo}}'den yüklenemiyor",
       "emptyArchive": "İndirilen arşiv boş",
@@ -3364,23 +2760,17 @@
       "archiveDownloadTooLarge": "Depo arşivi {{limit_mb}} MB sınırını aşıyor; indirme durduruldu.",
       "archiveTooManyEntries": "Arşivde çok fazla giriş var ({{count}}); sınır {{limit}}'dir",
       "downloadFailed": "İndirme başarısız oldu: HTTP {{status}}",
-      "allBranchesFailed": "Tüm dallar başarısız oldu, denendi: {{branches}}",
-      "httpError": "HTTP hatası {{status}}",
       "http403": "GitHub erişimi kısıtlı, muhtemelen hız sınırlı",
       "http404": "Depo veya şube bulunamadı, lütfen URL'yi kontrol edin",
       "http429": "Çok fazla istek var, lütfen bekleyip yeniden deneyin",
-      "parseMetadataFailed": "Beceri meta verileri ayrıştırılamadı",
       "getHomeDirFailed": "Kullanıcı ana dizini alınamıyor",
       "noSkillsInZip": "ZIP dosyasında beceri bulunamadı (SKILL.md dosyası gerektirir)",
-      "networkError": "Ağ hatası",
-      "fsError": "Dosya sistemi hatası",
       "unknownError": "Bilinmeyen hata",
       "suggestion": {
         "checkNetwork": "Lütfen ağ bağlantısını kontrol edin",
         "checkProxy": "HTTP proxy'yi yapılandırmayı düşünün",
         "retryLater": "Lütfen daha sonra tekrar deneyin",
         "checkRepoUrl": "Lütfen depo URL'sini ve şube adını kontrol edin",
-        "checkDiskSpace": "Lütfen disk alanını kontrol edin",
         "checkPermission": "Lütfen dizin izinlerini kontrol edin",
         "uninstallFirst": "Lütfen önce aynı ada sahip mevcut beceriyi kaldırın",
         "checkZipContent": "Lütfen ZIP dosyasının geçerli beceri dizinleri içerdiğini doğrulayın (SKILL.md dosyalarıyla birlikte)"
@@ -3388,13 +2778,10 @@
     },
     "repo": {
       "title": "Beceri Depolarını Yönet",
-      "description": "GitHub beceri deposu kaynaklarını ekleme veya kaldırma",
       "url": "Depo URL'si",
       "urlPlaceholder": "sahibi/adı veya https://github.com/owner/name",
       "branch": "Şube",
       "branchPlaceholder": "ana",
-      "path": "Beceri Yolu",
-      "pathPlaceholder": "beceriler (isteğe bağlı, kök için boş bırakın)",
       "add": "Depo Ekle",
       "list": "Eklenen Depolar",
       "empty": "Depo yok",
@@ -3402,60 +2789,33 @@
       "addSuccess": "{{owner}}/{{name}} deposu eklendi, {{count}} becerileri algılandı",
       "addFailed": "Eklenemedi",
       "removeSuccess": "Depo {{owner}}/{{name}} kaldırıldı",
-      "removeFailed": "Kaldırılamadı",
       "skillCount": "{{count}} becerileri algılandı"
     },
-    "search": "Arama Becerileri",
-    "searchPlaceholder": "Beceri adını veya deposunu arayın...",
     "installedSearchPlaceholder": "Yüklü beceri adını, açıklamasını veya deposunu arayın...",
     "installedSearchAriaLabel": "Yüklü becerileri arayın",
     "noInstalledSearchResults": "Aramanızla eşleşen yüklü beceri yok",
     "searchSource": {
-      "repos": "Repolar",
       "skillssh": "skills.sh"
     },
     "skillssh": {
-      "searchPlaceholder": "Skills.sh'de arama yapın (en az 2 karakter)...",
       "installs": "{{count}} yükler",
       "loadMore": "Daha Fazla Yükle",
       "loading": "Skills.sh aranıyor...",
-      "noResults": "\"{{query}}\" için beceri bulunamadı",
       "error": "Skills.sh araması başarısız oldu",
       "poweredBy": "Skills.sh tarafından desteklenmektedir"
     },
     "filter": {
-      "placeholder": "Duruma göre filtrele",
-      "all": "Tümü",
-      "installed": "Yüklendi",
-      "uninstalled": "Kurulu değil",
-      "repo": "Depoya göre filtrele",
-      "allRepos": "Tüm depolar"
+      "uninstalled": "Kurulu değil"
     },
-    "noResults": "Eşleşen beceri bulunamadı",
-    "noInstalled": "Hiçbir beceri yüklü değil",
-    "noInstalledDescription": "Depolardan becerileri keşfedin ve yükleyin veya mevcut becerileri içe aktarın",
-    "discover": "Becerileri Keşfedin",
-    "import": "Mevcut Olanı İçe Aktar",
-    "importDescription": "CC Switch birleşik yönetimine aktarılacak becerileri seçin",
     "importSuccess": "{{count}} becerileri başarıyla içe aktarıldı",
-    "importSelected": "Seçilenleri İçe Aktar ({{count}})",
     "noUnmanagedFound": "İçe aktarılacak beceri bulunamadı. Tüm beceriler zaten CC Switch tarafından yönetilmektedir.",
-    "unmanagedAvailable": "İçe aktarılabilecek beceriler",
-    "foundIn": "Bulundu",
-    "local": "Yerel",
-    "uninstallConfirm": "\"{{name}}\" uygulamasını kaldırmak istediğinizden emin misiniz? Bu, beceriyi tüm uygulamalardan kaldıracak ve önce yerel bir yedekleme oluşturacaktır.",
-    "uninstallInMainPanel": "Lütfen becerileri ana panelden kaldırın",
-    "notFound": "Beceri bulunamadı",
     "backup": {
       "location": "Yedekleme konumu: {{path}}"
     },
     "restoreFromBackup": {
-      "button": "Yedeklemeyi Geri Yükle",
       "title": "Yedeklemeden Geri Yükle",
-      "description": "Dosyalarını yerel olarak geri yüklemek ve geçerli listeye geri eklemek için bir Skills yedeği seçin.",
       "empty": "Geri yüklenecek Skills yedeği yok",
       "createdAt": "Şu saatte yedeklendi:",
-      "path": "Yedekleme yolu",
       "restore": "Geri yükle",
       "restoring": "Geri yükleniyor...",
       "delete": "Sil",
@@ -3467,25 +2827,13 @@
       "success": "Beceri {{name}} yedekten geri yüklendi",
       "failed": "Yedeklemeden geri yükleme başarısız oldu"
     },
-    "apps": {
-      "claude": "Claude",
-      "codex": "Codex",
-      "gemini": "Gemini",
-      "opencode": "OpenCode",
-      "openclaw": "OpenClaw"
-    },
     "installFromZip": {
-      "button": "ZIP'ten yükle",
-      "installing": "Yükleniyor...",
-      "successSingle": "Beceri {{name}} yüklü",
-      "successMultiple": "{{count}} becerileri başarıyla yüklendi",
       "noSkillsFound": "ZIP dosyasında beceri bulunamadı (SKILL.md dosyası gerektirir)",
       "skippedTitle": "Atlandı {{count}} Becerileri: klasör adı zaten kullanılıyor",
       "allSkipped": "Hiçbir şey yüklü değil: ZIP'teki tüm {{count}} Becerileri önceden alınmış klasör adlarını kullanır",
       "skippedItem": "{{directory}} ({{name}} tarafından kullanılır)",
       "skippedBody": "{{list}}. ZIP'teki sürümü kullanmak için önce aynı adı taşıyan Skill'i kaldırın."
     },
-    "backToInstalled": "Kuruluma geri dön",
     "moreActions": "Daha fazla Beceri eylemi",
     "storageSheet": {
       "title": "Depolama ve eşitleme",
@@ -3541,7 +2889,6 @@
     "homepage": "Ana sayfa",
     "endpoint": "API Uç Nokta",
     "apiKey": "API Anahtarı",
-    "icon": "Simge",
     "model": "Model",
     "haikuModel": "Haiku Modeli",
     "sonnetModel": "Sonnet Modeli",
@@ -3593,7 +2940,6 @@
       "repo": "GitHub Deposu",
       "directory": "Hedef Dizin",
       "branch": "Şube",
-      "skillsPath": "Beceri Yolu",
       "hint": "Bu, Beceri deposunu listeye ekleyecektir.",
       "hintDetail": "Ekledikten sonra, Beceri yönetimi sayfasından belirli Becerileri yükleyebilirsiniz."
     },
@@ -3644,19 +2990,10 @@
       "tooLarge": "Görsel 2 MB’den büyük",
       "decodeFailed": "Bu görsel okunamadı; lütfen başka bir görsel deneyin",
       "dimensions": "Görsel çok büyük (genişlik ve yükseklik 4096 pikseli aşmamalıdır)"
-    },
-    "category": {
-      "aiProvider": "Yapay Zeka Sağlayıcıları",
-      "cloud": "Bulut Platformları",
-      "tool": "Geliştirici Araçları",
-      "other": "Diğer"
     }
   },
   "providerIcon": {
-    "label": "Simge",
-    "colorLabel": "Simge Rengi",
     "selectIcon": "Simge Seç",
-    "preview": "Önizleme",
     "clickToChange": "Simgeyi değiştirmek için tıklayın",
     "clickToSelect": "Simgeyi seçmek için tıklayın",
     "change": "Simgeyi değiştir"
@@ -3670,142 +3007,32 @@
   "health": {
     "operational": "Operasyonel",
     "degraded": "Bozulmuş",
-    "failed": "Başarısız",
-    "circuitOpen": "Devre Açık",
-    "consecutiveFailures": "{{count}} ardışık hatalar"
+    "circuitOpen": "Devre Açık"
   },
   "failover": {
     "enabled": "{{app}} yedek sağlayıcıya geçiş etkin",
     "disabled": "{{app}} yedek sağlayıcıya geçiş devre dışı bırakıldı",
     "toggleFailed": "İşlem başarısız oldu: {{detail}}",
     "queueAddFailed": "Sıraya eklenemedi: {{detail}}",
-    "queueRemoveFailed": "Kuyruktan kaldırılamadı: {{detail}}",
-    "inQueue": "Sırada",
-    "addQueue": "Ekle",
-    "priority": {
-      "tooltip": "Yedek sağlayıcıya geçiş önceliği {{priority}}"
-    },
-    "tooltip": {
-      "enabled": "{{app}} yedek sağlayıcıya geçiş etkin\nİsteklerin kuyruk önceliğini takip etmesi (P1→P2→...)",
-      "disabled": "{{app}} yedek sağlayıcıya geçişyi etkinleştir\nHemen P1 kuyruğuna geçer, ardından arıza durumunda geri çekilir",
-      "takeoverRequired": "Önce {{app}}'yi devralın, ardından yedek sağlayıcıya geçişyi etkinleştirin"
-    }
+    "queueRemoveFailed": "Kuyruktan kaldırılamadı: {{detail}}"
   },
   "proxy": {
-    "panel": {
-      "serviceAddress": "Hizmet Adresi",
-      "addressCopied": "Adres kopyalandı",
-      "currentProvider": "Mevcut Sağlayıcı:",
-      "waitingFirstRequest": "Mevcut Sağlayıcı: İlk istek bekleniyor...",
-      "stoppedTitle": "Yönlendirme Hizmeti Durduruldu",
-      "stoppedDescription": "Hizmeti başlatmak için yukarıdaki düğmeyi kullanın",
-      "openSettings": "Yönlendirme Hizmetini Yapılandırma",
-      "stats": {
-        "activeConnections": "Aktif Bağlantılar",
-        "totalRequests": "Toplam İstekler",
-        "successRate": "Başarı Oranı",
-        "uptime": "Çalışma süresi"
-      }
-    },
     "settings": {
-      "title": "Yönlendirme Hizmeti Ayarları",
-      "description": "Yerel yönlendirme sunucusu dinleme adresini, bağlantı noktasını ve çalışma zamanı parametrelerini yapılandırın. Değişiklikler kaydedildikten hemen sonra geçerli olur.",
-      "alert": {
-        "autoApply": "Değişiklikler, manuel olarak yeniden başlatmaya gerek kalmadan çalışan yönlendirme hizmetiyle otomatik olarak eşitle edilecektir."
-      },
-      "basic": {
-        "title": "Temel Ayarlar",
-        "description": "Yönlendirme hizmeti dinleme adresini ve bağlantı noktasını yapılandırın."
-      },
-      "advanced": {
-        "title": "Gelişmiş Parametreler",
-        "description": "İstek kararlılığını ve günlüğe kaydetmeyi kontrol edin."
-      },
-      "timeout": {
-        "title": "Zaman Aşımı Ayarları",
-        "description": "Akışlı ve akışsız istekler için zaman aşımını yapılandırın."
-      },
-      "fields": {
-        "listenAddress": {
-          "label": "Adresi Dinle",
-          "placeholder": "127.0.0.1",
-          "description": "Yönlendirme sunucusunun dinlediği IP adresi (önerilen: 127.0.0.1)"
-        },
-        "listenPort": {
-          "label": "Bağlantı Noktasını Dinle",
-          "placeholder": "15721",
-          "description": "Yönlendirme sunucusunun dinlediği port numarası (1024 ~ 65535)"
-        },
-        "maxRetries": {
-          "label": "Maksimum Yeniden Deneme Sayısı",
-          "placeholder": "3",
-          "description": "İstek başarısızlığında yeniden deneme sayısı (0 ~ 10)"
-        },
-        "requestTimeout": {
-          "label": "İstek Zaman Aşımı (sn)",
-          "placeholder": "0 (sınırsız) veya 300",
-          "description": "Tek bir istek için maksimum bekleme süresi (0 = sınırsız veya 10 ~ 600 saniye)"
-        },
-        "enableLogging": {
-          "label": "Kayıt Talebi Kullanımı",
-          "description": "Yönlendirme isteği kullanımını ve durumunu yerel istatistik veritabanına yazın"
-        },
-        "streamingFirstByteTimeout": {
-          "label": "Akış İlk Bayt Zaman Aşımı (sn)",
-          "description": "İlk veri öbeği için beklenecek maksimum süre"
-        },
-        "streamingIdleTimeout": {
-          "label": "Akış Boşta Kalma Zaman Aşımı (sn)",
-          "description": "Veri parçaları arasındaki maksimum aralık"
-        },
-        "nonStreamingTimeout": {
-          "label": "Yayın Dışı Zaman Aşımı (sn)",
-          "description": "Akış dışı istekler için toplam zaman aşımı"
-        }
-      },
-      "validation": {
-        "addressInvalid": "Lütfen geçerli bir IP adresi girin",
-        "portMin": "Bağlantı noktası 1024'ten büyük olmalıdır",
-        "portMax": "Bağlantı noktası 65535'ten küçük olmalıdır",
-        "retryMin": "Yeniden deneme sayısı negatif olamaz",
-        "retryMax": "Yeniden deneme sayısı 10'u aşamaz",
-        "timeoutNonNegative": "Zaman aşımı negatif olamaz",
-        "timeoutMax": "Zaman aşımı 600 saniyeyi aşamaz",
-        "timeoutRange": "Lütfen 0 veya 10-600 arasında bir değer girin",
-        "streamingTimeoutMin": "Zaman aşımı en az 5 saniye olmalıdır",
-        "streamingTimeoutMax": "Zaman aşımı 300 saniyeyi aşamaz"
-      },
-      "actions": {
-        "save": "Yapılandırmayı Kaydet"
-      },
       "toast": {
         "saved": "Yönlendirme yapılandırması kaydedildi",
         "saveFailed": "Kaydetme başarısız oldu: {{error}}"
       },
       "invalidPort": "Geçersiz bağlantı noktası, lütfen 1024-65535 arasında bir sayı girin",
-      "invalidAddress": "Geçersiz adres. Bir IPv4 (ör. 127.0.0.1), IPv6 (ör. ::1) veya localhost girin",
-      "configSaved": "Yönlendirme yapılandırması kaydedildi",
-      "configSaveFailed": "Yapılandırma kaydedilemedi",
-      "restartRequired": "Adres veya bağlantı noktası değişikliklerinin etkili olması için yönlendirme hizmetini yeniden başlatın"
+      "invalidAddress": "Geçersiz adres. Bir IPv4 (ör. 127.0.0.1), IPv6 (ör. ::1) veya localhost girin"
     },
-    "switchFailed": "Geçiş başarısız oldu: {{error}}",
     "takeover": {
-      "ariaLabel": "{{appLabel}} yerel yönlendirme",
-      "hint": "Yönlendirilecek uygulamaları seçin — etkinleştirildiğinde, söz konusu uygulamadan gelen istekler yerel yönlendirme üzerinden iletilecektir",
       "enabled": "{{app}} yönlendirme etkin",
       "disabled": "{{app}} yönlendirme devre dışı",
-      "failed": "Yönlendirme değiştirilemedi: {{detail}}",
-      "tooltip": {
-        "active": "{{appLabel}} yönlendiriyor - {{address}}:{{port}}\nSağlayıcıları değiştirmek yalnızca rotayı değiştirir; doğrudan sağlayıcı kalır",
-        "broken": "{{appLabel}} yönlendirme yapıyor ancak yönlendirme hizmeti çalışmıyor",
-        "inactive": "{{appLabel}}'nin isteklerini yerel yönlendirme yoluyla yönlendirin"
-      }
+      "failed": "Yönlendirme değiştirilemedi: {{detail}}"
     },
     "stackMode": {
       "enabled": "{{app}} artık Birleştirme modunda",
       "exitedToDirect": "{{apps}} direkt moda geri döndü",
-      "ariaLabel": "{{appLabel}} Birleştirme modu",
-      "failoverUnavailable": "{{appLabel}}, yedek sağlayıcıya geçiş özelliği olmayan Birleştirme modundadır. Kuyruk ve ayarlar korunur ve yönlendirme modunda tekrar uygulanır",
       "codexStale": {
         "authTitle": "Codex önceki hesabı hâlâ önbelleğe alabilir; yeni oturum açma bilgilerini yüklemek için arka plan sunucusunu yeniden başlatın",
         "title": "Codex hala eski bir model listesi kullanıyor, dolayısıyla mevcut modeller gösterilmiyor",
@@ -3821,29 +3048,6 @@
         "notRunning": "Codex arka plan programı çalışmıyor. Bir sonraki başlatılışında mevcut giriş ve model listesini yükleyecektir",
         "failed": "Codex arka plan programı yeniden başlatılamadı: {{error}}"
       }
-    },
-    "failover": {
-      "proxyRequired": "Yedek sağlayıcıya geçişyi yapılandırmak için yönlendirme hizmeti başlatılmalıdır",
-      "autoSwitch": "Otomatik yedek sağlayıcıya geçiş",
-      "autoSwitchDescription": "Etkinleştirildiğinde, hemen P1 kuyruğuna geçer ve arıza durumunda otomatik olarak kuyruktaki bir sonraki sağlayıcıyı dener"
-    },
-    "failoverQueue": {
-      "title": "Yedek Sağlayıcıya Geçiş Sırası",
-      "description": "Her uygulamanın sağlayıcıları için yedek sağlayıcıya geçiş sırasını yönetin",
-      "info": "Otomatik yedek sağlayıcıya geçiş etkinleştirildiğinde, istekler kuyruk öncelik sırasını takip eder (önce P1). Arıza durumunda sistem kuyruktaki bir sonraki sağlayıcıyı deneyecektir.",
-      "selectProvider": "Kuyruğa eklenecek sağlayıcıyı seçin",
-      "noAvailableProviders": "Eklenecek sağlayıcı yok",
-      "empty": "Yedek sağlayıcıya geçiş kuyruğu boş. Otomatik yedek sağlayıcıya geçişyi etkinleştirmek için sağlayıcıları ekleyin.",
-      "orderHint": "Kuyruk sırası, Ana sayfadaki sağlayıcı listesi sırası ile eşleşir. Önceliği değiştirmek için Ana sayfadaki sağlayıcıları yeniden sıralayın.",
-      "dragHint": "Yedek sağlayıcıya geçiş sırasını ayarlamak için sağlayıcıları sürükleyin. Düşük sayılar daha yüksek önceliğe sahiptir.",
-      "toggleEnabled": "Etkinleştir/Devre Dışı Bırak",
-      "addSuccess": "Yedek sağlayıcıya geçiş kuyruğuna eklendi",
-      "addFailed": "Eklenemedi",
-      "removeSuccess": "Yedek sağlayıcıya geçiş kuyruğundan kaldırıldı",
-      "removeFailed": "Kaldırılamadı",
-      "reorderSuccess": "Sıra sırası güncellendi",
-      "reorderFailed": "Sipariş güncellenemedi",
-      "toggleFailed": "Durum güncellenemedi"
     },
     "autoFailover": {
       "info": "Yedek sağlayıcıya geçiş kuyruğunda birden fazla sağlayıcı varsa, istekler başarısız olduğunda sistem bunları öncelik sırasına göre deneyecektir. Sağlayıcı ardışık arıza eşiğine ulaştığında devre kesici açılacak ve geçici olarak atlayacaktır.",
@@ -3862,15 +3066,6 @@
       "errorRateHint": "Hata oranı bu değeri aştığında devre kesiciyi açın",
       "minRequests": "Minimum İstekler",
       "minRequestsHint": "Hata oranını hesaplamadan önce minimum istekler",
-      "explanationTitle": "Nasıl Çalışır?",
-      "failureThresholdLabel": "Arıza Eşiği",
-      "failureThresholdExplain": "Bu kadar çok ardışık arızadan sonra devre kesici açılarak sağlayıcının geçici olarak kullanılamaz hale gelmesine neden olur",
-      "timeoutLabel": "Kurtarma Bekleme Süresi",
-      "timeoutExplain": "Devre açıldıktan sonra yarı açık durumu denemeden önce bu kadar bekleyin",
-      "successThresholdLabel": "Kurtarma Başarı Eşiği",
-      "successThresholdExplain": "Yarı açık durumda, bu kadar çok başarının ardından devre kesiciyi kapatın ve sağlayıcıyı tekrar kullanılabilir hale getirin",
-      "errorRateLabel": "Hata Oranı Eşiği",
-      "errorRateExplain": "Arıza eşiğine ulaşılmasa bile hata oranı bu değeri aştığında devre kesiciyi açın",
       "maxRetries": "Maksimum Yeniden Deneme Sayısı",
       "timeoutSettings": "Zaman Aşımı Ayarları",
       "streamingFirstByte": "Akış İlk Bayt Zaman Aşımı",
@@ -3882,8 +3077,6 @@
       "nonStreamingHint": "Akış dışı istekler için toplam zaman aşımı, aralık 60-1200 saniye, varsayılan 600 saniye (10 dakika)"
     },
     "logging": {
-      "enabled": "Günlük kaydı etkinleştirildi",
-      "disabled": "Günlük kaydı devre dışı bırakıldı",
       "failed": "Günlük kaydı değiştirilemedi"
     },
     "server": {
@@ -3901,22 +3094,6 @@
     "unreachable": "{{providerName}}'ye ulaşılamıyor: {{message}}",
     "unreachableHint": "Bağlantı kurulamadı (DNS / bağlantı / TLS / zaman aşımı). base_url'yi ve ağınızı kontrol edin.",
     "error": "{{providerName}} kontrol hatası: {{error}}"
-  },
-  "proxyConfig": {
-    "proxyEnabled": "Yönlendirme Ana Anahtarı",
-    "appTakeover": "Yönlendirme Etkin",
-    "perAppConfig": "Uygulama Başına Yapılandırma",
-    "circuitBreaker": "Devre Kesici",
-    "circuitBreakerSettings": "Devre Kesici Ayarları",
-    "failureThreshold": "Arıza Eşiği",
-    "successThreshold": "Başarı Eşiği",
-    "recoveryTimeout": "Kurtarma Zaman Aşımı",
-    "errorRateThreshold": "Hata Oranı Eşiği",
-    "minRequests": "Min. İstekler",
-    "timeoutConfig": "Zaman Aşımı Yapılandırması",
-    "streamingFirstByte": "Akış İlk Bayt Zaman Aşımı",
-    "streamingIdle": "Akış Boşta Kalma Zaman Aşımı",
-    "nonStreaming": "Yayın Dışı Zaman Aşımı"
   },
   "universalProvider": {
     "duplicate": "Çoğalt",
@@ -3944,13 +3121,11 @@
     "synced": "Tüm uygulamalarla eşitle edildi",
     "syncError": "Eşitleme başarısız oldu",
     "noAppsEnabled": "Etkin uygulama yok",
-    "added": "Evrensel sağlayıcı eklendi",
     "addedAndSynced": "Evrensel sağlayıcı eklendi ve eşitle edildi",
     "addedButSyncFailed": "Evrensel sağlayıcı eklendi ancak eşitleme başarısız oldu",
     "updated": "Evrensel sağlayıcı güncellendi",
     "deleted": "Evrensel sağlayıcı silindi",
     "addFailed": "Evrensel sağlayıcı eklenemedi",
-    "hint": "Uygulamalar arası birleştirilmiş yapılandırma, Claude/Codex/Gemini ile otomatik eşitleme",
     "manage": "Yönet",
     "loadError": "Evrensel sağlayıcılar yüklenemedi",
     "saveError": "Evrensel sağlayıcı kaydedilemedi",
@@ -3967,49 +3142,19 @@
     "configJsonPreviewHint": "Aşağıdaki yapılandırmalar her uygulamaya eşitle edilecek (yalnızca görüntülenen alanların üzerine yazılacak, diğer özel ayarlar korunacaktır)"
   },
   "omo": {
-    "editProfile": "OMO Yapılandırmasını Düzenle",
-    "newProfile": "Yeni OMO Yapılandırması",
-    "profileName": "İsim",
     "mainAgents": "Ana Acenteler",
     "subAgents": "Alt Ajanler",
     "categories": "Kategoriler",
     "customAgents": "Özel Ajanler",
-    "noCustomAgents": "Özel ajan yok",
     "otherFields": "Diğer Yapılandırma",
-    "globalConfig": "OMO Küresel Yapılandırma",
-    "globalConfigShort": "OMO Yapılandırması",
-    "globalConfigSaved": "Genel yapılandırma kaydedildi",
-    "addProfile": "OMO Sağlayıcı Ekle",
-    "disabledItems": "Devre Dışı Bırakılan Öğeler",
-    "advanced": "Gelişmiş Ayarlar",
-    "profileCreated": "OMO yapılandırması oluşturuldu",
-    "profileUpdated": "OMO yapılandırması güncellendi",
     "invalidJson": "Diğer Alanlar geçersiz JSON içeriyor",
-    "confirmDelete": "Yapılandırmayı Sil",
-    "confirmDeleteMsg": "\"{{name}}\" silinsin mi?",
-    "profileDeleted": "Yapılandırma silindi",
-    "imported": "\"{{name}}\" olarak içe aktarıldı",
-    "import": "İçe aktar",
-    "global": "Küresel",
-    "empty": "Henüz OMO yapılandırması yok. + Ekle veya Yerelden içe aktar'ı tıklayın.",
-    "applied": "Uygulandı",
-    "apply": "Uygula",
-    "enable": "Etkinleştir",
-    "enabled": "Etkin",
     "disabled": "OMO devre dışı",
     "disableFailed": "OMO devre dışı bırakılamadı: {{error}}",
-    "selectPlaceholder": "Seç...",
-    "clear": "Temizle",
-    "clearWrapped": "(Temizle)",
     "defaultWrapped": "(Varsayılan)",
-    "variantPlaceholder": "değişken",
-    "selectEnabledModel": "Yapılandırılmış modeli seçin",
     "selectModel": "Yapılandırılmış modeli seçin",
     "recommendedHint": "Önerilen: {{model}}",
     "searchModel": "Arama modeli...",
-    "selectModelFirst": "Önce modeli seçin",
     "noEnabledModels": "Yapılandırılmış model yok",
-    "noVariantsForModel": "Model için varyant yok",
     "currentValueNotEnabled": "{{value}} (mevcut değer, yapılandırılmamış)",
     "currentValueUnavailable": "{{value}} (mevcut değer, mevcut değil)",
     "advancedLabel": "Gelişmiş",
@@ -4023,7 +3168,6 @@
     "importLocalFailed": "Yerel dosya okunamadı: {{error}}",
     "agentKeyPlaceholder": "ajan anahtarı",
     "categoryKeyPlaceholder": "kategori anahtarı",
-    "modelNamePlaceholder": "model adı",
     "custom": "Özel",
     "customCategories": "Özel Kategoriler",
     "modelConfiguration": "Model Yapılandırması",
@@ -4038,30 +3182,8 @@
     "source": "nereden:",
     "otherFieldsJson": "Diğer Alanlar (JSON)",
     "slimOtherFieldsHint": "Bu alanı konsey, geri dönüş, çoklayıcı, disabled_mcps ve todoContinuation gibi üst düzey OMO Slim yapılandırmaları için kullanın.",
-    "searchOrType": "Özel değeri arayın veya yazın...",
-    "noMatches": "Eşleşme yok",
     "jsonMustBeObject": "{{field}} bir JSON nesnesi olmalıdır",
-    "jsonInvalid": "{{field}}, geçersiz JSON içeriyor",
-    "importGlobalSuccess": "Yerel dosyadan içe aktarılan genel yapılandırma (kaydedilmemiş)",
-    "importGlobalFailed": "Yerel dosya okunamadı: {{error}}",
     "importLocal": "Yerel İçe Aktar",
-    "saveGlobalConfig": "Genel Yapılandırmayı Kaydet",
-    "schemaUrl": "$schema",
-    "resetDefault": "Sıfırla",
-    "sisyphusAgentConfig": "Sisyphus Aracısı Yapılandırması",
-    "disabledAgents": "Ajanlar",
-    "disabledAgentsPlaceholder": "Devre dışı ajanlar",
-    "disabledMcps": "MCP'ler",
-    "disabledMcpsPlaceholder": "Devre Dışı MCP'ler",
-    "disabledHooks": "Hook’lar",
-    "disabledHooksPlaceholder": "Devre dışı hook’lar",
-    "disabledSkills": "Beceriler",
-    "disabledSkillsPlaceholder": "Devre dışı beceriler",
-    "advancedLsp": "LSP Yapılandırması",
-    "advancedExperimental": "Deneysel Özellikler",
-    "advancedBackgroundTask": "Arka Plan Görevleri",
-    "advancedBrowserAutomation": "Tarayıcı Otomasyonu",
-    "advancedClaudeCode": "Claude Code",
     "agentDesc": {
       "sisyphus": "Ana orkestratör",
       "hephaestus": "Özerk derin işçi",
@@ -4127,37 +3249,32 @@
       "council": "Çok modelli fikir birliği aracısı. Birden fazla salt okunur meclis üyesini paralel olarak çalıştırır ve ardından ustanın nihai yanıtı sentezlemesine izin verir."
     }
   },
-  "openclawConfig": {
-    "defaultModel": {
-      "title": "Varsayılan Model",
-      "description": "OpenClaw için varsayılan birincil modeli ve yedek modelleri yapılandırma",
-      "primary": "Birincil Model",
-      "primaryPlaceholder": "ör. deepseek/deepseek-chat",
-      "fallbacks": "Geri Dönüş Modelleri",
-      "fallbacksPlaceholder": "ör. openrouter/anthropic/claude-sonnet-4.5",
-      "addFallback": "Geri Dönüş Modeli Ekle",
-      "saved": "Varsayılan model yapılandırması kaydedildi",
-      "saveFailed": "Varsayılan model kaydedilemedi"
-    },
-    "modelCatalog": {
-      "title": "Model Kataloğu",
-      "description": "Model takma adlarını ve izin verilenler listesini yapılandırma",
-      "modelId": "Model Kimliği",
-      "modelIdPlaceholder": "ör. deepseek/deepseek-chat",
-      "alias": "Takma ad",
-      "aliasPlaceholder": "örneğin DeepSeek",
-      "addEntry": "Model Ekle",
-      "removeEntry": "Kaldır",
-      "saved": "Model kataloğu kaydedildi",
-      "saveFailed": "Model kataloğu kaydedilemedi",
-      "empty": "Model kataloğu girişi yok",
-      "emptyHint": "Takma adları yapılandırmak için kataloğa modeller ekleyin"
-    },
-    "suggestedDefaults": "Önerilen Varsayılanları Uygula",
-    "suggestedDefaultsHint": "Bu ön ayarın önerilen varsayılan model yapılandırmasını kullanın"
-  },
   "subscription": {
     "title": "Abonelik Kotası",
+    "fiveHour": "5 saat",
+    "sevenDay": "Haftalık",
+    "sevenDayFable": "Fable",
+    "sevenDayOpus": "Haftalık Opus",
+    "sevenDaySonnet": "Haftalık Sonnet",
+    "thirtyDay": "30 gün",
+    "geminiPro": "Pro",
+    "geminiFlash": "Flash",
+    "geminiFlashLite": "Flash Lite",
+    "agyGemini": "Gemini",
+    "agyThirdParty": "Claude/GPT",
+    "agyGeminiFiveHour": "Gemini 5 saatlik",
+    "agyGeminiWeekly": "Gemini haftalık",
+    "agyGeminiArgonWeekly": "Argon haftalık",
+    "agyThirdPartyFiveHour": "Claude/GPT 5 saatlik",
+    "agyThirdPartyWeekly": "Claude/GPT haftalık",
+    "monthly": "Aylık",
+    "credits": "Kredi",
+    "copilotPremium": "Credits",
+    "resetsIn": "{{time}} sonra sıfırlanır",
+    "extraUsage": "Ekstra Kullanım",
+    "expiredHint": "Giriş bilgilerinizi yenilemek için {{tool}} komutunu çalıştırın",
+    "queryFailed": "Sorgu başarısız oldu",
+    "refresh": "Yenile",
     "short": {
       "fiveHour": "5 saat",
       "sevenDay": "hafta",
@@ -4176,34 +3293,7 @@
       "monthly": "Ay",
       "credits": "Kredi",
       "copilotPremium": "Credits"
-    },
-    "fiveHour": "5 saat",
-    "sevenDay": "Haftalık",
-    "sevenDayFable": "Fable",
-    "sevenDayOpus": "Haftalık Opus",
-    "sevenDaySonnet": "Haftalık Sonnet",
-    "thirtyDay": "30 gün",
-    "geminiPro": "Pro",
-    "geminiFlash": "Flash",
-    "geminiFlashLite": "Flash Lite",
-    "agyGemini": "Gemini",
-    "agyThirdParty": "Claude/GPT",
-    "agyGeminiFiveHour": "Gemini 5 saatlik",
-    "agyGeminiWeekly": "Gemini haftalık",
-    "agyGeminiArgonWeekly": "Argon haftalık",
-    "agyThirdPartyFiveHour": "Claude/GPT 5 saatlik",
-    "agyThirdPartyWeekly": "Claude/GPT haftalık",
-    "weeklyLimit": "Haftalık",
-    "monthly": "Aylık",
-    "credits": "Kredi",
-    "copilotPremium": "Credits",
-    "utilization": "{{value}}%",
-    "resetsIn": "{{time}} sonra sıfırlanır",
-    "extraUsage": "Ekstra Kullanım",
-    "expired": "Oturumun süresi doldu",
-    "expiredHint": "Giriş bilgilerinizi yenilemek için {{tool}} komutunu çalıştırın",
-    "queryFailed": "Sorgu başarısız oldu",
-    "refresh": "Yenile"
+    }
   },
   "nav": {
     "mainLabel": "Ana gezinme",
@@ -4293,7 +3383,6 @@
       "stack": "Birleştirme"
     },
     "active": "aktif",
-    "activeTitle": "{{mode}} aktif",
     "noProvider": "Yok",
     "failover": "Yedek sağlayıcıya geçiş",
     "routeSettings": "Yönlendirme ayarları",
@@ -4349,7 +3438,6 @@
       "routeSwitched": "Yönlendirme {{provider}} sağlayıcısına geçirildi. Yeni istekler bu sağlayıcıyı kullanacak.",
       "stackDefaultChanged": "Birleştirme varsayılanı {{provider}} olarak ayarlandı. Seçili birleştirilmiş modeller kendi sağlayıcılarını kullanmaya devam eder.",
       "clientConfigChanged": " İstemci yapılandırması da değişti. Güncel yapılandırmayı yüklemek için {{app}} uygulamasını yeniden başlatın.",
-      "defaultRemembered": "Birleştirme'ya geçtiğinizde {{provider}} varsayılan sağlayıcı olacaktır.",
       "restartHint": "Uygulamak için {{app}}'yi yeniden başlatın.",
       "failed": "Geçiş yapılamadı: {{detail}}"
     },
@@ -4429,7 +3517,6 @@
       "default": "Varsayılan",
       "models": "{{count}} model",
       "noModels": "Model yok",
-      "direct": "Doğrudan",
       "hermesManaged": "Hermes tarafından yönetilmektedir",
       "defaultModel": "Varsayılan model {{model}}"
     },
@@ -5056,10 +4143,6 @@
       "tool_use": "Araç kullanımı",
       "dynamically_loaded_tools": "Araçları gerektiğinde yükle"
     },
-    "empty": {
-      "title": "Kimi Code sağlayıcısı ekle",
-      "description": "Bir uç nokta, API anahtarı ve modeller yapılandırın. Mevcut Kimi yapılandırması otomatik olarak içe aktarılır."
-    },
     "capabilityHints": {
       "always_thinking": "Modelin akıl yürütme özelliği kapatılamıyorsa işaretleyin: bu model seçildiğinde Kimi akıl yürütmeyi açar ve kapatma seçeneğini gizler.",
       "dynamically_loaded_tools": "İstekleri kısa tutmak için modelin araç açıklamalarını gerektiğinde yüklemesini sağlar. Yalnızca Kimi'nin kendi modelleri destekler; üçüncü taraf modellerde kapalı bırakın. KIMI_CODE_EXPERIMENTAL_TOOL_SELECT ayarının da etkin olması gerekir."
@@ -5070,17 +4153,7 @@
     }
   },
   "omp": {
-    "empty": {
-      "title": "Henüz API anahtarı sağlayıcısı yok",
-      "description": "Ön ayar veya özel sağlayıcı eklemek için sağ üstteki + düğmesini kullanın."
-    },
-    "provider": {
-      "enabled": "Oh My Pi içinde etkinleştirildi",
-      "enableFailed": "Sağlayıcı Oh My Pi içinde etkinleştirilemedi",
-      "removed": "Oh My Pi içinden kaldırıldı"
-    },
     "current": {
-      "readFailed": "Oh My Pi sağlayıcı yapılandırması okunamadı",
       "stateUnavailableHint": "Oh My Pi yapılandırması okunana kadar sağlayıcı değişiklikleri devre dışıdır."
     },
     "form": {
@@ -5096,26 +4169,9 @@
         "litellm": "LiteLLM ağ geçidi",
         "appleFoundationModels": "Apple cihaz içi modelleri (macOS)"
       }
-    },
-    "errors": {
-      "fileTooLarge": "Oh My Pi yapılandırması 1 MiB sınırını aşıyor.",
-      "externalChange": "Oh My Pi yapılandırması dışarıdan değiştirildi. Yenileyip tekrar deneyin.",
-      "rollbackConflict": "Veritabanı kaydı başarısız oldu ve Oh My Pi yapılandırması dışarıdan değiştirildi. Elle geri yükleyin.",
-      "invalidMcp": "Oh My Pi MCP JSON geçersiz. Kök ve mcpServers nesne olmalıdır.",
-      "invalidYaml": "Geçersiz Oh My Pi YAML. Kök ve providers birer eşleme olmalıdır.",
-      "invalidProvider": "Geçersiz Oh My Pi sağlayıcısı. Gerekli alanları, API biçimini ve alan türlerini kontrol edin.",
-      "manualEdit": "Bu YAML yapısını CC Switch güvenle düzenleyemiyor. models.yml dosyasını elle düzenleyin.",
-      "duplicateProvider": "Bu Oh My Pi sağlayıcı anahtarı zaten var.",
-      "renameProvider": "Oh My Pi sağlayıcı anahtarları yeniden adlandırılamaz.",
-      "providerMissing": "Bu Oh My Pi sağlayıcısı artık kayıtlı değil.",
-      "legacyModelsJson": "Oh My Pi'de eski biçimde bir models.json dosyası var. omp, sonraki açılışında bunu models.yml biçimine geçirir. omp'yi bir kez çalıştırın, ardından sağlayıcıyı yeniden ekleyin."
     }
   },
   "dsh": {
-    "empty": {
-      "title": "DeepSeek Harness sağlayıcısı ekle",
-      "description": "Bir uç nokta, API anahtarı ve modeller yapılandırın. Mevcut özel sağlayıcılar burada otomatik olarak görünür."
-    },
     "sharedProviders": "Eklenen sağlayıcılar DeepSeek Harness'ın hem Web hem Desktop yapılandırmasına (ve başlatılmış headless, acp profillerine) yazılır; modeli DeepSeek Harness içinde seçin.",
     "sharedProvidersNote": "Web ve Desktop ortak kullanır",
     "account": {
