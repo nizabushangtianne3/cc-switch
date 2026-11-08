@@ -622,6 +622,45 @@ describe("ProviderList Component", () => {
     },
   );
 
+  // 渲染基准：父组件重渲染时，未变化的卡片不得跟着重渲染。
+  // ProviderList 与 SortableProviderCard 是双层 memo，props 未变时父组件
+  // 一次重渲染的连带渲染必须是 0。数字写进断言，防止 memo 回退。
+  it("re-renders no unchanged card when the parent re-renders (list memo baseline)", () => {
+    const providers = Array.from({ length: 50 }, (_, index) =>
+      createProvider({ id: `p-${index}`, name: `Provider ${index}` }),
+    );
+    useDragSortMock.mockReturnValue({
+      sortedProviders: providers,
+      sensors: [],
+      handleDragEnd: vi.fn(),
+    });
+    const props = {
+      ...baseProps,
+      appId: "claude" as const,
+      providers: Object.fromEntries(
+        providers.map((provider) => [provider.id, provider]),
+      ),
+    };
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    // 每次构造新 element：复用同一个 element 引用时 React 会对整棵子树
+    // bailout，测不到父组件重渲染的连带渲染。
+    const makeUi = () => (
+      <QueryClientProvider client={client}>
+        <ProviderList {...props} />
+      </QueryClientProvider>
+    );
+    const { rerender } = render(makeUi());
+    const initialRenders = providerCardRenderSpy.mock.calls.length;
+    expect(initialRenders).toBe(50);
+
+    rerender(makeUi());
+    const afterRerender = providerCardRenderSpy.mock.calls.length;
+    // 双层 memo 基线：父组件一次重渲染，卡片零连带渲染。
+    expect(afterRerender - initialRenders).toBe(0);
+  });
+
   it.each([
     { shortcut: { ctrlKey: true }, controlled: false },
     { shortcut: { metaKey: true }, controlled: false },
