@@ -278,8 +278,15 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                 Ok(bytes) => {
                     utf8_tail.append(&mut buffer, &bytes);
 
-                    while let Some((end, delim)) = next_sse_block_range(&buffer) {
-                        let block = &buffer[..end];
+                    // 块循环只推进消费游标，drain 留给整个 chunk 一次（与透传
+                    // scanner 同构）：一个 chunk 含多块时逐块 drain 会把剩余
+                    // 缓冲反复搬移。
+                    let mut consumed = 0usize;
+                    while let Some((block_end, delim)) =
+                        next_sse_block_range(&buffer[consumed..])
+                    {
+                        let end = consumed + block_end;
+                        let block = &buffer[consumed..end];
                         for l in block.lines() {
                             if let Some(data) = strip_sse_field(l, "data") {
                                 if data.trim() == "[DONE]" {
@@ -717,7 +724,14 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                 }
                             }
                         }
-                        buffer.drain(..end + delim);
+                        consumed = end + delim;
+                    }
+                    if consumed > 0 {
+                        if consumed == buffer.len() {
+                            buffer.clear();
+                        } else {
+                            buffer.drain(..consumed);
+                        }
                     }
                 }
                 Err(e) => {

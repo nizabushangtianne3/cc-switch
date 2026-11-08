@@ -860,16 +860,32 @@ pub(crate) fn create_responses_sse_stream_from_anthropic_with_context<
                     // JSON document. Hold that body intact (including pretty-printed
                     // blank lines) until EOF instead of discarding it as SSE blocks.
                     if json_document_candidate(&buffer).is_none() {
-                        while let Some((end, delim)) = next_sse_block_range(&buffer) {
-                            let (events, failed) =
-                                process_anthropic_sse_block(&mut state, &buffer[..end]);
-                            buffer.drain(..end + delim);
+                        // 块循环只推进消费游标，drain 留给整个 chunk 一次：一个 chunk
+                        // 含多块时逐块 drain 会把剩余缓冲反复搬移，与透传 scanner
+                        // 同构。
+                        let mut consumed = 0usize;
+                        while let Some((block_end, delim)) =
+                            next_sse_block_range(&buffer[consumed..])
+                        {
+                            let end = consumed + block_end;
+                            let (events, failed) = process_anthropic_sse_block(
+                                &mut state,
+                                &buffer[consumed..end],
+                            );
+                            consumed = end + delim;
                             for event in events {
                                 yield Ok(event);
                             }
                             if failed {
                                 stream_failed = true;
                                 break;
+                            }
+                        }
+                        if consumed > 0 {
+                            if consumed == buffer.len() {
+                                buffer.clear();
+                            } else {
+                                buffer.drain(..consumed);
                             }
                         }
                     }

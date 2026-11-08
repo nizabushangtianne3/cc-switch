@@ -241,16 +241,27 @@ where
         while let Some(chunk) = stream.next().await {
             let bytes = chunk.map_err(|error| io::Error::other(error.to_string()))?;
             utf8_tail.append(&mut buffer, &bytes);
-            while let Some((end, delim)) = next_sse_block_range(&buffer) {
-                let block = &buffer[..end];
+            // 块循环只推进消费游标，drain 留给整个 chunk 一次（与透传 scanner
+            // 同构）：多块合进一个 chunk 时不反复搬移剩余缓冲。
+            let mut consumed = 0usize;
+            while let Some((block_end, delim)) = next_sse_block_range(&buffer[consumed..]) {
+                let end = consumed + block_end;
+                let block = &buffer[consumed..end];
                 let outcome = if block.trim().is_empty() {
                     None
                 } else {
                     Some(ids.rewrite_block(block))
                 };
-                buffer.drain(..end + delim);
+                consumed = end + delim;
                 if let Some(outcome) = outcome {
                     yield outcome?;
+                }
+            }
+            if consumed > 0 {
+                if consumed == buffer.len() {
+                    buffer.clear();
+                } else {
+                    buffer.drain(..consumed);
                 }
             }
         }
