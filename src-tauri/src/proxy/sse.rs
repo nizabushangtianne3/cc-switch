@@ -285,6 +285,21 @@ pub(crate) fn scan_sse_block(block: &str) -> (Option<String>, Option<Cow<'_, str
     (event, sse_block_data(block))
 }
 
+/// 与 `scan_sse_block` 同义，但事件名也借用块文本：省掉每个块一次 String
+/// 分配。调用方必须保证在使用借用的期间不动缓冲——codex_chat 主循环已是
+/// chunk 级 drain（块处理期间不 drain），正好适用。
+pub(crate) fn scan_sse_block_ref(block: &str) -> (Option<&'_ str>, Option<Cow<'_, str>>) {
+    let mut event: Option<&str> = None;
+
+    for line in block.lines() {
+        if let Some(name) = strip_sse_field(line, "event") {
+            event = Some(name.trim());
+        }
+    }
+
+    (event, sse_block_data(block))
+}
+
 /// 只取一个 SSE 块的 `data:` 载荷，连 `event:` 名字都不看。
 ///
 /// 调用方不用事件名时走这里：`scan_sse_block` 每个块都要为那个名字分配一个

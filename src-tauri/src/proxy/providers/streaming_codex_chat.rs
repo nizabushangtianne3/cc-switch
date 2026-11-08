@@ -13,7 +13,7 @@ use super::{
     },
 };
 use crate::proxy::json_canonical::canonicalize_tool_arguments_str;
-use crate::proxy::sse::{next_sse_block_range, scan_sse_block, Utf8TailDecoder};
+use crate::proxy::sse::{next_sse_block_range, scan_sse_block_ref, Utf8TailDecoder};
 use bytes::Bytes;
 use futures::stream::{Stream, StreamExt};
 use serde::Deserialize;
@@ -936,7 +936,9 @@ pub fn create_responses_sse_stream_from_chat_with_context<E: std::error::Error +
                     {
                         let end = consumed + block_end;
                         let block = &buffer[consumed..end];
-                        let (event_name, payload) = scan_sse_block(block);
+                        // 借用版：块处理期间不 drain（drain 推迟到整个 chunk 末），
+                        // 事件名不必再每块分配一个 String。
+                        let (event_name, payload) = scan_sse_block_ref(block);
                         // [DONE] 的判定只需要一个 bool；先取出来，drain 之后照样能用
                         let is_done = payload.as_deref().is_some_and(|text| text.trim() == "[DONE]");
                         if is_done {
@@ -952,7 +954,7 @@ pub fn create_responses_sse_stream_from_chat_with_context<E: std::error::Error +
                         // 借阅探针——命中就一棵 Value 都不建，这条链路每事件约 4µs，
                         // 其中最大一块就是那棵树。载荷里出现 "error" 字样（模型输出
                         // 完全可能）也先按信封走，确认不是信封再回正经路径。
-                        let is_error_envelope = event_name.as_deref() == Some("error")
+                        let is_error_envelope = event_name == Some("error")
                             || payload
                                 .as_deref()
                                 .is_some_and(|text| text.contains("\"error\""));
