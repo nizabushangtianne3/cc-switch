@@ -68,12 +68,10 @@ pub fn is_auto_launch_enabled() -> Result<bool, AppError> {
         .map_err(|e| AppError::Message(format!("检查开机自启状态失败: {e}")))
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "macos"))]
 mod tests {
-    #[allow(unused_imports)]
     use super::*;
 
-    #[cfg(target_os = "macos")]
     #[test]
     fn test_get_macos_app_bundle_path_valid() {
         let exe_path = std::path::Path::new("/Applications/CC Switch.app/Contents/MacOS/CC Switch");
@@ -84,7 +82,6 @@ mod tests {
         );
     }
 
-    #[cfg(target_os = "macos")]
     #[test]
     fn test_get_macos_app_bundle_path_with_spaces() {
         let exe_path =
@@ -98,7 +95,6 @@ mod tests {
         );
     }
 
-    #[cfg(target_os = "macos")]
     #[test]
     fn test_get_macos_app_bundle_path_not_in_bundle() {
         let exe_path = std::path::Path::new("/usr/local/bin/cc-switch");
@@ -106,7 +102,6 @@ mod tests {
         assert_eq!(result, None);
     }
 
-    #[cfg(target_os = "macos")]
     #[test]
     fn test_get_macos_app_bundle_path_dev_build() {
         // 开发环境下的路径通常不在 .app bundle 内
