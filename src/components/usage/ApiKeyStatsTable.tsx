@@ -1,5 +1,5 @@
 // Key statistics are fork-only; keep the upstream table alignment consistent.
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useApiKeyStats } from "@/lib/query/usage";
 import { TablePagination, useClientPagination } from "./TablePagination";
@@ -40,7 +40,7 @@ export function apiKeyStatsLabel(
   });
 }
 
-export function ApiKeyStatsTable({
+export const ApiKeyStatsTable = memo(function ApiKeyStatsTable({
   range,
   appType,
   providerName,
@@ -150,4 +150,4 @@ export function ApiKeyStatsTable({
       />
     </div>
   );
-}
+});

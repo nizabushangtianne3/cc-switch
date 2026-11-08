@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowDown } from "lucide-react";
 import { useProviderStats } from "@/lib/query/usage";
@@ -24,7 +24,7 @@ interface ProviderStatsTableProps {
   refreshIntervalMs: number;
 }
 
-export function ProviderStatsTable({
+export const ProviderStatsTable = memo(function ProviderStatsTable({
   range,
   appType,
   providerName,
@@ -142,4 +142,4 @@ export function ProviderStatsTable({
       />
     </div>
   );
-}
+});
