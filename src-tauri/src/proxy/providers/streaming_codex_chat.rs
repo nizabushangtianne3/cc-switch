@@ -927,17 +927,24 @@ pub fn create_responses_sse_stream_from_chat_with_context<E: std::error::Error +
                 Ok(bytes) => {
                     utf8_tail.append(&mut buffer, &bytes);
 
-                    while let Some((end, delim)) = next_sse_block_range(&buffer) {
-                        let block = &buffer[..end];
+                    // 块循环只推进消费游标，drain 留给整个 chunk 一次：一个 chunk
+                    // 含多块时逐块 drain 会把剩余缓冲反复搬移（O(块数 x 剩余)），
+                    // 真实分片（每 chunk 1~3 块）也会白付每块一次的搬移与调用。
+                    let mut consumed = 0usize;
+                    while let Some((block_end, delim)) =
+                        next_sse_block_range(&buffer[consumed..])
+                    {
+                        let end = consumed + block_end;
+                        let block = &buffer[consumed..end];
                         let (event_name, payload) = scan_sse_block(block);
                         // [DONE] 的判定只需要一个 bool；先取出来，drain 之后照样能用
                         let is_done = payload.as_deref().is_some_and(|text| text.trim() == "[DONE]");
                         if is_done {
-                            buffer.drain(..end + delim);
                             for event in state.finalize() {
                                 yield Ok(event);
                             }
                             // [DONE] is terminal, including failed/incomplete finalization.
+                            buffer.drain(..end + delim);
                             return;
                         }
 
@@ -958,15 +965,15 @@ pub fn create_responses_sse_stream_from_chat_with_context<E: std::error::Error +
                                         yield Ok(state.failed_event_with_error(
                                             normalized["error"].clone(),
                                         ));
-                                        stream_failed = true;
-                                        break;
+                                        buffer.drain(..end + delim);
+                                        return;
                                     }
                                     // 误中：载荷正文里带 "error" 字样，按普通分片处理。
                                     let chunk = ChatChunkFields::from_value(&value);
                                     for event in state.handle_chat_chunk(&chunk) {
                                         yield Ok(event);
                                     }
-                                    buffer.drain(..end + delim);
+                                    consumed = end + delim;
                                     continue;
                                 }
                             }
@@ -974,32 +981,36 @@ pub fn create_responses_sse_stream_from_chat_with_context<E: std::error::Error +
 
                         // 探针优先：命中就一棵 Value 都不建。解析失败 = JSON 合法
                         // 但形状意外，或压根不是合法 JSON；后者与旧行为一致，
-                        // 跳过这个块。
-                        let skip = match payload.as_deref() {
-                            None => true,
+                        // 跳过这个块（游标照推，别把整条流卡死在这里）。
+                        match payload.as_deref() {
+                            None => {}
                             Some(text) => match serde_json::from_str::<ChatChunkProbe<'_>>(text) {
                                 Ok(probe) => {
                                     let chunk = ChatChunkFields::from_probe(&probe);
                                     for event in state.handle_chat_chunk(&chunk) {
                                         yield Ok(event);
                                     }
-                                    false
                                 }
-                                Err(_) => match serde_json::from_str::<Value>(text) {
-                                    Ok(value) => {
+                                Err(_) => {
+                                    if let Ok(value) = serde_json::from_str::<Value>(text) {
                                         let chunk = ChatChunkFields::from_value(&value);
                                         for event in state.handle_chat_chunk(&chunk) {
                                             yield Ok(event);
                                         }
-                                        false
                                     }
-                                    Err(_) => true,
-                                },
+                                }
                             },
-                        };
-                        buffer.drain(..end + delim);
-                        if skip {
-                            continue;
+                        }
+                        consumed = end + delim;
+                    }
+
+                    // 整个 chunk 处理完才动一次缓冲：全吃掉就清空，否则只搬走
+                    // 未构成完整块的尾部（通常是几十字节的半个事件）。
+                    if consumed > 0 {
+                        if consumed == buffer.len() {
+                            buffer.clear();
+                        } else {
+                            buffer.drain(..consumed);
                         }
                     }
 
