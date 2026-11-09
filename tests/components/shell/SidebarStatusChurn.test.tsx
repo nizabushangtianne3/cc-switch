@@ -93,6 +93,7 @@ const ALL_VISIBLE: VisibleApps = {
   mcode: true,
   agy: true,
   omp: true,
+  copilot: true,
 };
 
 const renderSidebar = () => {
@@ -122,7 +123,7 @@ describe("sidebar nav render baseline", () => {
     renderSidebar();
     const appRows = appStatusSpy.mock.calls.length;
     // 前提自断言：应用行确实渲染了，否则基准什么都没测
-    expect(appRows).toBe(14);
+    expect(appRows).toBe(15);
 
     // 一次轮询：只有今日花费变了，应用接管状态一个都没变
     act(() => {
@@ -143,6 +144,6 @@ describe("sidebar nav render baseline", () => {
     });
 
     // 模式真的变了：行必须重跑，否则角标不更新
-    expect(appStatusSpy.mock.calls.length).toBe(appRows + 14);
+    expect(appStatusSpy.mock.calls.length).toBe(appRows + 15);
   });
 });

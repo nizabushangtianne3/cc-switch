@@ -23,6 +23,7 @@ describe("uninstallCommandsFor", () => {
       "pi",
       "mcode",
       "kimi",
+      "copilot",
     ]);
     expect(
       commands.every((entry) => entry.command.startsWith("npm uninstall -g ")),

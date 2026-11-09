@@ -176,6 +176,11 @@ const KimiProviderForm = lazy(() =>
     default: module.KimiProviderForm,
   })),
 );
+const CopilotProviderForm = lazy(() =>
+  import("./CopilotProviderForm").then((module) => ({
+    default: module.CopilotProviderForm,
+  })),
+);
 const McodeProviderForm = lazy(() =>
   import("./McodeProviderForm").then((module) => ({
     default: module.McodeProviderForm,
@@ -376,6 +381,7 @@ export function ProviderForm(props: ProviderFormProps) {
   const { registerSelector } = usePresetStep() ?? {};
   const standaloneForm = (() => {
     if (props.appId === "kimi") return <KimiProviderForm {...props} />;
+    if (props.appId === "copilot") return <CopilotProviderForm {...props} />;
     if (props.appId === "mcode" || props.appId === "dsh") {
       return <McodeProviderForm {...props} />;
     }

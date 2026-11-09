@@ -427,6 +427,7 @@ describe("UsageDashboard", () => {
         kimi: false,
         agy: false,
         omp: false,
+        copilot: false,
       },
     });
     renderDashboard({ initialAppType: "gemini" });

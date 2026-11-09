@@ -467,6 +467,8 @@ export function loginAccountKey(
       return "xai";
     case "kimi":
       return "kimi";
+    case "copilot":
+      return "github";
     case "dsh":
       return "deepseek";
     default:

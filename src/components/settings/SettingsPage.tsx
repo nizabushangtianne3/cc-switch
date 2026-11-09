@@ -625,9 +625,7 @@ export function SettingsPage({
             <Loader2 className="h-8 w-8 animate-spin text-fg-3" />
           </div>
         ) : (
-          <SettingsBody>
-            {renderSection()}
-          </SettingsBody>
+          <SettingsBody>{renderSection()}</SettingsBody>
         )}
       </div>
 

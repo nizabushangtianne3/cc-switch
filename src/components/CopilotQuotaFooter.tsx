@@ -76,16 +76,22 @@ interface CopilotQuotaFooterProps {
   inline?: boolean;
   /** 是否为当前激活的供应商 */
   isCurrent?: boolean;
+  /** 指定查询的账号，覆盖 meta 里绑定的账号（Copilot CLI 官方卡跟着 CLI 当前登录） */
+  accountId?: string | null;
 }
 
-function CopilotQuotaFooterComponent(props: CopilotQuotaFooterProps) {
-  const { meta, inline = false, isCurrent = false } = props;
+function CopilotQuotaFooterComponent({
+  meta,
+  inline = false,
+  isCurrent = false,
+  accountId: accountIdOverride,
+}: CopilotQuotaFooterProps) {
   const { t, i18n } = useTranslation();
   const display = useQuotaDisplay();
-  const accountId = resolveManagedAccountId(
-    meta,
-    PROVIDER_TYPES.GITHUB_COPILOT,
-  );
+  const accountId =
+    accountIdOverride !== undefined
+      ? accountIdOverride
+      : resolveManagedAccountId(meta, PROVIDER_TYPES.GITHUB_COPILOT);
 
   const {
     data: quota,

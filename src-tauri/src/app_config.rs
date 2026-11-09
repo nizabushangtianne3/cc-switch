@@ -16,6 +16,8 @@ pub struct McpApps {
     #[serde(default)]
     pub agy: bool,
     #[serde(default)]
+    pub copilot: bool,
+    #[serde(default)]
     pub claude: bool,
     #[serde(default)]
     pub codex: bool,
@@ -60,6 +62,7 @@ macro_rules! impl_shared_apps {
                     AppType::Omp => self.omp,
                     AppType::ClaudeDesktop => false, // 无 ClaudeDesktop 选择位
                     AppType::Agy => self.agy,
+                    AppType::Copilot => self.copilot,
                 }
             }
             /// 设置指定应用的启用状态
@@ -78,6 +81,7 @@ macro_rules! impl_shared_apps {
                     AppType::Pi => self.pi = enabled,
                     AppType::ClaudeDesktop => {} // 无 ClaudeDesktop 选择位，忽略
                     AppType::Agy => self.agy = enabled,
+                    AppType::Copilot => self.copilot = enabled,
                     AppType::Omp => self.omp = enabled,
                 }
             }
@@ -101,6 +105,9 @@ macro_rules! impl_shared_apps {
                 }
                 if self.agy {
                     apps.push(AppType::Agy);
+                }
+                if self.copilot {
+                    apps.push(AppType::Copilot);
                 }
                 if self.dsh {
                     apps.push(AppType::Dsh);
@@ -132,6 +139,7 @@ macro_rules! impl_shared_apps {
                     && !self.opencode
                     && !self.hermes
                     && !self.agy
+                    && !self.copilot
                     && !self.kimi
                     && !self.dsh
                     && !self.mcode
@@ -155,6 +163,8 @@ pub struct SkillApps {
     pub dsh: bool,
     #[serde(default)]
     pub agy: bool,
+    #[serde(default)]
+    pub copilot: bool,
     #[serde(default)]
     pub claude: bool,
     #[serde(default)]
@@ -384,6 +394,7 @@ pub enum AppType {
     Dsh,
     Agy,
     Omp,
+    Copilot,
 }
 
 impl AppType {
@@ -403,6 +414,7 @@ impl AppType {
             AppType::Dsh => "dsh",
             AppType::Agy => "agy",
             AppType::Omp => "omp",
+            AppType::Copilot => "copilot",
         }
     }
 
@@ -456,6 +468,7 @@ impl AppType {
             AppType::Dsh,
             AppType::Agy,
             AppType::Omp,
+            AppType::Copilot,
         ]
         .into_iter()
     }
@@ -481,10 +494,13 @@ impl FromStr for AppType {
             "dsh" | "deepseek-harness" => Ok(AppType::Dsh),
             "agy" | "antigravity" | "antigravity-cli" => Ok(AppType::Agy),
             "omp" | "oh-my-pi" | "oh_my_pi" | "ohmypi" => Ok(AppType::Omp),
+            "copilot" | "copilot-cli" | "github-copilot" | "github-copilot-cli" => {
+                Ok(AppType::Copilot)
+            }
             other => Err(AppError::localized(
                 "unsupported_app",
-                format!("不支持的应用标识: '{other}'。可选值: claude, claude-desktop, codex, gemini, grokbuild, opencode, openclaw, hermes, pi, mcode, kimi, dsh, agy, omp。"),
-                format!("Unsupported app id: '{other}'. Allowed: claude, claude-desktop, codex, gemini, grokbuild, opencode, openclaw, hermes, pi, mcode, kimi, dsh, agy, omp."),
+                format!("不支持的应用标识: '{other}'。可选值: claude, claude-desktop, codex, gemini, grokbuild, opencode, openclaw, hermes, pi, mcode, kimi, dsh, agy, omp, copilot。"),
+                format!("Unsupported app id: '{other}'. Allowed: claude, claude-desktop, codex, gemini, grokbuild, opencode, openclaw, hermes, pi, mcode, kimi, dsh, agy, omp, copilot."),
             )),
         }
     }
@@ -529,7 +545,8 @@ impl CommonConfigSnippets {
             | AppType::Kimi
             | AppType::Dsh
             | AppType::Omp
-            | AppType::Agy => None,
+            | AppType::Agy
+            | AppType::Copilot => None,
         }
     }
 
@@ -549,7 +566,8 @@ impl CommonConfigSnippets {
             | AppType::Kimi
             | AppType::Dsh
             | AppType::Omp
-            | AppType::Agy => {}
+            | AppType::Agy
+            | AppType::Copilot => {}
         }
     }
 }
@@ -595,6 +613,7 @@ impl Default for MultiAppConfig {
         apps.insert("openclaw".to_string(), ProviderManager::default());
         apps.insert("hermes".to_string(), ProviderManager::default());
         apps.insert("agy".to_string(), ProviderManager::default());
+        apps.insert("copilot".to_string(), ProviderManager::default());
 
         Self {
             version: 2,
@@ -881,7 +900,8 @@ impl MultiAppConfig {
             | AppType::Kimi
             | AppType::Dsh
             | AppType::Omp
-            | AppType::Agy => return Ok(false),
+            | AppType::Agy
+            | AppType::Copilot => return Ok(false),
         };
 
         prompts.insert(id, prompt);
@@ -930,7 +950,8 @@ impl MultiAppConfig {
                 | AppType::Kimi
                 | AppType::Dsh
                 | AppType::Omp
-                | AppType::Agy => continue, // Pi didn't exist in v3.6.x, skip
+                | AppType::Agy
+                | AppType::Copilot => continue, // Pi didn't exist in v3.6.x, skip
             };
 
             for (id, entry) in old_servers {
