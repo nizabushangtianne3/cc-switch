@@ -126,5 +126,9 @@ export function useMcpConnectivity(servers: McpServersMap | undefined) {
   const checking = Object.values(states).includes("checking");
   const canCheck = Object.keys(states).length > 0;
 
-  return { states, checking, canCheck, checkAll, checkServer };
+  // 返回值每次渲染都建新对象会把下游 memo 化的行整条打穿（行 props 里有它）
+  return useMemo(
+    () => ({ states, checking, canCheck, checkAll, checkServer }),
+    [states, checking, canCheck, checkAll, checkServer],
+  );
 }
