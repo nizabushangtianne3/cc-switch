@@ -1,6 +1,6 @@
 [package]
 name = "cc-switch"
-version = "4.0.28"
+version = "4.0.29"
 description = "All-in-One Assistant for Claude Code, Codex & Gemini CLI"
 authors = ["Jason Young"]
 license = "MIT"
@@ -152,3 +152,5 @@ serial_test = "3"
 tempfile = "3"
 tauri = { version = "2.8.2", features = ["test"] }
 tokio = { version = "1", features = ["test-util"] }
+
+

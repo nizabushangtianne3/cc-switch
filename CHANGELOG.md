@@ -5,6 +5,12 @@ All notable changes to CC Switch will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.29] - 2026-11-10
+
+This release merges upstream GitHub Copilot CLI support and fixes the problem where a third-party model rejecting unsupported request parameters ruined the whole conversation: the proxy now strips the rejected parameters and retries once, and remembers per-model parameter capabilities (persisted across restarts), so later requests are stripped before being sent and the client never sees the 400. It also removes the outer RwLock around the Copilot/xAI auth managers, lazy-loads the settings sections, and memoizes provider form blocks, model list rows and MCP server rows.
+
+**Stats**: 5 commits | 108 files changed | +4728 insertions | -186 deletions
+
 ## [4.0.28] - 2026-11-08
 
 This release adapts CC Switch to Codex desktop 26.1103 / CLI 0.167, which only lets a thread continue while the `model_provider` it was recorded under is the one currently selected. In routing and aggregation mode, third-party routes are now written as the built-in `openai` provider when a ChatGPT login is on disk, so switching between the official route and third parties no longer locks either group of threads; direct switches that do split the history say how many sessions became read-only; and opting into unified session history now keeps moving official sessions over on every launch, with a much faster state DB backup and a notice when the migration finishes. Codex also gets a "Pause the official login" switch in the route and aggregation settings for when the official quota is exhausted, and official quota protection is now on by default. The Apps page shows queue state and live output for installs. Fixes cover Codex failover sending the previous vendor's model to a different vendor, compaction failing on Kimi For Coding, Codex threads that broke on Kimi or DeepSeek native Responses after a tool call, and forked Codex sessions whose usage never imported from a WSL directory on Windows.
