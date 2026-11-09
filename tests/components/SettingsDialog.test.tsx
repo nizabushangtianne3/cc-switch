@@ -208,7 +208,7 @@ describe("SettingsPage", () => {
     expect(document.querySelector(".animate-spin")).toBeInTheDocument();
   });
 
-  it("titles the page with the current section", () => {
+  it("titles the page with the current section", async () => {
     renderSettingsPage({ section: "network" });
 
     expect(
@@ -217,7 +217,9 @@ describe("SettingsPage", () => {
         name: "settings.sections.network",
       }),
     ).toBeInTheDocument();
-    expect(screen.getByText("global-proxy-settings")).toBeInTheDocument();
+    expect(
+      await screen.findByText("global-proxy-settings"),
+    ).toBeInTheDocument();
   });
 
   it("saves general switches immediately and links to the Apps page", async () => {
@@ -268,21 +270,29 @@ describe("SettingsPage", () => {
     expect(toastErrorMock).toHaveBeenCalledWith("settings.saveFailedGeneric");
   });
 
-  it("wires import, export and sync into the data section", () => {
+  it("wires import, export and sync into the data section", async () => {
     renderSettingsPage({ section: "data" });
 
-    fireEvent.click(screen.getByRole("button", { name: /settings\.import/ }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /settings\.import/ }),
+    );
     expect(importExportMock.importConfig).toHaveBeenCalled();
     fireEvent.click(
-      screen.getByRole("button", { name: "settings.exportConfig" }),
+      await screen.findByRole("button", { name: "settings.exportConfig" }),
     );
     expect(importExportMock.exportConfig).toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "common.clear" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "common.clear" }),
+    );
     expect(importExportMock.clearSelection).toHaveBeenCalled();
 
-    expect(screen.getByText("webdav-sync-section")).toBeInTheDocument();
-    expect(screen.getByText("backup-list-section")).toBeInTheDocument();
-    expect(screen.getByText("log-config-panel")).toBeInTheDocument();
+    expect(
+      await screen.findByText("webdav-sync-section"),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText("backup-list-section"),
+    ).toBeInTheDocument();
+    expect(await screen.findByText("log-config-panel")).toBeInTheDocument();
   });
 
   it("passes onImportSuccess through to the import hook", () => {
@@ -298,7 +308,9 @@ describe("SettingsPage", () => {
   it("drives per-app directories and saves only after a change", async () => {
     const { rerenderWith } = renderSettingsPage({ section: "appConfig" });
 
-    expect(screen.getByText("codex-auth-settings")).toBeInTheDocument();
+    expect(
+      await screen.findByText("codex-auth-settings"),
+    ).toBeInTheDocument();
     // 没改过目录：没有保存按钮
     expect(
       screen.queryByRole("button", { name: "common.save" }),
@@ -331,7 +343,9 @@ describe("SettingsPage", () => {
     });
 
     renderSettingsPage({ section: "data" });
-    fireEvent.click(screen.getByRole("button", { name: "common.save" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "common.save" }),
+    );
 
     expect(
       await screen.findByText("settings.restartRequired"),
@@ -363,7 +377,7 @@ describe("SettingsPage", () => {
     expect(screen.queryByText("settings.restartRequired")).toBeNull();
   });
 
-  it("scrolls back to the top when the section changes", () => {
+  it("scrolls back to the top when the section changes", async () => {
     const { container, rerenderWith } = renderSettingsPage();
     const scrollContainer = container.querySelector(
       "#main-content",
@@ -373,7 +387,7 @@ describe("SettingsPage", () => {
     rerenderWith({ section: "about" });
 
     expect(scrollContainer.scrollTop).toBe(0);
-    expect(screen.getByText("about:false")).toBeInTheDocument();
+    expect(await screen.findByText("about:false")).toBeInTheDocument();
   });
 
   describe("app configuration navigation", () => {
@@ -410,13 +424,19 @@ describe("SettingsPage", () => {
       }
     };
 
-    const startNavigation = () => {
+    const startNavigation = async () => {
       const view = renderSettingsPage({
         section: "appConfig",
         appConfigScrollTarget: "pi",
       });
       const container =
         view.container.querySelector<HTMLDivElement>("#main-content")!;
+      // 分区懒加载：等条目挂载后再驱动帧循环。
+      await waitFor(() =>
+        expect(
+          view.container.querySelector("#app-config-pi"),
+        ).not.toBeNull(),
+      );
       const target =
         view.container.querySelector<HTMLElement>("#app-config-pi")!;
       Object.defineProperties(container, {
@@ -441,8 +461,8 @@ describe("SettingsPage", () => {
 
     it.each(["wheel", "touchstart", "pointerdown", "keyboard", "scrollbar"])(
       "preserves user scrolling and skips highlighting after %s takes over",
-      (input) => {
-        const { scrollContainer, animate } = startNavigation();
+      async (input) => {
+        const { scrollContainer, animate } = await startNavigation();
         if (input === "keyboard") {
           expect(fireEvent.keyDown(window, { key: "PageUp" })).toBe(true);
         } else if (input !== "scrollbar") {
@@ -461,8 +481,8 @@ describe("SettingsPage", () => {
       },
     );
 
-    it("finishes normal navigation and flashes twice after reaching the target", () => {
-      const { scrollContainer, animate } = startNavigation();
+    it("finishes normal navigation and flashes twice after reaching the target", async () => {
+      const { scrollContainer, animate } = await startNavigation();
       advanceFrames(12);
       expect(scrollContainer.scrollTop).toBe(608);
       expect(animate).toHaveBeenCalledTimes(1);
@@ -472,8 +492,8 @@ describe("SettingsPage", () => {
       );
     });
 
-    it("does not treat cursor movement in a directory input as page scrolling", () => {
-      const { scrollContainer, animate } = startNavigation();
+    it("does not treat cursor movement in a directory input as page scrolling", async () => {
+      const { scrollContainer, animate } = await startNavigation();
       fireEvent.keyDown(scrollContainer.querySelector("input")!, {
         key: "ArrowUp",
       });
@@ -482,8 +502,8 @@ describe("SettingsPage", () => {
       expect(animate).toHaveBeenCalledTimes(1);
     });
 
-    it("cancels an active highlight when the user starts scrolling", () => {
-      const { scrollContainer, highlight } = startNavigation();
+    it("cancels an active highlight when the user starts scrolling", async () => {
+      const { scrollContainer, highlight } = await startNavigation();
       advanceFrames(12);
       fireEvent.wheel(scrollContainer);
       expect(highlight.cancel).toHaveBeenCalledTimes(1);

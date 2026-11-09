@@ -1,9 +1,12 @@
 import {
   useCallback,
   useEffect,
+  type ReactNode,
+  lazy,
   useLayoutEffect,
   useMemo,
   useRef,
+  Suspense,
   useState,
   type ComponentType,
 } from "react";
@@ -32,15 +35,66 @@ import { useSettingsQuery } from "@/lib/query";
 import type { SettingsSection } from "@/lib/navigation";
 import { AppPageHeader } from "@/components/shell/AppPageHeader";
 import { DirectoryInput } from "@/components/settings/DirectorySettings";
-import { ImportExportSection } from "@/components/settings/ImportExportSection";
-import { BackupListSection } from "@/components/settings/BackupListSection";
-import { WebdavSyncSection } from "@/components/settings/WebdavSyncSection";
-import { AboutSection } from "@/components/settings/AboutSection";
-import { RoutingSection } from "@/components/settings/sections/RoutingSection";
-import { GlobalProxySettings } from "@/components/settings/GlobalProxySettings";
-import { LogConfigPanel } from "@/components/settings/LogConfigPanel";
 import { GeneralSection } from "@/components/settings/sections/GeneralSection";
-import { AppConfigSection } from "@/components/settings/sections/AppConfigSection";
+
+// 分区按需加载：进设置只加载默认的「通用」分区，切到哪片才拉哪片的代码。
+// 通用分区保持静态：它是默认视图，懒加载只会让它多闪一下。
+const LazyAppConfigSection = lazy(() =>
+  import("@/components/settings/sections/AppConfigSection").then((m) => ({
+    default: m.AppConfigSection,
+  })),
+);
+const LazyRoutingSection = lazy(() =>
+  import("@/components/settings/sections/RoutingSection").then((m) => ({
+    default: m.RoutingSection,
+  })),
+);
+const LazyGlobalProxySettings = lazy(() =>
+  import("@/components/settings/GlobalProxySettings").then((m) => ({
+    default: m.GlobalProxySettings,
+  })),
+);
+const LazyImportExportSection = lazy(() =>
+  import("@/components/settings/ImportExportSection").then((m) => ({
+    default: m.ImportExportSection,
+  })),
+);
+const LazyBackupListSection = lazy(() =>
+  import("@/components/settings/BackupListSection").then((m) => ({
+    default: m.BackupListSection,
+  })),
+);
+const LazyWebdavSyncSection = lazy(() =>
+  import("@/components/settings/WebdavSyncSection").then((m) => ({
+    default: m.WebdavSyncSection,
+  })),
+);
+const LazyLogConfigPanel = lazy(() =>
+  import("@/components/settings/LogConfigPanel").then((m) => ({
+    default: m.LogConfigPanel,
+  })),
+);
+const LazyAboutSection = lazy(() =>
+  import("@/components/settings/AboutSection").then((m) => ({
+    default: m.AboutSection,
+  })),
+);
+
+// 每块懒加载自带 Suspense 边界：chunk 在途时只转这一块，同一分区里的静态
+// 内容（目录输入、保存按钮…）保持可见可点。
+function LazyBlock({ children }: { children: ReactNode }) {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex h-full items-center justify-center py-16">
+          <Loader2 className="h-8 w-8 animate-spin text-fg-3" />
+        </div>
+      }
+    >
+      {children}
+    </Suspense>
+  );
+}
 import {
   SettingsBlock,
   SettingsBody,
@@ -63,6 +117,9 @@ const SECTION_ICON: Record<
   data: Database,
   about: Info,
 };
+
+// 懒加载分区里等定位目标挂载的最大帧数（约 2s@60fps）；等不到就放弃定位。
+const MAX_TARGET_WAIT_FRAMES = 120;
 
 interface SettingsPageProps {
   section: SettingsSection;
@@ -151,6 +208,7 @@ export function SettingsPage({
 
     let highlight: Animation | undefined;
     let frame = 0;
+    let waitedFrames = 0;
     const inputListeners = new AbortController();
     const cancelNavigation = () => {
       cancelAnimationFrame(frame);
@@ -185,12 +243,17 @@ export function SettingsPage({
     window.addEventListener("keydown", handleScrollKey, inputOptions);
 
     // 等条目挂载后，仅滚动设置正文，避免 scrollIntoView 带动外层布局。
-    frame = requestAnimationFrame(() => {
+    frame = requestAnimationFrame(function waitForTarget() {
       const target = container.querySelector<HTMLElement>(
         `#app-config-${appConfigScrollTarget}`,
       );
+      // 分区懒加载：条目可能比首帧晚几帧才挂载，有界地等它出现（约 2s）。
       if (!target) {
-        inputListeners.abort();
+        if (++waitedFrames >= MAX_TARGET_WAIT_FRAMES) {
+          inputListeners.abort();
+          return;
+        }
+        frame = requestAnimationFrame(waitForTarget);
         return;
       }
 
@@ -377,20 +440,26 @@ export function SettingsPage({
         );
       case "appConfig":
         return (
-          <AppConfigSection
-            settings={settings}
-            savedSettings={savedSettings}
-            resolvedDirs={resolvedDirs}
-            isSaving={isSaving}
-            onAutoSave={handleAutoSave}
-            onDirectoryChange={updateDirectory}
-            onBrowseDirectory={browseDirectory}
-            onResetDirectory={resetDirectory}
-            onSaveDirectories={handleSave}
-          />
+          <LazyBlock>
+            <LazyAppConfigSection
+              settings={settings}
+              savedSettings={savedSettings}
+              resolvedDirs={resolvedDirs}
+              isSaving={isSaving}
+              onAutoSave={handleAutoSave}
+              onDirectoryChange={updateDirectory}
+              onBrowseDirectory={browseDirectory}
+              onResetDirectory={resetDirectory}
+              onSaveDirectories={handleSave}
+            />
+          </LazyBlock>
         );
       case "routing":
-        return <RoutingSection onOpenApp={onOpenApp} />;
+        return (
+          <LazyBlock>
+            <LazyRoutingSection onOpenApp={onOpenApp} />
+          </LazyBlock>
+        );
       case "network":
         return (
           <SettingsBlock
@@ -401,7 +470,9 @@ export function SettingsPage({
             }}
           >
             <div className="rounded-panel border border-border bg-surface p-5">
-              <GlobalProxySettings />
+              <LazyBlock>
+                <LazyGlobalProxySettings />
+              </LazyBlock>
             </div>
           </SettingsBlock>
         );
@@ -454,17 +525,19 @@ export function SettingsPage({
               }}
             >
               <div className="rounded-panel border border-border bg-surface p-5">
-                <ImportExportSection
-                  status={importStatus}
-                  selectedFile={selectedFile}
-                  errorMessage={errorMessage}
-                  backupId={backupId}
-                  isImporting={isImporting}
-                  onSelectFile={selectImportFile}
-                  onImport={importConfig}
-                  onExport={exportConfig}
-                  onClear={clearSelection}
-                />
+                <LazyBlock>
+                  <LazyImportExportSection
+                    status={importStatus}
+                    selectedFile={selectedFile}
+                    errorMessage={errorMessage}
+                    backupId={backupId}
+                    isImporting={isImporting}
+                    onSelectFile={selectImportFile}
+                    onImport={importConfig}
+                    onExport={exportConfig}
+                    onClear={clearSelection}
+                  />
+                </LazyBlock>
               </div>
             </SettingsBlock>
             <SettingsBlock
@@ -475,11 +548,13 @@ export function SettingsPage({
               }}
             >
               <div className="rounded-panel border border-border bg-surface p-5">
-                <BackupListSection
-                  backupIntervalHours={settings.backupIntervalHours}
-                  backupRetainCount={settings.backupRetainCount}
-                  onSettingsChange={(updates) => handleAutoSave(updates)}
-                />
+                <LazyBlock>
+                  <LazyBackupListSection
+                    backupIntervalHours={settings.backupIntervalHours}
+                    backupRetainCount={settings.backupRetainCount}
+                    onSettingsChange={(updates) => handleAutoSave(updates)}
+                  />
+                </LazyBlock>
               </div>
             </SettingsBlock>
             <SettingsBlock
@@ -490,12 +565,14 @@ export function SettingsPage({
               }}
             >
               <div className="rounded-panel border border-border bg-surface p-5">
-                <WebdavSyncSection
-                  config={settings.webdavSync}
-                  s3Config={settings.s3Sync}
-                  settings={settings}
-                  onAutoSave={handleAutoSave}
-                />
+                <LazyBlock>
+                  <LazyWebdavSyncSection
+                    config={settings.webdavSync}
+                    s3Config={settings.s3Sync}
+                    settings={settings}
+                    onAutoSave={handleAutoSave}
+                  />
+                </LazyBlock>
               </div>
             </SettingsBlock>
             <SettingsBlock
@@ -516,13 +593,19 @@ export function SettingsPage({
               }
             >
               <div className="rounded-panel border border-border bg-surface p-5">
-                <LogConfigPanel />
+                <LazyBlock>
+                  <LazyLogConfigPanel />
+                </LazyBlock>
               </div>
             </SettingsBlock>
           </>
         );
       case "about":
-        return <AboutSection isPortable={isPortable} />;
+        return (
+          <LazyBlock>
+            <LazyAboutSection isPortable={isPortable} />
+          </LazyBlock>
+        );
     }
   };
 
@@ -542,7 +625,9 @@ export function SettingsPage({
             <Loader2 className="h-8 w-8 animate-spin text-fg-3" />
           </div>
         ) : (
-          <SettingsBody>{renderSection()}</SettingsBody>
+          <SettingsBody>
+            {renderSection()}
+          </SettingsBody>
         )}
       </div>
 
