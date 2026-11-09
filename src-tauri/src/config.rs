@@ -1462,7 +1462,17 @@ mod tests {
             .join("hermes");
         std::fs::create_dir_all(&backup_dir).expect("create backup dir");
         for name in ["old-1.yaml", "old-2.yaml", "old-3.yaml"] {
-            std::fs::write(backup_dir.join(name), b"old").expect("seed old backup");
+            let seeded = backup_dir.join(name);
+            std::fs::write(&seeded, b"old").expect("seed old backup");
+            // 把种子文件拨到一分钟前：粗粒度文件系统上新建备份可能与种子同秒，
+            // 排序不稳会把新备份当旧的删掉（Linux CI 实测偶发）。
+            let past = std::time::SystemTime::now() - std::time::Duration::from_secs(60);
+            let file = std::fs::OpenOptions::new()
+                .write(true)
+                .open(&seeded)
+                .expect("open seeded backup");
+            file.set_times(std::fs::FileTimes::new().set_modified(past))
+                .expect("backdate seeded backup");
         }
 
         let previous_retain = crate::settings::get_settings();
