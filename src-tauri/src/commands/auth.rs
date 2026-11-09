@@ -174,7 +174,7 @@ fn map_device_code_response(
 async fn copilot_auth_status(
     copilot_state: &State<'_, CopilotAuthState>,
 ) -> Result<ManagedAuthStatus, String> {
-    let auth_manager = copilot_state.0.read().await;
+    let auth_manager = &copilot_state.0;
     let status = auth_manager.get_status().await;
     let default_account_id = status.default_account_id.clone();
     let accounts = status
@@ -226,7 +226,7 @@ async fn codex_auth_status(
 async fn xai_auth_status(
     xai_state: &State<'_, XaiOAuthState>,
 ) -> Result<ManagedAuthStatus, String> {
-    let auth_manager = xai_state.0.read().await;
+    let auth_manager = &xai_state.0;
     let status = auth_manager.get_status().await;
     let default_account_id = status.default_account_id.clone();
     let accounts = status
@@ -301,7 +301,7 @@ pub async fn auth_start_login(
             if target_account_id.is_some() {
                 return Err("Targeted re-authentication is only supported for Codex OAuth".into());
             }
-            let auth_manager = copilot_state.0.read().await;
+            let auth_manager = &copilot_state.0;
             let response = auth_manager
                 .start_device_flow(github_domain.as_deref())
                 .await
@@ -326,7 +326,7 @@ pub async fn auth_start_login(
             if target_account_id.is_some() {
                 return Err("Targeted re-authentication is only supported for Codex OAuth".into());
             }
-            let auth_manager = xai_state.0.read().await;
+            let auth_manager = &xai_state.0;
             let response = auth_manager
                 .start_device_flow()
                 .await
@@ -559,7 +559,7 @@ pub async fn auth_poll_for_account(
     let auth_provider = ensure_auth_provider(&auth_provider)?;
     match auth_provider {
         AUTH_PROVIDER_GITHUB_COPILOT => {
-            let auth_manager = copilot_state.0.write().await;
+            let auth_manager = &copilot_state.0;
             match auth_manager
                 .poll_for_token(&device_code, github_domain.as_deref())
                 .await
@@ -596,7 +596,7 @@ pub async fn auth_poll_for_account(
             }
         }
         AUTH_PROVIDER_XAI_OAUTH => {
-            let auth_manager = xai_state.0.write().await;
+            let auth_manager = &xai_state.0;
             match auth_manager.poll_for_token(&device_code).await {
                 Ok(account) => {
                     let default_account_id = auth_manager.get_status().await.default_account_id;
@@ -673,7 +673,7 @@ pub async fn auth_list_accounts(
     let auth_provider = ensure_auth_provider(&auth_provider)?;
     match auth_provider {
         AUTH_PROVIDER_GITHUB_COPILOT => {
-            let auth_manager = copilot_state.0.read().await;
+            let auth_manager = &copilot_state.0;
             let status = auth_manager.get_status().await;
             let default_account_id = status.default_account_id.clone();
             Ok(status
@@ -693,7 +693,7 @@ pub async fn auth_list_accounts(
                 .collect())
         }
         AUTH_PROVIDER_XAI_OAUTH => {
-            let auth_manager = xai_state.0.read().await;
+            let auth_manager = &xai_state.0;
             let status = auth_manager.get_status().await;
             let default_account_id = status.default_account_id.clone();
             Ok(status
@@ -781,7 +781,7 @@ pub async fn auth_remove_account(
     let auth_provider = ensure_auth_provider(&auth_provider)?;
     match auth_provider {
         AUTH_PROVIDER_GITHUB_COPILOT => {
-            let auth_manager = copilot_state.0.write().await;
+            let auth_manager = &copilot_state.0;
             auth_manager
                 .remove_account(&account_id)
                 .await
@@ -791,7 +791,7 @@ pub async fn auth_remove_account(
             remove_codex_oauth_account_with_switch_lock(app_state.inner(), &account_id).await
         }
         AUTH_PROVIDER_XAI_OAUTH => {
-            let auth_manager = xai_state.0.write().await;
+            let auth_manager = &xai_state.0;
             auth_manager
                 .remove_account(&account_id)
                 .await
@@ -858,7 +858,7 @@ pub async fn auth_set_default_account(
     let auth_provider = ensure_auth_provider(&auth_provider)?;
     match auth_provider {
         AUTH_PROVIDER_GITHUB_COPILOT => {
-            let auth_manager = copilot_state.0.write().await;
+            let auth_manager = &copilot_state.0;
             auth_manager
                 .set_default_account(&account_id)
                 .await
@@ -872,7 +872,7 @@ pub async fn auth_set_default_account(
                 .map_err(|e| e.to_string())
         }
         AUTH_PROVIDER_XAI_OAUTH => {
-            let auth_manager = xai_state.0.write().await;
+            let auth_manager = &xai_state.0;
             auth_manager
                 .set_default_account(&account_id)
                 .await
@@ -904,12 +904,12 @@ pub async fn auth_logout(
     let auth_provider = ensure_auth_provider(&auth_provider)?;
     match auth_provider {
         AUTH_PROVIDER_GITHUB_COPILOT => {
-            let auth_manager = copilot_state.0.write().await;
+            let auth_manager = &copilot_state.0;
             auth_manager.clear_auth().await.map_err(|e| e.to_string())
         }
         AUTH_PROVIDER_CODEX_OAUTH => logout_codex_oauth_with_switch_lock(app_state.inner()).await,
         AUTH_PROVIDER_XAI_OAUTH => {
-            let auth_manager = xai_state.0.write().await;
+            let auth_manager = &xai_state.0;
             auth_manager.clear_auth().await.map_err(|e| e.to_string())
         }
         AUTH_PROVIDER_AGY_OAUTH => agy_state

@@ -25,11 +25,10 @@ use super::{
 };
 use crate::commands::{CodexOAuthState, CopilotAuthState, XaiOAuthState};
 use crate::proxy::json_canonical::short_value_hash;
-use crate::proxy::providers::copilot_auth::{CopilotAuthError, CopilotAuthManager};
+use crate::proxy::providers::copilot_auth::CopilotAuthError;
 use crate::proxy::providers::copilot_model_map::{
     CopilotProtocol, CopilotTransport, ResolvedCopilotModel,
 };
-use crate::proxy::providers::xai_oauth_auth::XaiOAuthManager;
 use crate::proxy::sse::Utf8TailDecoder;
 use crate::{
     app_config::AppType,
@@ -2159,7 +2158,7 @@ impl RequestForwarder {
         if is_copilot && !is_full_url {
             if let Some(app_handle) = &self.app_handle {
                 let copilot_state = app_handle.state::<CopilotAuthState>();
-                let copilot_auth = copilot_state.0.read().await;
+                let copilot_auth = &copilot_state.0;
 
                 // 从 provider.meta 获取关联的 GitHub 账号 ID
                 let account_id = provider
@@ -2682,8 +2681,7 @@ impl RequestForwarder {
             if auth.strategy == AuthStrategy::GitHubCopilot {
                 if let Some(app_handle) = &self.app_handle {
                     let copilot_state = app_handle.state::<CopilotAuthState>();
-                    let copilot_auth: tokio::sync::RwLockReadGuard<'_, CopilotAuthManager> =
-                        copilot_state.0.read().await;
+                    let copilot_auth = &copilot_state.0;
 
                     // 从 provider.meta 获取关联的 GitHub 账号 ID（多账号支持）
                     let account_id = provider
@@ -2802,8 +2800,7 @@ impl RequestForwarder {
             if auth.strategy == AuthStrategy::XaiOAuth {
                 if let Some(app_handle) = &self.app_handle {
                     let xai_state = app_handle.state::<XaiOAuthState>();
-                    let xai_auth: tokio::sync::RwLockReadGuard<'_, XaiOAuthManager> =
-                        xai_state.0.read().await;
+                    let xai_auth = &xai_state.0;
                     let account_id = provider
                         .meta
                         .as_ref()
@@ -3800,7 +3797,7 @@ impl RequestForwarder {
             return;
         };
         let copilot_state = app_handle.state::<CopilotAuthState>();
-        let copilot_auth = copilot_state.0.read().await;
+        let copilot_auth = &copilot_state.0;
         let account_id = provider
             .meta
             .as_ref()
@@ -3850,7 +3847,7 @@ impl RequestForwarder {
         })?;
 
         let copilot_state = app_handle.state::<CopilotAuthState>();
-        let copilot_auth = copilot_state.0.read().await;
+        let copilot_auth = &copilot_state.0;
         let account_id = provider
             .meta
             .as_ref()
@@ -3878,7 +3875,7 @@ impl RequestForwarder {
         };
 
         let copilot_state = app_handle.state::<CopilotAuthState>();
-        let copilot_auth = copilot_state.0.read().await;
+        let copilot_auth = &copilot_state.0;
         let account_id = provider
             .meta
             .as_ref()

@@ -52,7 +52,7 @@ async fn resolve_copilot_base_url_override(
         return Ok(None);
     }
 
-    let auth_manager = copilot_state.0.read().await;
+    let auth_manager = &copilot_state.0;
     let account_id = provider
         .meta
         .as_ref()

@@ -7,10 +7,11 @@ use crate::proxy::providers::copilot_auth::{
 };
 use std::sync::Arc;
 use tauri::State;
-use tokio::sync::RwLock;
 
 /// Copilot 认证状态
-pub struct CopilotAuthState(pub Arc<RwLock<CopilotAuthManager>>);
+/// manager 内部自有细粒度锁（账号表、endpoint 缓存、device flow），整体再包一层
+/// RwLock 会让读锁跨上游网络往返堵住写者（登录、删号），直接 Arc 直包。
+pub struct CopilotAuthState(pub Arc<CopilotAuthManager>);
 
 // ==================== 模型和使用量 ====================
 
@@ -19,7 +20,7 @@ pub struct CopilotAuthState(pub Arc<RwLock<CopilotAuthManager>>);
 pub async fn copilot_get_models(
     state: State<'_, CopilotAuthState>,
 ) -> Result<Vec<CopilotModel>, String> {
-    let auth_manager = state.0.read().await;
+    let auth_manager = &state.0;
     auth_manager.fetch_models().await.map_err(|e| e.to_string())
 }
 
@@ -29,7 +30,7 @@ pub async fn copilot_get_models_for_account(
     account_id: String,
     state: State<'_, CopilotAuthState>,
 ) -> Result<Vec<CopilotModel>, String> {
-    let auth_manager = state.0.read().await;
+    let auth_manager = &state.0;
     auth_manager
         .fetch_models_for_account(&account_id)
         .await
@@ -41,7 +42,7 @@ pub async fn copilot_get_models_for_account(
 pub async fn copilot_get_usage(
     state: State<'_, CopilotAuthState>,
 ) -> Result<CopilotUsageResponse, String> {
-    let auth_manager = state.0.read().await;
+    let auth_manager = &state.0;
     auth_manager.fetch_usage().await.map_err(|e| e.to_string())
 }
 
@@ -51,7 +52,7 @@ pub async fn copilot_get_usage_for_account(
     account_id: String,
     state: State<'_, CopilotAuthState>,
 ) -> Result<CopilotUsageResponse, String> {
-    let auth_manager = state.0.read().await;
+    let auth_manager = &state.0;
     auth_manager
         .fetch_usage_for_account(&account_id)
         .await

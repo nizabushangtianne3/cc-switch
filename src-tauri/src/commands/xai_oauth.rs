@@ -8,9 +8,10 @@ use serde::Deserialize;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::State;
-use tokio::sync::RwLock;
 
-pub struct XaiOAuthState(pub Arc<RwLock<XaiOAuthManager>>);
+/// 同 CopilotAuthState：manager 内部自有细锁，整体包 RwLock 会让读锁跨上游
+/// 往返堵住写者。
+pub struct XaiOAuthState(pub Arc<XaiOAuthManager>);
 
 /// 查询 xAI OAuth (SuperGrok 反代) 订阅额度的共享核心
 ///
@@ -32,7 +33,7 @@ pub(crate) async fn query_xai_oauth_quota_for(
     account_id: Option<String>,
     with_plan: bool,
 ) -> Result<SubscriptionQuota, String> {
-    let manager = state.0.read().await;
+    let manager = &state.0;
 
     // 解析最终使用的账号 ID：显式 > 默认账号 > 无账号 (not_found)
     let resolved = match account_id
@@ -108,7 +109,7 @@ pub async fn get_xai_oauth_models(
     account_id: Option<String>,
     state: State<'_, XaiOAuthState>,
 ) -> Result<Vec<FetchedModel>, String> {
-    let manager = state.0.read().await;
+    let manager = &state.0;
     let resolved = match account_id
         .as_deref()
         .map(str::trim)

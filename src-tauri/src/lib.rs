@@ -1339,11 +1339,10 @@ pub fn run() {
             {
                 use crate::proxy::providers::copilot_auth::CopilotAuthManager;
                 use commands::CopilotAuthState;
-                use tokio::sync::RwLock;
 
                 let app_config_dir = crate::config::get_app_config_dir();
                 let copilot_auth_manager = CopilotAuthManager::new(app_config_dir);
-                app.manage(CopilotAuthState(Arc::new(RwLock::new(copilot_auth_manager))));
+                app.manage(CopilotAuthState(Arc::new(copilot_auth_manager)));
                 log::info!("✓ CopilotAuthManager initialized");
             }
 
@@ -1361,11 +1360,10 @@ pub fn run() {
             {
                 use crate::proxy::providers::xai_oauth_auth::XaiOAuthManager;
                 use commands::XaiOAuthState;
-                use tokio::sync::RwLock;
 
                 let app_config_dir = crate::config::get_app_config_dir();
                 let xai_oauth_manager = XaiOAuthManager::new(app_config_dir);
-                app.manage(XaiOAuthState(Arc::new(RwLock::new(xai_oauth_manager))));
+                app.manage(XaiOAuthState(Arc::new(xai_oauth_manager)));
                 log::info!("✓ XaiOAuthManager initialized");
             }
 

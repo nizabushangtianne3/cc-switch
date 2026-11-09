@@ -733,7 +733,7 @@ async fn query_provider_usage_inner(
             .and_then(|p| p.meta.as_ref())
             .and_then(|m| m.managed_account_id_for(TEMPLATE_TYPE_GITHUB_COPILOT));
 
-        let auth_manager = copilot_state.0.read().await;
+        let auth_manager = &copilot_state.0;
         let usage = match copilot_account_id.as_deref() {
             Some(account_id) => auth_manager
                 .fetch_usage_for_account(account_id)
