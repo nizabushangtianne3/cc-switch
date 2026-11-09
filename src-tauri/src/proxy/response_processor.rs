@@ -837,10 +837,10 @@ fn bounded_header_value(value: &axum::http::HeaderValue) -> Option<String> {
 
 /// 仅当 debug 日志真的会输出时才生成响应头摘要。
 ///
-/// `log::debug!` 的格式参数是无条件求值的，所以直接把 [`format_headers`] 写进
-/// `log::debug!` 会让每个响应（流式和非流式）都白付一次 keys 迭代、逐键
-/// `to_string`、`collect`、`sort`、`join` 的四到五次堆分配；release 构建默认
-/// 关闭 debug 日志，那笔开销就是 100% 白付。包一层等级判断把它挪到真会打印时。
+/// release 默认 Info 级别（debug 关闭）：用 `log::log_enabled!` 门控把
+/// [`format_headers`] 的 keys 迭代、逐键 `to_string`、`collect`、`sort`、`join`
+/// 挪到真会打印时才做。门控条件与 `log::debug!` 宏自身的等级判断严格等价
+/// （已用独立工程实测：等级关闭时宏的格式参数求值次数为 0；下方有等价性测试）。
 fn diagnostic_headers(headers: &HeaderMap) -> Option<String> {
     log::log_enabled!(log::Level::Debug).then(|| format_headers(headers))
 }

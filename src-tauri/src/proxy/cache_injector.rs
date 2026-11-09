@@ -105,16 +105,15 @@ pub fn inject(body: &mut Value, config: &OptimizerConfig) {
         }
     }
 
-    // log::info! 的格式参数是无条件求值的：直接在这里 join 会让每个注入过
-    // 断点的请求都白付一次字符串拼接，而 release 默认关闭 info 日志。
-    if log::log_enabled!(log::Level::Info) {
-        log::info!(
-            "[OPT] cache: {}bp({},{},pre={existing})",
-            injected.len(),
-            injected.join("+"),
-            "5m",
-        );
-    }
+    // log 宏的格式参数本就是惰性的（等级未启用时不求值，已用独立工程实测：
+    // Off 下 info/debug/trace 的参数求值次数均为 0），无需再包一层
+    // log_enabled!——那与宏自身的等级检查是同一个条件。
+    log::info!(
+        "[OPT] cache: {}bp({},{},pre={existing})",
+        injected.len(),
+        injected.join("+"),
+        "5m",
+    );
 }
 
 fn inject_message_breakpoint(message: &mut Value) -> bool {
