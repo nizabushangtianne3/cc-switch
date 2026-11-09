@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { memo, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -93,6 +93,88 @@ export function claudeStackModelsFromEnv(
   return normalizeClaudeStackModels(rows);
 }
 
+interface StackModelRowProps {
+  row: ClaudeStackModelRow;
+  fetchedModels: FetchedModel[];
+  onUpdate: (rowId: string, patch: Partial<ClaudeStackModel>) => void;
+  onRemove: (rowId: string) => void;
+}
+
+// 每行的三个输入都是受控的：不包 memo 时，在任何一行里键入都会重渲其余所有行。
+const StackModelRow = memo(function StackModelRow({
+  row,
+  fetchedModels,
+  onUpdate,
+  onRemove,
+}: StackModelRowProps) {
+  const { t } = useTranslation();
+  const modelBase = stripClaudeOneMMarker(row.model).trim();
+  return (
+    <div className="grid grid-cols-1 gap-2 md:grid-cols-[1fr_minmax(0,1fr)_64px_36px]">
+      <ImeSafeInput
+        value={row.displayName ?? ""}
+        onValueChange={(value) => onUpdate(row.rowId, { displayName: value })}
+        placeholder={
+          modelBase ||
+          t("providerForm.modelDisplayNamePlaceholder", {
+            defaultValue: "例如 DeepSeek V4 Pro",
+          })
+        }
+        aria-label={t("providerForm.modelDisplayNameLabel", {
+          defaultValue: "显示名称",
+        })}
+        autoComplete="off"
+      />
+      <div className="flex gap-1">
+        <Input
+          value={row.model}
+          onChange={(event) =>
+            onUpdate(row.rowId, { model: event.target.value })
+          }
+          placeholder={t("providerForm.stackModelPlaceholder", {
+            defaultValue: "例如 deepseek-v4-pro",
+          })}
+          aria-label={t("providerForm.requestModelLabel", {
+            defaultValue: "实际请求模型",
+          })}
+          autoComplete="off"
+          className="flex-1"
+        />
+        {fetchedModels.length > 0 && (
+          <ModelDropdown
+            models={fetchedModels}
+            onSelect={(id) => onUpdate(row.rowId, { model: id })}
+          />
+        )}
+      </div>
+      <label className="flex h-9 items-center gap-2 text-sm text-fg-2">
+        <Checkbox
+          checked={row.oneM === true || hasClaudeOneMMarker(row.model)}
+          onCheckedChange={(checked) =>
+            onUpdate(row.rowId, {
+              model: stripClaudeOneMMarker(row.model),
+              oneM: checked === true,
+            })
+          }
+        />
+        {t("providerForm.modelOneMLabel", { defaultValue: "1M" })}
+      </label>
+      <HoverTip content={t("common.delete")}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={() => onRemove(row.rowId)}
+          aria-label={t("common.delete")}
+          className="h-9 w-9 text-fg-2 hover:text-destructive"
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </HoverTip>
+    </div>
+  );
+});
+
 interface ClaudeStackModelsFieldProps {
   rows: ClaudeStackModelRow[];
   onRowsChange: (rows: ClaudeStackModelRow[]) => void;
@@ -118,10 +200,24 @@ export function ClaudeStackModelsField({
 }: ClaudeStackModelsFieldProps) {
   const { t } = useTranslation();
 
-  const updateRow = (rowId: string, patch: Partial<ClaudeStackModel>) =>
-    onRowsChange(
-      rows.map((row) => (row.rowId === rowId ? { ...row, ...patch } : row)),
-    );
+  // 行回调经 ref 读最新的 rows：身份保持稳定，memo 化的行只在自身数据变化时重渲
+  const rowsRef = useLatestRef(rows);
+  const updateRow = useCallback(
+    (rowId: string, patch: Partial<ClaudeStackModel>) => {
+      onRowsChange(
+        rowsRef.current.map((row) =>
+          row.rowId === rowId ? { ...row, ...patch } : row,
+        ),
+      );
+    },
+    [onRowsChange, rowsRef],
+  );
+  const removeRow = useCallback(
+    (rowId: string) => {
+      onRowsChange(rowsRef.current.filter((other) => other.rowId !== rowId));
+    },
+    [onRowsChange, rowsRef],
+  );
 
   const applyFetchedModels = ({ add, remove }: FetchedModelSelection) => {
     const removed = new Set(remove);
@@ -220,84 +316,15 @@ export function ClaudeStackModelsField({
             </span>
             <span />
           </div>
-          {rows.map((row) => {
-            const modelBase = stripClaudeOneMMarker(row.model).trim();
-            return (
-              <div
-                key={row.rowId}
-                className="grid grid-cols-1 gap-2 md:grid-cols-[1fr_minmax(0,1fr)_64px_36px]"
-              >
-                <ImeSafeInput
-                  value={row.displayName ?? ""}
-                  onValueChange={(value) =>
-                    updateRow(row.rowId, { displayName: value })
-                  }
-                  placeholder={
-                    modelBase ||
-                    t("providerForm.modelDisplayNamePlaceholder", {
-                      defaultValue: "例如 DeepSeek V4 Pro",
-                    })
-                  }
-                  aria-label={t("providerForm.modelDisplayNameLabel", {
-                    defaultValue: "显示名称",
-                  })}
-                  autoComplete="off"
-                />
-                <div className="flex gap-1">
-                  <Input
-                    value={row.model}
-                    onChange={(event) =>
-                      updateRow(row.rowId, { model: event.target.value })
-                    }
-                    placeholder={t("providerForm.stackModelPlaceholder", {
-                      defaultValue: "例如 deepseek-v4-pro",
-                    })}
-                    aria-label={t("providerForm.requestModelLabel", {
-                      defaultValue: "实际请求模型",
-                    })}
-                    autoComplete="off"
-                    className="flex-1"
-                  />
-                  {fetchedModels.length > 0 && (
-                    <ModelDropdown
-                      models={fetchedModels}
-                      onSelect={(id) => updateRow(row.rowId, { model: id })}
-                    />
-                  )}
-                </div>
-                <label className="flex h-9 items-center gap-2 text-sm text-fg-2">
-                  <Checkbox
-                    checked={
-                      row.oneM === true || hasClaudeOneMMarker(row.model)
-                    }
-                    onCheckedChange={(checked) =>
-                      updateRow(row.rowId, {
-                        model: stripClaudeOneMMarker(row.model),
-                        oneM: checked === true,
-                      })
-                    }
-                  />
-                  {t("providerForm.modelOneMLabel", { defaultValue: "1M" })}
-                </label>
-                <HoverTip content={t("common.delete")}>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={() =>
-                      onRowsChange(
-                        rows.filter((other) => other.rowId !== row.rowId),
-                      )
-                    }
-                    aria-label={t("common.delete")}
-                    className="h-9 w-9 text-fg-2 hover:text-destructive"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </HoverTip>
-              </div>
-            );
-          })}
+          {rows.map((row) => (
+            <StackModelRow
+              key={row.rowId}
+              row={row}
+              fetchedModels={fetchedModels}
+              onUpdate={updateRow}
+              onRemove={removeRow}
+            />
+          ))}
         </div>
       )}
     </div>

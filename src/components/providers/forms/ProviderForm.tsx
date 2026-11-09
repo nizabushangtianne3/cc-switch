@@ -10,6 +10,7 @@ import {
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useTranslation } from "react-i18next";
+import { useLatestRef } from "@/hooks/useLatestRef";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
@@ -822,13 +823,22 @@ function ProviderFormFull({
   const shownClaudeStackRows = claudeStackRows ?? mappedClaudeStackRows;
   // 列表的第一个就是默认模型：它一变（设为默认、删掉、改名），`ANTHROPIC_MODEL` 当场跟着变；
   // 没动第一个就不碰。删光了也不碰。
-  const handleClaudeStackRowsChange = (rows: ClaudeStackModelRow[]) => {
-    setClaudeStackRows(rows);
-    const next = claudeStackDefaultModel(rows);
-    if (next && next !== claudeStackDefaultModel(shownClaudeStackRows)) {
-      handleModelChange("ANTHROPIC_MODEL", next);
-    }
-  };
+  // Stack 模型行已 memo：这个回调每次渲染都重建会把行的 memo 全部打穿。经 ref 读
+  // 最新的行数据，身份只依赖稳定的 handleModelChange。
+  const shownClaudeStackRowsRef = useLatestRef(shownClaudeStackRows);
+  const handleClaudeStackRowsChange = useCallback(
+    (rows: ClaudeStackModelRow[]) => {
+      setClaudeStackRows(rows);
+      const next = claudeStackDefaultModel(rows);
+      if (
+        next &&
+        next !== claudeStackDefaultModel(shownClaudeStackRowsRef.current)
+      ) {
+        handleModelChange("ANTHROPIC_MODEL", next);
+      }
+    },
+    [handleModelChange, shownClaudeStackRowsRef],
+  );
 
   // 聚合模式下 Claude Code / Codex 的第三方供应商用简化面板（连接 + 模型列表 + 高级）；
   // 两种布局共用同一份表单状态，完整表单从直连 / 路由那格打开。

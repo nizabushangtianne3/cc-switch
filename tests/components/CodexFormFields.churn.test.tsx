@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState, type ComponentProps } from "react";
 import { useForm } from "react-hook-form";
@@ -144,6 +144,35 @@ vi.mock(
   },
 );
 
+const inputSpy = vi.fn();
+
+// 模型目录行的输入：计数探针包 memo，测行的 memo 契约（不包的话父组件重渲染必然
+// 调用它）。渲染真 input，onChange 按真实 Input 的调用形状转发。
+vi.mock("@/components/ui/input", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/components/ui/input")>();
+  const { memo } = await vi.importActual<typeof import("react")>("react");
+  return {
+    ...actual,
+    Input: memo((props: Record<string, unknown>) => {
+      inputSpy(props);
+      return (
+        <input
+          id={props.id as string}
+          aria-label={props["aria-label"] as string}
+          value={props.value as string}
+          type={(props.type as string) ?? "text"}
+          onChange={(event) => {
+            const onChange = props.onChange as
+              | ((event: { target: { value: string } }) => void)
+              | undefined;
+            onChange?.({ target: { value: event.target.value } });
+          }}
+        />
+      );
+    }),
+  };
+});
+
 type CodexFormFieldsProps = ComponentProps<typeof CodexFormFields>;
 
 function baseProps(
@@ -241,5 +270,39 @@ describe("CodexFormFields render churn", () => {
     await user.type(modelInput(), "gpt-5");
 
     expect(sectionSpies.endpointSpeedTest).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("CodexFormFields catalog row churn", () => {
+  it("typing in one catalog row leaves the other rows untouched", async () => {
+    const user = userEvent.setup();
+    render(
+      <Harness
+        props={baseProps({
+          catalogModels: [
+            { model: "m-one", displayName: "One" },
+            { model: "m-two", displayName: "Two" },
+            { model: "m-three", displayName: "Three" },
+          ],
+        })}
+      />,
+    );
+
+    const rowRendersFor = (value: string) =>
+      inputSpy.mock.calls.filter(
+        ([props]) =>
+          props["aria-label"] === "菜单显示名" && props.value === value,
+      ).length;
+
+    const twoAtMount = rowRendersFor("Two");
+    const threeAtMount = rowRendersFor("Three");
+    expect(twoAtMount).toBeGreaterThanOrEqual(1);
+    expect(threeAtMount).toBe(twoAtMount);
+
+    await user.type(screen.getAllByLabelText("菜单显示名")[0], "X");
+
+    // 只有被键入那一行自己重渲染（值变了），其余行一次都不多跑
+    expect(rowRendersFor("Two")).toBe(twoAtMount);
+    expect(rowRendersFor("Three")).toBe(threeAtMount);
   });
 });

@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  memo,
   useMemo,
   useRef,
   useState,
@@ -330,6 +331,106 @@ export function reorderCatalogRows<T extends { rowId: string; model: string }>(
 // 模型列表只能上下拖。
 const verticalOnly: Modifier[] = [({ transform }) => ({ ...transform, x: 0 })];
 
+interface CatalogRowFieldsProps {
+  row: CodexCatalogRow;
+  fetchedModels: FetchedModel[];
+  onUpdate: (rowId: string, patch: Partial<CodexCatalogModel>) => void;
+  onSelectModel: (rowId: string, id: string) => void;
+  onRemove: (rowId: string) => void;
+}
+// 目录行内容：三个输入都是受控的，不包 memo 时在任何一行里键入都会重渲其余所有行。
+// 拖拽手柄那一层（useSortable 的 context 消费者）留在wrapper里、不包 memo——它每遍
+// 渲染都跑无所谓，贵的是行内容。回调按 rowId 寻行（身份稳定，见下方包装）。
+const CatalogRowFields = memo(function CatalogRowFields({
+  row,
+  fetchedModels,
+  onUpdate,
+  onSelectModel,
+  onRemove,
+}: CatalogRowFieldsProps) {
+  const { t } = useTranslation();
+  return (
+    <div className="grid grid-cols-1 gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_140px_minmax(0,1fr)_36px]">
+      <Input
+        value={row.displayName ?? ""}
+        onChange={(event) =>
+          onUpdate(row.rowId, { displayName: event.target.value })
+        }
+        placeholder={t("codexConfig.catalogDisplayNamePlaceholder", {
+          defaultValue: "例如: DeepSeek V4 Flash",
+        })}
+        aria-label={t("codexConfig.catalogColumnDisplay", {
+          defaultValue: "菜单显示名",
+        })}
+      />
+      <div className="flex gap-1">
+        <Input
+          value={row.model}
+          onChange={(event) =>
+            onUpdate(row.rowId, { model: event.target.value })
+          }
+          placeholder={t("codexConfig.catalogModelPlaceholder", {
+            defaultValue: "例如: deepseek-v4-flash",
+          })}
+          aria-label={t("codexConfig.catalogColumnModel", {
+            defaultValue: "实际请求模型",
+          })}
+          className="flex-1"
+        />
+        {fetchedModels.length > 0 && (
+          <ModelDropdown
+            models={fetchedModels}
+            onSelect={(id) => onSelectModel(row.rowId, id)}
+          />
+        )}
+      </div>
+      <Input
+        type="number"
+        min={1}
+        inputMode="numeric"
+        value={row.contextWindow ?? ""}
+        onChange={(event) =>
+          onUpdate(row.rowId, {
+            contextWindow: event.target.value.replace(/[^\d]/g, ""),
+          })
+        }
+        placeholder={t("codexConfig.contextWindowPlaceholder", {
+          defaultValue: "例如: 128000",
+        })}
+        aria-label={t("codexConfig.catalogColumnContext", {
+          defaultValue: "上下文窗口",
+        })}
+      />
+      <ReasoningLevelsEditor
+        levels={row.reasoningLevels}
+        defaultLevel={row.defaultReasoningLevel}
+        onLevelsChange={(levels) =>
+          onUpdate(row.rowId, { reasoningLevels: levels })
+        }
+        onDefaultLevelChange={(level) =>
+          onUpdate(row.rowId, { defaultReasoningLevel: level })
+        }
+      />
+      <HoverTip content={t("common.delete", { defaultValue: "删除" })}>
+        <Button
+          aria-label={t("common.delete", { defaultValue: "删除" })}
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="text-fg-2 hover:text-destructive"
+          onClick={() => onRemove(row.rowId)}
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </HoverTip>
+      <GptContextWindowHint
+        modelId={row.model}
+        contextWindow={row.contextWindow}
+        className="col-span-full px-1"
+      />
+    </div>
+  );
+});
 function SortableCatalogRow({
   id,
   canDrag,
@@ -368,7 +469,7 @@ function SortableCatalogRow({
         ref={setActivatorNodeRef}
         type="button"
         disabled={!canDrag}
-        className="flex h-8 w-4 shrink-0 cursor-grab items-center justify-center text-fg-3 hover:text-fg-1 active:cursor-grabbing disabled:invisible"
+        className="flex h-8 w-4 shrink-0 cursor-grab items-center justify-center text-fg-3 hover:text-fg-1 active:cursor-grab disabled:invisible"
         aria-label={t("provider.dragHandle", { defaultValue: "拖拽排序" })}
         {...attributes}
         {...listeners}
@@ -1223,6 +1324,37 @@ export function CodexFormFields({
     [catalogRows, linkedDefaultIndex, onModelChange],
   );
 
+  // 目录行已 memo 化：行回调依赖当前默认模型 / 行序，身份每遍渲染都变。经 ref 取
+  // 最新值，包成 stable 的行级回调（rowId 寻行），键入某一行的输入不会重渲其余行。
+  const updateCatalogRowRef = useLatestRef(handleUpdateCatalogRow);
+  const removeCatalogRowRef = useLatestRef(handleRemoveCatalogRow);
+  const selectFetchedCatalogModelRef = useLatestRef(
+    handleSelectFetchedCatalogModel,
+  );
+  const updateCatalogRowById = useCallback(
+    (rowId: string, patch: Partial<CodexCatalogModel>) => {
+      const index = catalogRowsRef.current.findIndex(
+        (row) => row.rowId === rowId,
+      );
+      if (index >= 0) updateCatalogRowRef.current(index, patch);
+    },
+    [catalogRowsRef, updateCatalogRowRef],
+  );
+  const removeCatalogRowById = useCallback(
+    (rowId: string) => {
+      const index = catalogRowsRef.current.findIndex(
+        (row) => row.rowId === rowId,
+      );
+      if (index >= 0) removeCatalogRowRef.current(index);
+    },
+    [catalogRowsRef, removeCatalogRowRef],
+  );
+  const selectFetchedCatalogModelById = useCallback(
+    (rowId: string, id: string) =>
+      selectFetchedCatalogModelRef.current(rowId, id),
+    [selectFetchedCatalogModelRef],
+  );
+
   const catalogDragSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, {
@@ -1429,6 +1561,13 @@ export function CodexFormFields({
   const closeEndpointModal = useCallback(
     () => onEndpointModalToggle(false),
     [onEndpointModalToggle],
+  );
+
+  // SortableContext 的 items 每次渲染都建新数组会让 context 值变脸，所有
+  // useSortable 消费者（目录行）跟着重渲，memo 被整条打穿。
+  const catalogRowIds = useMemo(
+    () => catalogRows.map((row) => row.rowId),
+    [catalogRows],
   );
 
   const renderCatalogActionButtons = (onAdd: () => void, addLabel: string) => (
@@ -1823,110 +1962,23 @@ export function CodexFormFields({
         onDragEnd={handleCatalogDragEnd}
       >
         <SortableContext
-          items={catalogRows.map((row) => row.rowId)}
+          items={catalogRowIds}
           strategy={verticalListSortingStrategy}
         >
           <div className="space-y-2">
-            {catalogRows.map((row, index) => (
+            {catalogRows.map((row) => (
               <SortableCatalogRow
                 key={row.rowId}
                 id={row.rowId}
                 canDrag={catalogRows.length > 1}
               >
-                <div className="grid grid-cols-1 gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_140px_minmax(0,1fr)_36px]">
-                  <Input
-                    value={row.displayName ?? ""}
-                    onChange={(event) =>
-                      handleUpdateCatalogRow(index, {
-                        displayName: event.target.value,
-                      })
-                    }
-                    placeholder={t(
-                      "codexConfig.catalogDisplayNamePlaceholder",
-                      {
-                        defaultValue: "例如: DeepSeek V4 Flash",
-                      },
-                    )}
-                    aria-label={t("codexConfig.catalogColumnDisplay", {
-                      defaultValue: "菜单显示名",
-                    })}
-                  />
-                  <div className="flex gap-1">
-                    <Input
-                      value={row.model}
-                      onChange={(event) =>
-                        handleUpdateCatalogRow(index, {
-                          model: event.target.value,
-                        })
-                      }
-                      placeholder={t("codexConfig.catalogModelPlaceholder", {
-                        defaultValue: "例如: deepseek-v4-flash",
-                      })}
-                      aria-label={t("codexConfig.catalogColumnModel", {
-                        defaultValue: "实际请求模型",
-                      })}
-                      className="flex-1"
-                    />
-                    {fetchedModels.length > 0 && (
-                      <ModelDropdown
-                        models={fetchedModels}
-                        onSelect={(id) =>
-                          handleSelectFetchedCatalogModel(row.rowId, id)
-                        }
-                      />
-                    )}
-                  </div>
-                  <Input
-                    type="number"
-                    min={1}
-                    inputMode="numeric"
-                    value={row.contextWindow ?? ""}
-                    onChange={(event) =>
-                      handleUpdateCatalogRow(index, {
-                        contextWindow: event.target.value.replace(/[^\d]/g, ""),
-                      })
-                    }
-                    placeholder={t("codexConfig.contextWindowPlaceholder", {
-                      defaultValue: "例如: 128000",
-                    })}
-                    aria-label={t("codexConfig.catalogColumnContext", {
-                      defaultValue: "上下文窗口",
-                    })}
-                  />
-                  <ReasoningLevelsEditor
-                    levels={row.reasoningLevels}
-                    defaultLevel={row.defaultReasoningLevel}
-                    onLevelsChange={(levels) =>
-                      handleUpdateCatalogRow(index, {
-                        reasoningLevels: levels,
-                      })
-                    }
-                    onDefaultLevelChange={(level) =>
-                      handleUpdateCatalogRow(index, {
-                        defaultReasoningLevel: level,
-                      })
-                    }
-                  />
-                  <HoverTip
-                    content={t("common.delete", { defaultValue: "删除" })}
-                  >
-                    <Button
-                      aria-label={t("common.delete", { defaultValue: "删除" })}
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="text-fg-2 hover:text-destructive"
-                      onClick={() => handleRemoveCatalogRow(index)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </HoverTip>
-                  <GptContextWindowHint
-                    modelId={row.model}
-                    contextWindow={row.contextWindow}
-                    className="col-span-full px-1"
-                  />
-                </div>
+                <CatalogRowFields
+                  row={row}
+                  fetchedModels={fetchedModels}
+                  onUpdate={updateCatalogRowById}
+                  onSelectModel={selectFetchedCatalogModelById}
+                  onRemove={removeCatalogRowById}
+                />
               </SortableCatalogRow>
             ))}
           </div>
