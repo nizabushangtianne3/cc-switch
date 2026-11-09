@@ -47,18 +47,7 @@
   "apiKeyInput": {
     "placeholder": "API Key を入力",
     "show": "API Key を表示",
-    "hide": "API Key を隠す",
-    "nextKeyPlaceholder": "別の API Key を入力または貼り付け",
-    "multiHint": "Enter で改行し、1 行に 1 つの API Key を入力します。複数の Key を貼り付けると自動で分割されます。",
-    "addKey": "Key を追加",
-    "removeKey": "この Key を削除",
-    "weightLabel": "Key の重み",
-    "weightHint": "空欄または 1 未満の重みは 1 として扱われます。",
-    "strategy": "Key ルーティング戦略",
-    "strategyRouteHint": "ランダム、ラウンドロビン、重みはローカルルーティング/集約モードでのみ有効です。Key が失敗すると同じプロバイダーの次の Key を試し、すべて失敗した場合にフェイルオーバーします",
-    "strategyRandom": "ランダム",
-    "strategyRoundRobin": "ラウンドロビン",
-    "strategyWeighted": "重み"
+    "hide": "API Key を隠す"
   },
   "jsonEditor": {
     "mustBeObject": "設定はオブジェクト形式の JSON で入力してください（配列や他の型は不可）",
@@ -307,8 +296,6 @@
   },
   "notifications": {
     "providerAdded": "プロバイダーを追加しました",
-    "multiKeyRoutingEnabled": "複数の API Key を検出したため、ローカルルーティングを自動的に有効にしました",
-    "multiKeyRoutingFailed": "Key は保存されましたが、ローカルルーティングの有効化に失敗しました：{{error}}",
     "switchSuccess": "切り替え成功！",
     "codexRestartRequired": "切り替えました。反映するにはクライアントを再起動してください",
     "geminiRestartRequired": "切り替えました。反映するには Gemini CLI を再起動してください",
@@ -339,7 +326,6 @@
     "proxyReasonDesktopMapping": "モデルマッピングを使っており（Claude Desktop は Claude のモデル名しか受け付けません）",
     "proxyReasonManagedOAuth": "マネージド OAuth ログイン（トークンはローカルルーティングが注入）を使用しており",
     "proxyReasonRoutingRequired": "リクエスト処理にローカルルーティングが必要であり",
-    "proxyReasonMultipleKeys": "複数の API Key があり、ポリシーに従って選択するにはローカルルーティングが必要です",
     "openLinkFailed": "リンクを開けませんでした",
     "openclawModelsRegistered": "モデルが /model リストに登録されました",
     "openclawDefaultModelSet": "デフォルトモデルに設定しました",
@@ -351,7 +337,14 @@
     "windowControlFailed": "ウィンドウ操作に失敗しました: {{error}}",
     "officialBlockedByProxy": "ローカルルーティングモード中は公式プロバイダーに切り替えできません。ルーティング経由で公式 API にアクセスするとアカウントが停止される可能性があります。",
     "proxyOfficialWarning": "現在のプロバイダー {{name}} は公式です。ローカルルーティングを使用する前にサードパーティプロバイダーに切り替えてください。",
-    "proxyLoopbackHijacked": "{{app}} からローカルルート {{origin}} へのリクエストがシステムプロキシに横取りされるため、{{app}} は 502 エラーになります。プロキシツールでループバックアドレスを直結にしてください（例：Clash のルールの先頭に IP-CIDR,127.0.0.0/8,DIRECT,no-resolve を追加）。変更後は {{app}} を完全に終了してから開き直してください。"
+    "proxyLoopbackHijacked": "{{app}} からローカルルート {{origin}} へのリクエストがシステムプロキシに横取りされるため、{{app}} は 502 エラーになります。プロキシツールでループバックアドレスを直結にしてください（例：Clash のルールの先頭に IP-CIDR,127.0.0.0/8,DIRECT,no-resolve を追加）。変更後は {{app}} を完全に終了してから開き直してください。",
+    "codexHistorySplit": {
+      "hint": "{{previous}}で作成した {{count}} 件のセッションは閲覧のみになりました",
+      "officialBucket": "公式サブスクリプション",
+      "thirdPartyBucket": "サードパーティプロバイダー",
+      "migrationFinished": "古いセッションを {{count}} 件移行しました。Codex を再起動すると続けられます。",
+      "migrationFailed": "古いセッションの移行に失敗しました：{{error}}。次回 CC Switch の起動時に自動で再試行します。"
+    }
   },
   "confirm": {
     "deleteProvider": "プロバイダーを削除",
@@ -366,14 +359,14 @@
     },
     "unifyCodexHistory": {
       "title": "Codex セッション履歴を統一",
-      "message": "オンにすると、Codex CLI の resume 一覧に公式サブスクリプションとサードパーティのセッションがまとめて表示されます（Codex デスクトップ版はアップデートで全セッションを表示できるようになったため影響しません）。注意：プロバイダーをまたいで古いセッションを再開すると、相手のバックエンドが encrypted_content の推論内容を復号できず失敗する場合があります。\n\n既存の公式セッション履歴を共有一覧へ移行することもできます（移行前に ~/.cc-switch/backups へ自動バックアップし、オフにする際に復元を選べます）。",
+      "message": "オンにすると、公式サブスクリプションが共有の custom プロバイダー ID で動作し、公式とサードパーティのセッションが同じグループにまとまります。新しい Codex でもどちらのセッションも再開でき、CLI の resume 一覧にもまとめて表示されます。\n\n既存の公式セッションを移行することもできます。移行を選ぶと、以後は起動のたびに公式グループに残ったセッションも移行します（移行前に ~/.cc-switch/backups へ自動バックアップし、オフにする際に復元を選べます）。移行しないセッションは新しい Codex では閲覧のみになります。移行後は Codex を再起動してください。\n\n注意：プロバイダーをまたいで古いセッションを再開すると、相手のバックエンドが encrypted_content の推論内容を復号できず失敗する場合があります。",
       "migrateExisting": "既存の公式セッション履歴も移行する",
       "confirm": "理解しました、オンにする"
     },
     "unifyCodexHistoryOff": {
       "title": "セッション履歴の統一をオフにする",
-      "message": "オフにすると、Codex CLI では公式サブスクリプションとサードパーティのセッション一覧が再び別々になります（デスクトップ版は引き続き全セッションを表示）。オンの間に作成されたセッションは出所を区別できないためサードパーティ側の履歴に残り、CLI では公式サブスクリプション利用時に表示されません。",
-      "restoreBackup": "オンにした際に移行した公式セッションを公式履歴へ復元する（バックアップから正確に復元）",
+      "message": "オフにすると、公式サブスクリプションとサードパーティのセッションが再び 2 つのグループに分かれます。新しい Codex では現在のプロバイダーのグループしか再開できず、もう一方は閲覧のみになります。オンの間に作成されたセッションは出所を区別できないため、サードパーティ側のグループに残ります。",
+      "restoreBackup": "移行した公式セッションを公式グループへ復元する（バックアップから正確に復元）",
       "confirm": "オフにする"
     },
     "usage": {
@@ -798,6 +791,8 @@
     "languageOptionEnglish": "English",
     "languageOptionJapanese": "日本語",
     "languageOptionTurkish": "Türkçe",
+    "languageOptionKorean": "한국어",
+    "languageOptionRussian": "Русский",
     "launchOnStartup": "起動時に自動実行",
     "silentStartup": "サイレント起動",
     "silentStartupDescription": "起動時にメインウィンドウを表示せず、トレイのみで起動",
@@ -820,10 +815,18 @@
       "hint": "いずれかに達すると停止。既定値は 95% / 98%。保存後の新しいリクエストから適用します。",
       "invalid": "1～99 の整数を入力してください。"
     },
+    "codexPauseOfficialLogin": {
+      "title": "公式ログインを一時停止",
+      "description": "公式クォータを使い切り、Codex が送信ボタンをロックしたときにオンにします。集約・ルーティングの他社モデルは引き続き使えます。オン・オフのあとは Codex を完全に終了して開き直してください。",
+      "help": "公式クォータを使い切り、Codex が送信ボタンをロックした（他社モデルを選んでも送信できない）ときにオンにします。オンにすると Codex は公式ログインを使わなくなるため、公式クォータを理由に送信ボタンをロックしなくなり、集約・ルーティングの他社モデルを引き続き使えます。公式ログインはこのコンピューターに保存されたままで、ログアウトはしません。ルーティングまたは集約モードでのみ有効で、直接接続には影響しません。オンの間は、公式モデルは使えず他社モデルへの切り替えを案内します。Codex にアカウントと使用量の情報は表示されず、初回起動時に初期設定の質問が表示されることがあります。サイドバーの「プロジェクト」にある既存のセッションは一時的に表示されません（消えてはおらず、オフにすると戻ります）。新しいセッションは custom グループに記録され、公式に戻すと閲覧のみになります。公式クォータが回復したらオフにしてください。オン・オフのあとは Codex を完全に終了して開き直してください。",
+      "pausedToast": "公式ログインを一時停止しました。Codex を完全に終了して開き直すと反映されます",
+      "resumedToast": "公式ログインの使用を再開しました。Codex を完全に終了して開き直すと反映されます",
+      "saveFailed": "保存に失敗しました：{{error}}"
+    },
     "preserveCodexOfficialAuthOnSwitch": "直接切替時に公式ログインを保持",
     "preserveCodexOfficialAuthOnSwitchDescription": "ローカルルーティングが無効な場合のサードパーティ切替を制御します。ルーティング接管中は常に Codex の公式ログインを保持します。",
     "unifyCodexSessionHistory": "Codex セッション履歴を統一",
-    "unifyCodexSessionHistoryDescription": "Codex CLI にのみ影響します：CLI の resume 一覧には現在のプロバイダーのセッションしか表示されません。オンにすると公式サブスクリプションも共有の custom プロバイダー ID で動作し、公式とサードパーティのセッションが同じ一覧に表示されます。Codex デスクトップ版はアップデートで全セッションを表示できるようになったため、デスクトップ版だけなら不要です。既存の公式セッションの移行も選択できます（移行前に自動バックアップ）。オフにする際はバックアップから復元できます。注意：プロバイダーをまたいで古いセッションを再開すると、encrypted_content の推論内容を相手のバックエンドが復号できず、再開に失敗する場合があります。",
+    "unifyCodexSessionHistoryDescription": "公式サブスクリプションもサードパーティと同じ custom プロバイダー ID で動作し、公式とサードパーティのセッションが同じグループにまとまります。新しい Codex（デスクトップ版 26.1103・CLI 0.167 以降）は現在のプロバイダーと同じグループのセッションしか再開できず、別グループは閲覧のみになります。CLI の resume 一覧も現在のグループだけを表示します。公式とサードパーティを切り替えて使う場合はオンを推奨します。公式グループのセッションの移行も選択でき（移行前に自動バックアップ）、オフにする際はバックアップから復元できます。注意：プロバイダーをまたいで古いセッションを再開すると、encrypted_content の推論内容を相手のバックエンドが復号できず、再開に失敗する場合があります。",
     "codexStackClassicSubagents": "集約モードでサブエージェントにクラシックツールを使う",
     "codexStackClassicSubagentsDescription": "メインとサブのエージェントが別のプロバイダーを使う場合は必ずオンにしてください。オフだとサブエージェントにタスクが届きません。",
     "codexStackClassicSubagentsForcedV2": "Codex の config.toml で [features] multi_agent_v2 がオンになっています。こちらが優先されるため、この設定は効きません。",
@@ -1016,16 +1019,7 @@
     },
     "data": {
       "location": "保存場所"
-    },
-    "currentVersion": "現在のバージョン",
-    "latestVersion": "最新バージョン",
-    "updateAvailableShort": "更新あり",
-    "toolReady": "準備完了",
-    "installedNotRunnable": "インストール済み・実行不可",
-    "toolCheckEnv": "実行環境を確認",
-    "toolDiagnosing": "診断中…",
-    "toolConflictTitle": "複数のインストールを検出",
-    "toolConflictHint": "コマンドラインは「既定」のものを使用します。更新が別の場所に適用された可能性があります。"
+    }
   },
   "apps": {
     "claude": "Claude",
@@ -2151,22 +2145,8 @@
       "label": "明細",
       "providers": "プロバイダー",
       "models": "モデル",
-      "keys": "キー",
-      "pricing": "料金",
-      "settings": "設定"
+      "pricing": "料金"
     },
-    "keyStats": "キー統計",
-    "keyColumn": "キー",
-    "keyFilter": {
-      "title": "キーで絞り込む",
-      "label": "キー",
-      "all": "すべてのキー"
-    },
-    "keyLabel": {
-      "current": "キー #{{index}} · {{mask}}",
-      "deleted": "削除済み · {{fingerprint}}"
-    },
-    "sortedByRequests": "リクエスト数順",
     "app": "アプリ",
     "speed": "速度",
     "speedValue": "{{value}} tok/s",
@@ -2374,9 +2354,17 @@
       "noSearchResults": "検索に一致する MCP サーバーがありません"
     },
     "loading": "読み込み中...",
+    "form": {
+      "jsonPlaceholder": "{\n  \"type\": \"stdio\",\n  \"command\": \"uvx\",\n  \"args\": [\"mcp-server-fetch\"]\n}",
+      "tomlPlaceholder": "type = \"stdio\"\ncommand = \"uvx\"\nargs = [\"mcp-server-fetch\"]"
+    },
     "wizard": {
+      "typeStdio": "stdio",
+      "typeSse": "sse",
+      "argsPlaceholder": "arg1\narg2",
       "envPlaceholder": "KEY1=value1\nKEY2=value2",
-      "urlRequired": "URL を入力してください"
+      "urlRequired": "URL を入力してください",
+      "headersPlaceholder": "Authorization: Bearer your_token_here\nContent-Type: application/json"
     },
     "envPlaceholder": "FOO=bar\nHELLO=world",
     "error": {
@@ -3037,12 +3025,7 @@
     "usageAccessToken": "使用量アクセストークン",
     "usageUserId": "使用量ユーザー ID",
     "usageAutoInterval": "自動クエリ",
-    "usageAutoIntervalValue": "{{minutes}} 分ごと",
-    "risk": {
-      "envHijack": "この設定には、プロセスの読み込み動作を変える環境変数（ライブラリの注入、CA 証明書の差し替えなど）が含まれています。信頼できる提供元か確認してください。",
-      "privateEndpoint": "このアドレスはローカルホストまたは内部ネットワークを指しています。自分で立てたローカルサービス以外はインポートしないでください。",
-      "shellCommand": "この設定はシェル経由でコマンド全体を実行します。実際に動作する内容は引数にあります。1 行ずつ確認してください。"
-    }
+    "usageAutoIntervalValue": "{{minutes}} 分ごと"
   },
   "iconPicker": {
     "search": "アイコンを検索",
@@ -3267,6 +3250,7 @@
     "slimOtherFieldsHint": "council、fallback、multiplexer、disabled_mcps、todoContinuation など、OMO Slim のトップレベル設定はここに記述します。",
     "jsonMustBeObject": "{{field}} は JSON オブジェクトである必要があります",
     "importLocal": "ローカルからインポート",
+    "schemaUrl": "$schema",
     "agentDesc": {
       "sisyphus": "メインオーケストレーター",
       "hephaestus": "自律型ディープワーカー",
@@ -3362,26 +3346,7 @@
     "expiredHint": "{{tool}}コマンドを実行してログインを更新してください",
     "expiredHintAccounts": "「アカウント」でこのアカウントに再ログインしてください",
     "queryFailed": "クエリに失敗しました",
-    "refresh": "更新",
-    "short": {
-      "fiveHour": "5h",
-      "sevenDay": "週",
-      "sevenDayFable": "Fable",
-      "sevenDayOpus": "Opus",
-      "sevenDaySonnet": "Sonnet",
-      "thirtyDay": "30日",
-      "geminiPro": "Pro",
-      "geminiFlash": "Flash",
-      "geminiFlashLite": "Lite",
-      "agyGeminiFiveHour": "Gemini 5h",
-      "agyGeminiWeekly": "Gemini 週",
-      "agyGeminiArgonWeekly": "Argon 週",
-      "agyThirdPartyFiveHour": "Claude 5h",
-      "agyThirdPartyWeekly": "Claude 週",
-      "monthly": "月",
-      "credits": "クレジット",
-      "copilotPremium": "Credits"
-    }
+    "refresh": "更新"
   },
   "nav": {
     "mainLabel": "メインナビゲーション",
@@ -3434,6 +3399,8 @@
     "notRunnable": "実行できません",
     "updateNeedsNode": "{{version}} には Node {{required}} が必要ですが、このインストールは Node {{current}} で動いています。先に Node を更新してください。",
     "otherInstalls": "ほかに {{count}} 件のインストール",
+    "toolQueued": "順番待ち中（前のアプリの完了待ち）",
+    "toolElapsed": "経過 {{time}}",
     "installsFound": "{{count}} 件のインストールを検出",
     "wslFlag": "フラグ",
     "installHint": {
@@ -3513,6 +3480,9 @@
       "serviceDown": "{{app}} は{{mode}}モードですが、ルーティングサービスが動いていないためリクエストは失敗します。",
       "startService": "サービスを起動",
       "backToDirect": "直接接続に戻す",
+      "officialLoginPaused": "Codex の公式ログインを一時停止中です",
+      "officialLoginPausedBody": "公式モデルは使えず、Codex のサイドバー「プロジェクト」にある既存のセッションは一時的に表示されません。公式クォータが回復したら「公式ログインを再開」をクリックし、Codex を完全に終了して開き直してください。",
+      "resumeOfficialLogin": "公式ログインを再開",
       "attachFailed": "前回の{{mode}}モードに再接続できなかったため、{{app}} は直接接続に戻りました。"
     },
     "toast": {

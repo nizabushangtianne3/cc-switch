@@ -2,7 +2,7 @@ import i18next from "i18next";
 import { initReactI18next } from "react-i18next";
 import type { BackendModule, ReadCallback } from "i18next";
 
-type Language = "zh" | "zh-TW" | "en" | "ja" | "tr";
+type Language = "zh" | "zh-TW" | "en" | "ja" | "tr" | "ko" | "ru";
 
 const DEFAULT_LANGUAGE: Language = "zh";
 
@@ -11,7 +11,9 @@ const isLanguage = (value: unknown): value is Language =>
   value === "zh-TW" ||
   value === "en" ||
   value === "ja" ||
-  value === "tr";
+  value === "tr" ||
+  value === "ko" ||
+  value === "ru";
 
 const getInitialLanguage = (): Language => {
   if (typeof window !== "undefined") {
@@ -36,37 +38,52 @@ const getInitialLanguage = (): Language => {
   }
 
   if (
-    navigatorLang?.startsWith("zh-tw") ||
-    navigatorLang?.startsWith("zh-hk") ||
-    navigatorLang?.startsWith("zh-mo") ||
-    navigatorLang?.startsWith("zh-hant")
+    navigatorLang === "zh-tw" ||
+    navigatorLang?.startsWith("zh-tw-") ||
+    navigatorLang === "zh-hk" ||
+    navigatorLang?.startsWith("zh-hk-") ||
+    navigatorLang === "zh-mo" ||
+    navigatorLang?.startsWith("zh-mo-") ||
+    navigatorLang === "zh-hant" ||
+    navigatorLang?.startsWith("zh-hant-")
   ) {
     return "zh-TW";
   }
 
-  if (navigatorLang?.startsWith("zh")) {
+  if (navigatorLang === "zh" || navigatorLang?.startsWith("zh-")) {
     return "zh";
   }
 
-  if (navigatorLang?.startsWith("ja")) {
+  if (navigatorLang === "ja" || navigatorLang?.startsWith("ja-")) {
     return "ja";
   }
 
-  if (navigatorLang?.startsWith("tr")) {
+  if (navigatorLang === "ko" || navigatorLang?.startsWith("ko-")) {
+    return "ko";
+  }
+
+  if (navigatorLang === "tr" || navigatorLang?.startsWith("tr-")) {
     return "tr";
   }
 
-  if (navigatorLang?.startsWith("en")) {
+  if (navigatorLang === "ru" || navigatorLang?.startsWith("ru-")) {
+    return "ru";
+  }
+
+  if (navigatorLang === "en" || navigatorLang?.startsWith("en-")) {
     return "en";
   }
 
-  // 认得出系统语言、但界面没有这种语言（德、法、韩…）时用英文：英文大多数人能读，简中几乎不能
+  // 认得出系统语言、但界面没有这种语言（德、法等）时用英文：英文大多数人能读，简中几乎不能
   return navigatorLang ? "en" : DEFAULT_LANGUAGE;
 };
 
+// 语言包按需动态加载：首屏只拉当前语言，其余语言进独立 chunk，切换时才下载
 const localeLoaders: Record<Language, () => Promise<{ default: object }>> = {
   en: () => import("./locales/en.json"),
   ja: () => import("./locales/ja.json"),
+  ko: () => import("./locales/ko.json"),
+  ru: () => import("./locales/ru.json"),
   tr: () => import("./locales/tr.json"),
   zh: () => import("./locales/zh.json"),
   "zh-TW": () => import("./locales/zh-TW.json"),
@@ -88,6 +105,7 @@ const localeBackend: BackendModule = {
 };
 
 const i18n = i18next.createInstance();
+// 首屏前 await 它：语言包就绪后再渲染，避免先画一遍未翻译的界面
 export const i18nReady = i18n
   .use(localeBackend)
   .use(initReactI18next)

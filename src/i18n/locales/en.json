@@ -47,18 +47,7 @@
   "apiKeyInput": {
     "placeholder": "Enter API Key",
     "show": "Show API Key",
-    "hide": "Hide API Key",
-    "nextKeyPlaceholder": "Enter or paste another API Key",
-    "multiHint": "Press Enter for a new line, one API Key per line; pasting multiple keys splits them automatically.",
-    "addKey": "Add Key",
-    "removeKey": "Remove this Key",
-    "weightLabel": "Key weight",
-    "weightHint": "Weights below 1 or left blank are treated as 1.",
-    "strategy": "Key routing strategy",
-    "strategyRouteHint": "Random, round-robin, and weighted routing apply in local routing/aggregate mode; a failing key is retried with the next key of the same provider before failing over",
-    "strategyRandom": "Random",
-    "strategyRoundRobin": "Round-robin",
-    "strategyWeighted": "Weighted"
+    "hide": "Hide API Key"
   },
   "jsonEditor": {
     "mustBeObject": "Configuration must be a JSON object, not an array or other type",
@@ -307,8 +296,6 @@
   },
   "notifications": {
     "providerAdded": "Provider added",
-    "multiKeyRoutingEnabled": "Multiple API keys detected; local routing was enabled automatically",
-    "multiKeyRoutingFailed": "The keys were saved, but enabling local routing failed: {{error}}",
     "switchSuccess": "Switch successful!",
     "codexRestartRequired": "Switched successfully. Restart the client to apply changes.",
     "geminiRestartRequired": "Switched successfully. Restart Gemini CLI to apply changes.",
@@ -339,7 +326,6 @@
     "proxyReasonDesktopMapping": "uses model mapping (Claude Desktop only accepts Claude model names)",
     "proxyReasonManagedOAuth": "uses managed OAuth login (token injected by local routing)",
     "proxyReasonRoutingRequired": "requires local routing to process requests",
-    "proxyReasonMultipleKeys": "has multiple API keys and requires local routing to select one by policy",
     "openLinkFailed": "Failed to open link",
     "openclawModelsRegistered": "Models have been registered to /model list",
     "openclawDefaultModelSet": "Set as default model",
@@ -351,7 +337,14 @@
     "windowControlFailed": "Window control failed: {{error}}",
     "officialBlockedByProxy": "Cannot switch to official provider while local routing is active. Using routing with official APIs may cause account bans.",
     "proxyOfficialWarning": "Current provider {{name}} is official. Consider switching to a third-party provider before using local routing.",
-    "proxyLoopbackHijacked": "Requests from {{app}} to the local route {{origin}} will be picked up by the system proxy, so {{app}} will fail with 502 errors. Make loopback addresses connect directly in your proxy tool (for example, add IP-CIDR,127.0.0.0/8,DIRECT,no-resolve at the top of your Clash rules), then fully quit and reopen {{app}}."
+    "proxyLoopbackHijacked": "Requests from {{app}} to the local route {{origin}} will be picked up by the system proxy, so {{app}} will fail with 502 errors. Make loopback addresses connect directly in your proxy tool (for example, add IP-CIDR,127.0.0.0/8,DIRECT,no-resolve at the top of your Clash rules), then fully quit and reopen {{app}}.",
+    "codexHistorySplit": {
+      "hint": "{{count}} sessions from {{previous}} are now read-only",
+      "officialBucket": "the official subscription",
+      "thirdPartyBucket": "third-party providers",
+      "migrationFinished": "Migrated {{count}} old sessions. Restart Codex to continue them.",
+      "migrationFailed": "Failed to migrate old sessions: {{error}}. CC Switch will retry on next launch."
+    }
   },
   "confirm": {
     "deleteProvider": "Delete Provider",
@@ -366,14 +359,14 @@
     },
     "unifyCodexHistory": {
       "title": "Unified Codex session history",
-      "message": "When enabled, the Codex CLI resume list shows official subscription and third-party sessions together (the Codex desktop app can show all sessions since a recent update and is unaffected). Note: resuming an old session across providers may fail because the other backend cannot decrypt its encrypted_content reasoning.\n\nYou can also migrate your existing official session history into the shared list (backed up to ~/.cc-switch/backups first; you can restore it when turning this off).",
+      "message": "When enabled, the official subscription runs under the shared \"custom\" provider id, so official and third-party sessions share one group: newer Codex can continue both, and the CLI resume list shows them together.\n\nYou can also migrate your existing official sessions; if you do, CC Switch also moves any official sessions left behind on every launch (backed up to ~/.cc-switch/backups first; you can restore them when turning this off). Sessions you don't migrate stay read-only in newer Codex. Restart Codex after the migration.\n\nNote: resuming an old session across providers may fail because the other backend cannot decrypt its encrypted_content reasoning.",
       "migrateExisting": "Also migrate existing official session history",
       "confirm": "I understand, enable"
     },
     "unifyCodexHistoryOff": {
       "title": "Turn off unified session history",
-      "message": "When turned off, the Codex CLI goes back to separate session lists for the official subscription and third-party providers (the desktop app still shows all sessions). Sessions created while this was on can't be told apart, so they stay in the third-party history and the CLI won't show them under the official subscription.",
-      "restoreBackup": "Restore the official sessions migrated at enable time back to the official history (exact restore from backup)",
+      "message": "When turned off, official and third-party sessions split into two groups again: newer Codex can only continue the current provider's group, and the other group becomes read-only. Sessions created while this was on can't be told apart, so they stay in the third-party group.",
+      "restoreBackup": "Restore the migrated official sessions to the official group (exact restore from backup)",
       "confirm": "Turn off"
     },
     "usage": {
@@ -798,6 +791,8 @@
     "languageOptionEnglish": "English",
     "languageOptionJapanese": "日本語",
     "languageOptionTurkish": "Türkçe",
+    "languageOptionKorean": "한국어",
+    "languageOptionRussian": "Русский",
     "launchOnStartup": "Launch on Startup",
     "silentStartup": "Silent Startup",
     "silentStartupDescription": "Start in background mode without showing main window",
@@ -820,10 +815,18 @@
       "hint": "Pause at either cutoff. Defaults: 95% / 98%. Saved changes apply to new requests immediately.",
       "invalid": "Enter whole numbers from 1 to 99."
     },
+    "codexPauseOfficialLogin": {
+      "title": "Pause the official login",
+      "description": "Turn this on when the official quota is used up and Codex has locked the send button; third-party models in Aggregation and Routing keep working. Fully quit and reopen Codex after turning it on or off.",
+      "help": "Turn this on when the official quota is used up and Codex has locked the send button (even third-party models can't be sent). Codex then stops using the official login, so it no longer locks the send button over the official quota, and third-party models in Aggregation and Routing keep working. The login stays saved on this computer; you are not signed out. Applies only in Routing or Aggregation mode; Direct is unaffected. While it's on: official models can't be used and you'll be asked to pick a third-party model; Codex hides account and usage info and may show its onboarding questions on the first launch; your existing threads under Projects in the sidebar are hidden for now (not lost; they come back when you turn this off); new sessions are recorded under the custom group and become view-only after you switch back to official. Turn it off once the official quota is back. Fully quit and reopen Codex after turning it on or off.",
+      "pausedToast": "Official login paused. Fully quit and reopen Codex for it to take effect",
+      "resumedToast": "Official login resumed. Fully quit and reopen Codex for it to take effect",
+      "saveFailed": "Failed to save: {{error}}"
+    },
     "preserveCodexOfficialAuthOnSwitch": "Keep official login for direct switches",
     "preserveCodexOfficialAuthOnSwitchDescription": "Controls third-party switches when local routing is off. Takeover routing always preserves the Codex official login.",
     "unifyCodexSessionHistory": "Unified Codex session history",
-    "unifyCodexSessionHistoryDescription": "Affects the Codex CLI only: its resume list shows only the current provider's sessions. When enabled, the official subscription runs under the shared \"custom\" provider id so official and third-party sessions appear in one list. The Codex desktop app can show all sessions since a recent update, so desktop-only users don't need this. You can optionally migrate existing official sessions in (backed up first) and restore them from backup when turning it off. Note: resuming an old session across providers may fail because its encrypted_content reasoning can only be decrypted by the backend that created it.",
+    "unifyCodexSessionHistoryDescription": "Official subscriptions run under the same \"custom\" provider id as third-party providers, so all sessions share one group. Newer Codex (desktop 26.1103 / CLI 0.167 and later) can only continue sessions in the current provider's group; the other group becomes read-only, and the CLI resume list only shows the current group. Turn this on if you switch between official and third-party providers. You can optionally migrate official sessions into the shared group (backed up first) and restore them from backup when you turn it off. Note: resuming an old session across providers may fail because its encrypted_content reasoning can only be decrypted by the backend that created it.",
     "codexStackClassicSubagents": "Classic sub-agent tools in aggregation",
     "codexStackClassicSubagentsDescription": "Must be on when the main agent and a sub-agent use different providers, or the sub-agent cannot receive its task.",
     "codexStackClassicSubagentsForcedV2": "Codex config.toml turns on [features] multi_agent_v2, which takes precedence over this setting, so it has no effect.",
@@ -1016,16 +1019,7 @@
     },
     "data": {
       "location": "Location"
-    },
-    "currentVersion": "Current Version",
-    "latestVersion": "Latest Version",
-    "updateAvailableShort": "Update",
-    "toolReady": "Ready",
-    "installedNotRunnable": "Installed · can't run",
-    "toolCheckEnv": "Check environment",
-    "toolDiagnosing": "Diagnosing…",
-    "toolConflictTitle": "Multiple installations detected",
-    "toolConflictHint": "The command line uses the one marked Default; an upgrade may have written to another."
+    }
   },
   "apps": {
     "claude": "Claude",
@@ -2151,22 +2145,8 @@
       "label": "Details",
       "providers": "Providers",
       "models": "Models",
-      "keys": "Keys",
-      "pricing": "Pricing",
-      "settings": "Settings"
+      "pricing": "Pricing"
     },
-    "keyStats": "Key statistics",
-    "keyColumn": "Key",
-    "keyFilter": {
-      "title": "Filter by key",
-      "label": "Key",
-      "all": "All keys"
-    },
-    "keyLabel": {
-      "current": "Key #{{index}} · {{mask}}",
-      "deleted": "Deleted · {{fingerprint}}"
-    },
-    "sortedByRequests": "Sorted by requests",
     "app": "App",
     "speed": "Speed",
     "speedValue": "{{value}} tok/s",
@@ -2374,9 +2354,17 @@
       "noSearchResults": "No MCP servers match your search"
     },
     "loading": "Loading...",
+    "form": {
+      "jsonPlaceholder": "{\n  \"type\": \"stdio\",\n  \"command\": \"uvx\",\n  \"args\": [\"mcp-server-fetch\"]\n}",
+      "tomlPlaceholder": "type = \"stdio\"\ncommand = \"uvx\"\nargs = [\"mcp-server-fetch\"]"
+    },
     "wizard": {
+      "typeStdio": "stdio",
+      "typeSse": "sse",
+      "argsPlaceholder": "arg1\narg2",
       "envPlaceholder": "KEY1=value1\nKEY2=value2",
-      "urlRequired": "Please enter URL"
+      "urlRequired": "Please enter URL",
+      "headersPlaceholder": "Authorization: Bearer your_token_here\nContent-Type: application/json"
     },
     "envPlaceholder": "FOO=bar\nHELLO=world",
     "error": {
@@ -3037,12 +3025,7 @@
     "usageAccessToken": "Usage Access Token",
     "usageUserId": "Usage User ID",
     "usageAutoInterval": "Auto Query",
-    "usageAutoIntervalValue": "Every {{minutes}} minutes",
-    "risk": {
-      "envHijack": "This config sets environment variables that change how processes load code (e.g. injecting libraries or replacing CA certificates). Import only from a source you trust.",
-      "privateEndpoint": "This address points at localhost or a private network. Do not import unless it is your own local service.",
-      "shellCommand": "This config runs a full command line through a shell — what actually executes is in the arguments. Review each line."
-    }
+    "usageAutoIntervalValue": "Every {{minutes}} minutes"
   },
   "iconPicker": {
     "search": "Search Icons",
@@ -3267,6 +3250,7 @@
     "slimOtherFieldsHint": "Use this area for top-level OMO Slim config such as council, fallback, multiplexer, disabled_mcps, and todoContinuation.",
     "jsonMustBeObject": "{{field}} must be a JSON object",
     "importLocal": "Import Local",
+    "schemaUrl": "$schema",
     "agentDesc": {
       "sisyphus": "Main orchestrator",
       "hephaestus": "Autonomous deep worker",
@@ -3362,26 +3346,7 @@
     "expiredHint": "Run the {{tool}} command to refresh your login",
     "expiredHintAccounts": "Sign in to this account again in Accounts",
     "queryFailed": "Query failed",
-    "refresh": "Refresh",
-    "short": {
-      "fiveHour": "5h",
-      "sevenDay": "Wk",
-      "sevenDayFable": "Fable",
-      "sevenDayOpus": "Opus",
-      "sevenDaySonnet": "Sonnet",
-      "thirtyDay": "30d",
-      "geminiPro": "Pro",
-      "geminiFlash": "Flash",
-      "geminiFlashLite": "Lite",
-      "agyGeminiFiveHour": "Gemini 5h",
-      "agyGeminiWeekly": "Gemini Wk",
-      "agyGeminiArgonWeekly": "Argon Wk",
-      "agyThirdPartyFiveHour": "Claude 5h",
-      "agyThirdPartyWeekly": "Claude Wk",
-      "monthly": "Mo",
-      "credits": "Credits",
-      "copilotPremium": "Credits"
-    }
+    "refresh": "Refresh"
   },
   "nav": {
     "mainLabel": "Main navigation",
@@ -3434,6 +3399,8 @@
     "notRunnable": "Can't run",
     "updateNeedsNode": "{{version}} requires Node {{required}}, but this installation runs on Node {{current}}. Upgrade Node first.",
     "otherInstalls": "{{count}} more install(s)",
+    "toolQueued": "Queued, waiting for another app to finish",
+    "toolElapsed": "{{time}} elapsed",
     "installsFound": "{{count}} installs found",
     "wslFlag": "Flag",
     "installHint": {
@@ -3513,6 +3480,9 @@
       "serviceDown": "{{app}} is in {{mode}} mode but the routing service isn't running, so requests will fail.",
       "startService": "Start service",
       "backToDirect": "Back to direct",
+      "officialLoginPaused": "Codex official login is paused",
+      "officialLoginPausedBody": "Official models can't be used, and your existing threads under Projects in the Codex sidebar are hidden for now. Once the official quota is back, click “Resume official login”, then fully quit and reopen Codex.",
+      "resumeOfficialLogin": "Resume official login",
       "attachFailed": "{{mode}} couldn't reconnect last time, so {{app}} went back to direct."
     },
     "toast": {

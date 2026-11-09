@@ -203,13 +203,13 @@ function cjkThousandUnits(locale: string): Array<[number, string]> | null {
       [1e7, "千萬"],
     ];
   }
-  if (locale.startsWith("zh")) {
+  if (locale === "zh" || locale.startsWith("zh-")) {
     return [
       [1e11, "千亿"],
       [1e7, "千万"],
     ];
   }
-  if (locale.startsWith("ja")) {
+  if (locale === "ja" || locale.startsWith("ja-")) {
     return [
       [1e11, "千億"],
       [1e7, "千万"],
@@ -221,12 +221,15 @@ function cjkThousandUnits(locale: string): Array<[number, string]> | null {
 export function createUsageTrendTokenTickFormatter(
   locale: string,
 ): UsageTrendTokenTickFormatter {
-  const compact = new Intl.NumberFormat(locale, {
+  const units = cjkThousandUnits(locale);
+  // ICU 会把无法识别的语言（zhb、jam）解析到 zh-CN：界面没把它当中文，坐标轴也
+  // 不该冒出中文单位。检测说不是中日文、Intl 却解析成中日文时，compact 改用英文。
+  const intlLocale = units ? locale : intlResolvedToCjk(locale) ? "en" : locale;
+  const compact = new Intl.NumberFormat(intlLocale, {
     notation: "compact",
     compactDisplay: "short",
     maximumFractionDigits: 1,
   });
-  const units = cjkThousandUnits(locale);
   if (!units) return compact;
   const plain = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 });
   return {
@@ -251,6 +254,11 @@ export function formatUsageTrendTokenTickLabel(
   if (num == null) return "--";
 
   return formatter.format(num);
+}
+
+function intlResolvedToCjk(locale: string): boolean {
+  const resolved = new Intl.NumberFormat(locale).resolvedOptions().locale;
+  return resolved.startsWith("zh") || resolved.startsWith("ja");
 }
 
 const AXIS_TICK = { fill: "var(--text-3)", fontSize: 11 };

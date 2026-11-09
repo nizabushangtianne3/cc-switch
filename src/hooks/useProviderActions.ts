@@ -37,6 +37,7 @@ import {
 } from "@/utils/providerCapabilities";
 import { getRoutingReason } from "@/utils/routingReason";
 import { logFrontendInfo } from "@/lib/frontendLogger";
+import { codexHistorySplitToastExtras } from "@/utils/codexHistorySplitHint";
 
 const LOCAL_ROUTE_APPS = new Set<AppId>([
   "claude",
@@ -355,6 +356,11 @@ export function useProviderActions(
           }
         }
 
+        // 会话分组的提醒并进「切换成功」那条，不另弹
+        const splitExtras = result?.codexHistorySplit
+          ? codexHistorySplitToastExtras(result.codexHistorySplit, t)
+          : undefined;
+
         // 若已弹过 proxyRequired 警告则不再弹 success
         if (!proxyRequiredReason) {
           let messageKey = "notifications.switchSuccess";
@@ -385,6 +391,13 @@ export function useProviderActions(
             : t(messageKey, { defaultValue: defaultMessage });
           toast.success(message, {
             closeButton: true,
+            ...splitExtras,
+          });
+        } else if (splitExtras?.description) {
+          // 没弹「切换成功」时单独提醒一句，仍然只是一行
+          toast.info(splitExtras.description as string, {
+            closeButton: true,
+            duration: splitExtras.duration,
           });
         }
       } catch {

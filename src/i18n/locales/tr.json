@@ -345,14 +345,14 @@
     },
     "unifyCodexHistory": {
       "title": "Birleşik Codex oturum geçmişi",
-      "message": "Etkinleştirildiğinde Codex CLI’nin devam edilebilir oturum listesinde resmî abonelik ve üçüncü taraf oturumları birlikte görünür (Codex masaüstü uygulaması yakın tarihli bir güncellemeden beri tüm oturumları gösterebilir ve bu ayardan etkilenmez). Not: Diğer arka uç encrypted_content içindeki akıl yürütme verilerinin şifresini çözemediği için eski bir oturuma farklı bir sağlayıcıyla devam etmek başarısız olabilir.\n\nMevcut resmî oturum geçmişinizi de paylaşılan listeye taşıyabilirsiniz (önce ~/.cc-switch/backups konumuna yedeklenir; bu ayarı kapatırken geri yükleyebilirsiniz).",
+      "message": "Etkinleştirildiğinde resmî abonelik paylaşılan \"custom\" sağlayıcı kimliğiyle çalışır ve resmî ile üçüncü taraf oturumlar tek grupta toplanır: yeni Codex her ikisine de devam edebilir, CLI'nin devam listesi de bunları birlikte gösterir.\n\nMevcut resmî oturumlarınızı da taşıyabilirsiniz; taşırsanız CC Switch her açılışta geride kalan resmî oturumları da taşır (önce ~/.cc-switch/backups konumuna yedeklenir; bu ayarı kapatırken geri yükleyebilirsiniz). Taşımadığınız oturumlar yeni Codex'te salt okunur kalır. Taşıma bittikten sonra Codex'i yeniden başlatın.\n\nNot: Diğer arka uç encrypted_content içindeki akıl yürütme verilerinin şifresini çözemediği için eski bir oturuma farklı bir sağlayıcıyla devam etmek başarısız olabilir.",
       "migrateExisting": "Ayrıca mevcut resmi oturum geçmişini taşıyın",
       "confirm": "Anladım, etkinleştir"
     },
     "unifyCodexHistoryOff": {
       "title": "Birleşik oturum geçmişini kapat",
-      "message": "Kapatıldığında Codex CLI, resmi abonelik ve üçüncü taraf sağlayıcılar için ayrı oturum listelerine geri döner (masaüstü uygulaması tüm oturumları göstermeye devam eder). Bu açıkken oluşturulan oturumlar birbirinden ayrılamaz, dolayısıyla üçüncü taraf geçmişinde kalırlar ve CLI bunları resmi abonelik altında göstermez.",
-      "restoreBackup": "Etkinleştirme zamanında taşınan resmi oturumları resmi geçmişe geri yükleyin (yedekten tam geri yükleme)",
+      "message": "Kapatıldığında resmî ve üçüncü taraf oturumlar yeniden iki gruba ayrılır: yeni Codex yalnızca geçerli sağlayıcının grubuna devam edebilir, diğer grup salt okunur olur. Bu açıkken oluşturulan oturumlar birbirinden ayrılamaz, bu yüzden üçüncü taraf grubunda kalırlar.",
+      "restoreBackup": "Taşınan resmî oturumları resmî gruba geri yükleyin (yedekten tam geri yükleme)",
       "confirm": "Kapat"
     },
     "usage": {
@@ -768,6 +768,8 @@
     "languageOptionEnglish": "English",
     "languageOptionJapanese": "日本語",
     "languageOptionTurkish": "Türkçe",
+    "languageOptionKorean": "한국어",
+    "languageOptionRussian": "Русский",
     "launchOnStartup": "Sistem açılışında başlat",
     "silentStartup": "Sessiz Başlangıç",
     "silentStartupDescription": "Ana pencereyi göstermeden arka plan modunda başlat",
@@ -793,7 +795,7 @@
     "preserveCodexOfficialAuthOnSwitch": "Doğrudan geçişler için resmi giriş bilgilerini koruyun",
     "preserveCodexOfficialAuthOnSwitchDescription": "Yerel yönlendirme kapalıyken üçüncü taraf anahtarları kontrol eder. Devralma yönlendirmesi her zaman Codex resmi giriş bilgilerini korur.",
     "unifyCodexSessionHistory": "Birleşik Codex oturum geçmişi",
-    "unifyCodexSessionHistoryDescription": "Yalnızca Codex CLI'yi etkiler: devam edilebilir oturum listesi yalnızca mevcut sağlayıcının oturumlarını gösterir. Etkinleştirildiğinde resmi abonelik, paylaşılan \"özel\" sağlayıcı kimliği altında çalışır, böylece resmi ve üçüncü taraf oturumları tek bir listede görünür. Codex masaüstü uygulaması, yeni bir güncellemeden bu yana tüm oturumları gösterebilir, dolayısıyla yalnızca masaüstü kullanıcılarının buna ihtiyacı yoktur. İsteğe bağlı olarak mevcut resmi oturumları (öncelikle yedeklenen) taşıyabilir ve kapattığınızda bunları yedeklemeden geri yükleyebilirsiniz. Not: eski bir oturumun sağlayıcılar arasında sürdürülmesi başarısız olabilir, çünkü encrypted_content mantığının şifresi yalnızca onu oluşturan arka uç tarafından çözülebilir.",
+    "unifyCodexSessionHistoryDescription": "Resmî abonelik, üçüncü taraf sağlayıcılarla aynı \"custom\" sağlayıcı kimliğiyle çalışır; böylece tüm oturumlar tek bir grupta toplanır. Yeni Codex sürümleri (masaüstü 26.1103 / CLI 0.167 ve sonrası) yalnızca geçerli sağlayıcının grubundaki oturumlara devam edebilir; diğer grup salt okunur olur ve CLI'nin devam listesi yalnızca geçerli grubu gösterir. Resmî ve üçüncü taraf sağlayıcılar arasında geçiş yapıyorsanız açın. İsteğe bağlı olarak resmî oturumları paylaşılan gruba taşıyabilir (önce yedeklenir) ve kapatırken yedekten geri yükleyebilirsiniz. Not: eski bir oturumun sağlayıcılar arasında sürdürülmesi başarısız olabilir, çünkü encrypted_content mantığının şifresi yalnızca onu oluşturan arka uç tarafından çözülebilir.",
     "codexStackClassicSubagents": "Birleştirmedaki klasik alt ajan araçları",
     "codexStackClassicSubagentsDescription": "Ana ajan ile alt ajan farklı sağlayıcılar kullandığında açık olmalıdır; aksi halde alt ajan görevini alamaz.",
     "codexStackClassicSubagentsForcedV2": "Codex config.toml, bu ayara göre öncelikli olan [features] multi_agent_v2'yi açar, dolayısıyla hiçbir etkisi olmaz.",
@@ -984,16 +986,7 @@
     },
     "data": {
       "location": "Konum"
-    },
-    "currentVersion": "Güncel Sürüm",
-    "latestVersion": "Son Sürüm",
-    "updateAvailableShort": "Güncelle",
-    "toolReady": "Hazır",
-    "installedNotRunnable": "Yüklendi · çalıştırılamıyor",
-    "toolCheckEnv": "Ortamı kontrol edin",
-    "toolDiagnosing": "Teşhis ediliyor…",
-    "toolConflictTitle": "Birden fazla kurulum algılandı",
-    "toolConflictHint": "Komut satırı Varsayılan olarak işaretlenmiş olanı kullanır; bir yükseltme diğerine yazılmış olabilir."
+    }
   },
   "apps": {
     "claude": "Claude",
@@ -2294,9 +2287,17 @@
       "noSearchResults": "Aramanızla eşleşen MCP sunucusu yok"
     },
     "loading": "Yükleniyor...",
+    "form": {
+      "jsonPlaceholder": "{\n  \"type\": \"stdio\",\n  \"command\": \"uvx\",\n  \"args\": [\"mcp-server-fetch\"]\n}",
+      "tomlPlaceholder": "type = \"stdio\"\ncommand = \"uvx\"\nargs = [\"mcp-server-fetch\"]"
+    },
     "wizard": {
+      "typeStdio": "stdio",
+      "typeSse": "sse",
+      "argsPlaceholder": "arg1\narg2",
       "envPlaceholder": "KEY1=value1\nKEY2=value2",
-      "urlRequired": "Lütfen URL'yi girin"
+      "urlRequired": "Lütfen URL'yi girin",
+      "headersPlaceholder": "Authorization: Bearer your_token_here\nContent-Type: application/json"
     },
     "envPlaceholder": "FOO=bar\nHELLO=world",
     "error": {
@@ -2954,12 +2955,7 @@
     "usageAccessToken": "Kullanım Erişim Tokenu",
     "usageUserId": "Kullanım Kullanıcı Kimliği",
     "usageAutoInterval": "Otomatik Sorgulama",
-    "usageAutoIntervalValue": "Her {{minutes}} dakikada bir",
-    "risk": {
-      "envHijack": "Bu yapılandırma, yükleme kodunun işlenme biçimini değiştiren ortam değişkenlerini ayarlar (örneğin, kitaplıkları enjekte etme veya CA sertifikalarını değiştirme). Yalnızca güvendiğiniz bir kaynaktan içe aktarın.",
-      "privateEndpoint": "Bu adres localhost'a veya özel bir ağa işaret eder. Kendi yerel hizmetiniz olmadığı sürece ithalat yapmayın.",
-      "shellCommand": "Bu yapılandırma, bir kabuk aracılığıyla tam bir komut satırı çalıştırır; gerçekte yürütülen şey argümanlardadır. Her satırı inceleyin."
-    }
+    "usageAutoIntervalValue": "Her {{minutes}} dakikada bir"
   },
   "iconPicker": {
     "search": "Arama Simgeleri",
@@ -3184,6 +3180,7 @@
     "slimOtherFieldsHint": "Bu alanı konsey, geri dönüş, çoklayıcı, disabled_mcps ve todoContinuation gibi üst düzey OMO Slim yapılandırmaları için kullanın.",
     "jsonMustBeObject": "{{field}} bir JSON nesnesi olmalıdır",
     "importLocal": "Yerel İçe Aktar",
+    "schemaUrl": "$schema",
     "agentDesc": {
       "sisyphus": "Ana orkestratör",
       "hephaestus": "Özerk derin işçi",
@@ -3274,26 +3271,7 @@
     "extraUsage": "Ekstra Kullanım",
     "expiredHint": "Giriş bilgilerinizi yenilemek için {{tool}} komutunu çalıştırın",
     "queryFailed": "Sorgu başarısız oldu",
-    "refresh": "Yenile",
-    "short": {
-      "fiveHour": "5 saat",
-      "sevenDay": "hafta",
-      "sevenDayFable": "Fable",
-      "sevenDayOpus": "Opus",
-      "sevenDaySonnet": "Sonnet",
-      "thirtyDay": "30 gün",
-      "geminiPro": "Pro",
-      "geminiFlash": "Flash",
-      "geminiFlashLite": "Lite",
-      "agyGeminiFiveHour": "Gemini 5 sa.",
-      "agyGeminiWeekly": "Gemini haftalık",
-      "agyGeminiArgonWeekly": "Argon haftalık",
-      "agyThirdPartyFiveHour": "Claude 5 sa.",
-      "agyThirdPartyWeekly": "Claude haftalık",
-      "monthly": "Ay",
-      "credits": "Kredi",
-      "copilotPremium": "Credits"
-    }
+    "refresh": "Yenile"
   },
   "nav": {
     "mainLabel": "Ana gezinme",

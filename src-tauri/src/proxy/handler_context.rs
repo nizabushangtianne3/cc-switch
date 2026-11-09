@@ -313,6 +313,7 @@ impl RequestContext {
         )
         .stack_request(self.is_stack)
         .with_circuit_failure_threshold(self.app_config.circuit_failure_threshold)
+        .failover_chain(self.app_config.auto_failover_enabled)
     }
 
     /// 获取 Provider 列表（用于故障转移）
