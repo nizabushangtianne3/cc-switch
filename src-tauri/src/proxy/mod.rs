@@ -39,6 +39,7 @@ pub mod thinking_optimizer;
 pub mod thinking_rectifier;
 pub(crate) mod tool_media;
 pub(crate) mod types;
+pub(crate) mod unsupported_param_rectifier;
 mod upstream_guard;
 pub(crate) mod upstream_pool;
 pub mod usage;

@@ -46,6 +46,10 @@ pub struct ProviderRouter {
     circuit_breakers: Arc<RwLock<CircuitBreakers>>,
     /// Key 池轮询游标：同样按应用分组。
     key_cursors: Arc<RwLock<KeyCursors>>,
+    /// 模型参数能力缓存：上游 400 拒绝不支持的参数、去参重试成功后记入，
+    /// 后续请求发送前直接剥掉，不再报错打断会话。见
+    /// [`super::unsupported_param_rectifier`]。
+    unsupported_params: Arc<super::unsupported_param_rectifier::UnsupportedParamCache>,
 }
 
 impl ProviderRouter {
@@ -55,7 +59,32 @@ impl ProviderRouter {
             db,
             circuit_breakers: Arc::new(RwLock::new(HashMap::new())),
             key_cursors: Arc::new(RwLock::new(HashMap::new())),
+            unsupported_params: Arc::new(Default::default()),
         }
+    }
+
+    /// 这家这个模型已确认不支持的请求参数（发送前剥掉用）。
+    pub async fn unsupported_params_for(&self, provider_id: &str, model: &str) -> Vec<String> {
+        super::unsupported_param_rectifier::cached_params(
+            &self.unsupported_params,
+            provider_id,
+            model,
+        )
+    }
+
+    /// 记下这家这个模型不支持的请求参数（400 去参重试成功后调用）。
+    pub async fn remember_unsupported_params(
+        &self,
+        provider_id: &str,
+        model: &str,
+        paths: &[String],
+    ) {
+        super::unsupported_param_rectifier::remember_params(
+            &self.unsupported_params,
+            provider_id,
+            model,
+            paths,
+        );
     }
 
     /// 选择可用的供应商（支持故障转移）

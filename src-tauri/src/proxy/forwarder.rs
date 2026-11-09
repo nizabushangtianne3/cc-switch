@@ -516,6 +516,63 @@ impl RequestForwarder {
         super::providers::codex_compaction::compaction_retry_without_tool_choice(request)
     }
 
+    /// 上游以 400 拒绝请求里不支持的参数时，去掉这些参数的的重试请求体。
+    ///
+    /// 只处理 400；解析不到被点名的参数就放弃（不猜）。模型名取自请求体，
+    /// 调用方重试成功后把它和参数一起记进能力缓存。
+    fn unsupported_param_retry_body(
+        &self,
+        request: &Value,
+        error: &ProxyError,
+    ) -> Option<(Value, String, Vec<String>)> {
+        if !matches!(error, ProxyError::UpstreamError { status: 400, .. }) {
+            return None;
+        }
+        let body = match error {
+            ProxyError::UpstreamError { body, .. } => body.as_deref()?,
+            _ => return None,
+        };
+        let paths = super::unsupported_param_rectifier::parse_unsupported_params(body);
+        if paths.is_empty() {
+            return None;
+        }
+        let mut retry = request.clone();
+        if !super::unsupported_param_rectifier::strip_request_params(&mut retry, &paths) {
+            return None;
+        }
+        let model = request.get("model").and_then(Value::as_str)?.to_string();
+        Some((retry, model, paths))
+    }
+
+    /// 发送前按能力缓存剥掉这家这个模型不支持的参数；没有命中就原样返回。
+    async fn strip_cached_unsupported_params(
+        &self,
+        app_type_str: &str,
+        provider: &Provider,
+        body: Arc<Value>,
+    ) -> Arc<Value> {
+        let model = match body.get("model").and_then(Value::as_str) {
+            Some(model) => model,
+            None => return body,
+        };
+        let paths = self
+            .router
+            .unsupported_params_for(&provider.id, model)
+            .await;
+        if paths.is_empty() {
+            return body;
+        }
+        let mut stripped = (*body).clone();
+        if !super::unsupported_param_rectifier::strip_request_params(&mut stripped, &paths) {
+            return body;
+        }
+        log::info!(
+            "[{app_type_str}] [RECT-043] provider={} model={model} 按能力缓存剥掉不支持的参数 {paths:?}",
+            provider.id
+        );
+        Arc::new(stripped)
+    }
+
     /// 一个供应商本次请求的 Key 尝试顺序。
     ///
     /// 只有静态 Key 认证（Anthropic / Claude 中转 / Bearer / Google 等）参与 Key 池；
@@ -1095,6 +1152,12 @@ impl RequestForwarder {
                 Arc::clone(&body)
             };
 
+            // 能力缓存预检：这家这个模型已知不支持的参数，发送前就剥掉——同一会话
+            // 后续请求和新会话都不再触发 400。
+            let provider_body = self
+                .strip_cached_unsupported_params(app_type_str, provider, provider_body)
+                .await;
+
             attempted_providers += 1;
 
             // 更新状态中的当前 Provider 信息（per-attempt 维度的标识）
@@ -1133,6 +1196,7 @@ impl RequestForwarder {
                 let mut budget_rectifier_retried = false;
                 let mut media_rectifier_retried = false;
                 let mut opaque_rectifier_retried = false;
+                let mut unsupported_param_retried = false;
 
                 // 转发请求（每个 Key 只尝试一次，Key 级重试由错误分类驱动）
                 let mut attempted_codex_upstream_format = None;
@@ -1299,6 +1363,67 @@ impl RequestForwarder {
                                         "[{app_type_str}] [RECT-032] 压缩重试仍失败: {retry_err}"
                                     );
                                     e = retry_err;
+                                }
+                            }
+                        }
+
+                        // 上游以 400 拒绝请求里不支持的参数：去掉它对同一家重试一次，
+                        // 成功后记进模型能力缓存——后续请求（同会话或新会话）发送前就剥掉，
+                        // 不再报错打断会话。
+                        if !unsupported_param_retried {
+                            if let Some((retry_body, retry_model, retry_paths)) =
+                                self.unsupported_param_retry_body(&provider_body, &e)
+                            {
+                                let _ = std::mem::replace(&mut unsupported_param_retried, true);
+                                log::info!(
+                                    "[{app_type_str}] [RECT-040] provider={} model={retry_model} 拒绝了不支持的参数 {retry_paths:?}，去掉后重试一次",
+                                    provider.id
+                                );
+                                let mut retry_codex_upstream_format = None;
+                                match self
+                                    .forward(
+                                        app_type,
+                                        &method,
+                                        provider,
+                                        endpoint,
+                                        &retry_body,
+                                        &headers,
+                                        &extensions,
+                                        adapter.as_ref(),
+                                        api_key.as_deref(),
+                                        &mut retry_codex_upstream_format,
+                                    )
+                                    .await
+                                {
+                                    Ok(forwarded) => {
+                                        log::info!(
+                                            "[{app_type_str}] [RECT-041] 去参重试成功（provider={} model={retry_model}）",
+                                            provider.id
+                                        );
+                                        self.router
+                                            .remember_unsupported_params(
+                                                &provider.id,
+                                                &retry_model,
+                                                &retry_paths,
+                                            )
+                                            .await;
+                                        return Ok(self
+                                            .finish_success(
+                                                provider,
+                                                app_type_str,
+                                                used_half_open_permit,
+                                                selected_api_key_id.clone(),
+                                                forwarded,
+                                                retry_codex_upstream_format,
+                                            )
+                                            .await);
+                                    }
+                                    Err(retry_err) => {
+                                        log::warn!(
+                                            "[{app_type_str}] [RECT-042] 去参重试仍失败: {retry_err}"
+                                        );
+                                        e = retry_err;
+                                    }
                                 }
                             }
                         }
@@ -8383,6 +8508,80 @@ mod tests {
                 .iter()
                 .all(|item| item["type"] != "compaction_trigger"));
             assert_eq!(input.last().unwrap()["content"][0]["text"], COMPACT_PROMPT);
+        }
+
+        /// 上游 400 拒绝不支持的参数：去参重试后客户端拿到 200，且「这家这个模型
+        /// 不支持这个参数」进了能力缓存——同一 forwarder 的后续请求发送前就剥掉。
+        #[tokio::test]
+        async fn unsupported_param_400_strips_param_and_caches_for_next_requests() {
+            let seen = Arc::new(Mutex::new(Vec::new()));
+            let attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let app = {
+                let seen = seen.clone();
+                let attempts = attempts.clone();
+                axum::Router::new().fallback(move |headers: HeaderMap, body: Bytes| {
+                    let seen = seen.clone();
+                    let attempts = attempts.clone();
+                    async move {
+                        seen.lock().await.push(Seen {
+                            headers,
+                            body: serde_json::from_slice(&body).unwrap_or(Value::Null),
+                        });
+                        if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
+                            return (
+                                StatusCode::BAD_REQUEST,
+                                [(http::header::CONTENT_TYPE, "application/json")],
+                                serde_json::json!({"error":{
+                                    "message":"Unsupported parameter: 'temperature' is not supported with this model",
+                                    "param":"temperature",
+                                    "code":"unsupported_parameter"
+                                }})
+                                .to_string(),
+                            );
+                        }
+                        (
+                            StatusCode::OK,
+                            [(http::header::CONTENT_TYPE, "application/json")],
+                            json!({ "id": "r1", "object": "response", "output": [] }).to_string(),
+                        )
+                    }
+                })
+            };
+            let upstream = Upstream {
+                base_url: serve_upstream(app).await,
+                seen,
+            };
+            let relay = provider(&upstream, "openai_responses");
+            let request = json!({
+                "model": "row-model",
+                "input": [{ "role": "user", "content": [] }],
+                "temperature": 0.5
+            });
+
+            let forwarder = forwarder(false);
+            for round in 0..2 {
+                forwarder
+                    .forward_with_retry(
+                        &AppType::Codex,
+                        http::Method::POST,
+                        "/responses",
+                        &request,
+                        chatgpt_headers(),
+                        Extensions::new(),
+                        std::slice::from_ref(&relay),
+                    )
+                    .await
+                    .map_err(|error| error.error)
+                    .unwrap_or_else(|error| panic!("round {round} should succeed: {error}"));
+            }
+
+            let seen = upstream.seen.lock().await;
+            // 第一次：带 temperature 被 400，去掉后重试成功
+            assert_eq!(seen.len(), 3);
+            assert_eq!(seen[0].body["temperature"], 0.5);
+            assert!(seen[1].body.get("temperature").is_none());
+            // 第二次请求：能力缓存命中，发送前就剥掉，一次到位
+            assert!(seen[2].body.get("temperature").is_none());
         }
 
         /// 去掉 `tool_choice` 的重试只给 Codex 原生 Responses 第三方的压缩回合、且只在 400 时。
