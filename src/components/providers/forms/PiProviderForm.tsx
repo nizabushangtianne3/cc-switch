@@ -1130,6 +1130,23 @@ export function PiProviderForm({
     for (const model of added) fillModelMetadataFor(model.key, model.id, true);
   };
 
+  // 模型选择器包了 memo：内联数组 / 对象 / 每次重建的回调都会把 memo 打穿，键入别的
+  // 字段时整个选择器（含弹窗）都会重跑。
+  const configuredModelIds = useMemo(
+    () => models.map((model) => model.id),
+    [models],
+  );
+  const pickerMetadataSource = useMemo(
+    () => ({ baseUrl, presets: piPresetModelSources }),
+    [baseUrl],
+  );
+  const applyFetchedModelsRef = useLatestRef(handleApplyFetchedModels);
+  const stableApplyFetchedModels = useCallback(
+    (selection: FetchedModelSelection) =>
+      applyFetchedModelsRef.current(selection),
+    [applyFetchedModelsRef],
+  );
+
   const updateThinkingLevelMap = (
     key: string,
     update: (map: PiThinkingLevelMap) => PiThinkingLevelMap,
@@ -1750,11 +1767,11 @@ export function PiProviderForm({
                 <div className="flex gap-1">
                   <FetchedModelPicker
                     models={fetchedModels}
-                    configuredModelIds={models.map((model) => model.id)}
-                    onApply={handleApplyFetchedModels}
+                    configuredModelIds={configuredModelIds}
+                    onApply={stableApplyFetchedModels}
                     onFetch={handleFetchModels}
                     isFetching={isFetchingModels}
-                    metadataSource={{ baseUrl, presets: piPresetModelSources }}
+                    metadataSource={pickerMetadataSource}
                   />
                   <Button
                     id="pi-add-model"

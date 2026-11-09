@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useTranslation } from "react-i18next";
+import { useLatestRef } from "@/hooks/useLatestRef";
 import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import {
@@ -247,6 +248,31 @@ export function GrokBuildProviderForm({
     setRawConfig((current) => updateGrokBuildConfig(current, next));
   };
 
+  // syncStructuredConfig 每遍渲染重建（要读最新的表单值）；送进 memo 化区块的回调经
+  // ref 取最新值，包一层稳定引用，键入别的字段不会重跑这些区块。
+  const syncStructuredConfigRef = useLatestRef(syncStructuredConfig);
+  const handleApiKeyChange = useCallback(
+    (value: string) => {
+      setApiKey(value);
+      syncStructuredConfigRef.current({ apiKey: value });
+    },
+    [syncStructuredConfigRef],
+  );
+  const handleBaseUrlChange = useCallback(
+    (value: string) => {
+      setBaseUrl(value);
+      syncStructuredConfigRef.current({ baseUrl: value });
+    },
+    [syncStructuredConfigRef],
+  );
+  const handleUpstreamModelChange = useCallback(
+    (value: string) => {
+      setUpstreamModel(value);
+      syncStructuredConfigRef.current({ upstreamModel: value });
+    },
+    [syncStructuredConfigRef],
+  );
+
   const handlePresetChange = (presetId: string) => {
     setSelectedPresetId(presetId);
     if (presetId === "custom") {
@@ -467,10 +493,7 @@ export function GrokBuildProviderForm({
               appId="grokbuild"
               providerId={providerId}
               codexApiKey={apiKey}
-              onApiKeyChange={(value) => {
-                setApiKey(value);
-                syncStructuredConfig({ apiKey: value });
-              }}
+              onApiKeyChange={handleApiKeyChange}
               category={category}
               shouldShowApiKeyLink={Boolean(apiKeyLinkUrl)}
               websiteUrl={apiKeyLinkUrl}
@@ -478,10 +501,7 @@ export function GrokBuildProviderForm({
               partnerPromotionKey={partnerPromotionKey}
               shouldShowSpeedTest
               codexBaseUrl={baseUrl}
-              onBaseUrlChange={(value) => {
-                setBaseUrl(value);
-                syncStructuredConfig({ baseUrl: value });
-              }}
+              onBaseUrlChange={handleBaseUrlChange}
               isFullUrl={isFullUrl}
               onFullUrlChange={setIsFullUrl}
               isEndpointModalOpen={isEndpointModalOpen}
@@ -490,10 +510,7 @@ export function GrokBuildProviderForm({
               autoSelect={endpointAutoSelect}
               onAutoSelectChange={setEndpointAutoSelect}
               codexModel={upstreamModel}
-              onModelChange={(value) => {
-                setUpstreamModel(value);
-                syncStructuredConfig({ upstreamModel: value });
-              }}
+              onModelChange={handleUpstreamModelChange}
               apiFormat={apiFormat}
               onApiFormatChange={(value) => {
                 setApiFormat(value);

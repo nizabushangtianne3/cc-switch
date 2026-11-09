@@ -749,6 +749,16 @@ function ProviderFormFull({
   >(() => resolveManagedAccountId(initialData?.meta, "codex_oauth"));
   const [hasValidCodexOfficialSelection, setHasValidCodexOfficialSelection] =
     useState(true);
+  // 稳定引用：CodexOAuthSection 包了 memo，内联箭头会把它的 memo 打穿，
+  // 键入其他字段时整个 OAuth 区块都会重跑。
+  const handleCodexAuthSelectionConfirmed = useCallback(
+    () => setHasValidCodexOfficialSelection(true),
+    [],
+  );
+  const handleCodexAuthSelectionInvalidated = useCallback(
+    () => setHasValidCodexOfficialSelection(false),
+    [],
+  );
   const [selectedXaiAccountId, setSelectedXaiAccountId] = useState<
     string | null
   >(() => resolveManagedAccountId(initialData?.meta, "xai_oauth"));
@@ -2902,11 +2912,9 @@ function ProviderFormFull({
               isCodexOauthPreset={isCodexOfficialProvider}
               selectedCodexAccountId={selectedCodexAccountId}
               onCodexAccountSelect={setSelectedCodexAccountId}
-              onCodexAuthSelectionConfirmed={() =>
-                setHasValidCodexOfficialSelection(true)
-              }
-              onCodexAuthSelectionInvalidated={() =>
-                setHasValidCodexOfficialSelection(false)
+              onCodexAuthSelectionConfirmed={handleCodexAuthSelectionConfirmed}
+              onCodexAuthSelectionInvalidated={
+                handleCodexAuthSelectionInvalidated
               }
               onManageAuthAccounts={onManageAuthAccounts}
               codexOauthSelectionLabel={t("codexOauth.signInMethod")}

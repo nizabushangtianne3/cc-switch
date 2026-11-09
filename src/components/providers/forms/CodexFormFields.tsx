@@ -100,7 +100,7 @@ import {
 } from "./FetchedModelPicker";
 import { LocalProxyRequestOverridesField } from "./LocalProxyRequestOverridesField";
 import { cn } from "@/lib/utils";
-import { useCommittableRef } from "@/hooks/useLatestRef";
+import { useCommittableRef, useLatestRef } from "@/hooks/useLatestRef";
 import { useModelMetadataFill } from "@/hooks/useModelMetadataFill";
 import { codexPresetModelSources } from "@/config/presetModelMetadata";
 import {
@@ -758,6 +758,31 @@ export function CodexFormFields({
   // api_backend 声明、请求体也不是 Codex 发出的）——提示文案按 appId 分流，
   // 对应词条在 grokBuild.* 下。
   const isGrokBuild = appId === "grokbuild";
+
+  // 下面几个区块都包了 memo：只要有一个 prop 每次渲染都是新引用（内联对象 / 内联箭头），
+  // memo 就被打穿。内联对象和箭头统一在这里提成 useMemo / useCallback，键入别的字段时
+  // 这些区块不再跟着重跑。
+  const apiKeyPlaceholders = useMemo(
+    () => ({
+      official: t("providerForm.codexOfficialNoApiKey", {
+        defaultValue: "官方供应商无需 API Key",
+      }),
+      thirdParty: t("providerForm.codexApiKeyAutoFill", {
+        defaultValue: "输入 API Key，将自动填充到配置",
+      }),
+    }),
+    [t],
+  );
+
+  const handleManageCopilotAccounts = useCallback(
+    () => onManageAuthAccounts?.("github_copilot"),
+    [onManageAuthAccounts],
+  );
+
+  const handleManageCodexAccounts = useCallback(
+    () => onManageAuthAccounts?.("codex_oauth"),
+    [onManageAuthAccounts],
+  );
   const canEditCatalog = Boolean(onCatalogModelsChange);
   // 有模型列表的卡（两种布局）：列表第一行就是默认模型，没有单独的默认模型框；列表为空时
   // 直连布局才显示默认模型框。Grok Build 没有列表，官方卡不显示列表。
@@ -1055,6 +1080,13 @@ export function CodexFormFields({
     presets: codexPresetModelSources,
     prefetch: fetchedModels.length > 0,
   });
+  // 拉取回调依赖当前默认模型 / 列表，身份每遍渲染都变；模型选择器只在真正点
+  // 「获取模型」时用它，经 ref 包一层稳定引用，键入不会重跑选择器。
+  const fetchModelsRef = useLatestRef(handleFetchModels);
+  const stableFetchModels = useCallback(
+    () => fetchModelsRef.current(),
+    [fetchModelsRef],
+  );
   // 补全要在「改模型名」提交后立刻读到那一行，所以这两处经 ref 同步提交。
   const [catalogRowsRef, commitCatalogRows] = useCommittableRef(
     catalogRows,
@@ -1256,6 +1288,17 @@ export function CodexFormFields({
     ],
   );
 
+  // 「应用」回调每次渲染都重建（依赖当前默认模型）。模型选择器只在实际点「应用」时
+  // 读它：经 ref 取最新值，传进去的包装器身份稳定，键入不会重跑整个选择器。
+  const applyFetchedCatalogRowsRef = useLatestRef(
+    handleApplyFetchedCatalogRows,
+  );
+  const stableApplyFetchedCatalogRows = useCallback(
+    (selection: FetchedModelSelection) =>
+      applyFetchedCatalogRowsRef.current(selection),
+    [applyFetchedCatalogRowsRef],
+  );
+
   // 默认模型下拉建议 = 模型映射的"实际请求模型"列 ∪ 拉取到的 /models 列表
   const defaultModelSuggestions = useMemo<FetchedModel[]>(() => {
     const seen = new Set<string>();
@@ -1373,18 +1416,30 @@ export function CodexFormFields({
     trimmedSubagentModel,
   ]);
 
+  // 模型选择器 / 测速弹窗的 prop 同样要稳定引用（catalogRows 是 state，身份本来稳定，
+  // 但 map 出来的数组和 metadataSource 对象每次渲染都是新的）。
+  const configuredCatalogModelIds = useMemo(
+    () => catalogRows.map((row) => row.model),
+    [catalogRows],
+  );
+  const fetchedModelMetadataSource = useMemo(
+    () => ({ baseUrl: codexBaseUrl, presets: codexPresetModelSources }),
+    [codexBaseUrl],
+  );
+  const closeEndpointModal = useCallback(
+    () => onEndpointModalToggle(false),
+    [onEndpointModalToggle],
+  );
+
   const renderCatalogActionButtons = (onAdd: () => void, addLabel: string) => (
     <div className="flex gap-1">
       <FetchedModelPicker
         models={fetchedModels}
-        configuredModelIds={catalogRows.map((row) => row.model)}
-        onApply={handleApplyFetchedCatalogRows}
-        onFetch={handleFetchModels}
+        configuredModelIds={configuredCatalogModelIds}
+        onApply={stableApplyFetchedCatalogRows}
+        onFetch={stableFetchModels}
         isFetching={isFetchingModels}
-        metadataSource={{
-          baseUrl: codexBaseUrl,
-          presets: codexPresetModelSources,
-        }}
+        metadataSource={fetchedModelMetadataSource}
       />
       <Button
         type="button"
@@ -1888,9 +1943,7 @@ export function CodexFormFields({
           selectedAccountId={selectedGitHubAccountId}
           onAccountSelect={onGitHubAccountSelect}
           onManageAccounts={
-            onManageAuthAccounts
-              ? () => onManageAuthAccounts("github_copilot")
-              : undefined
+            onManageAuthAccounts ? handleManageCopilotAccounts : undefined
           }
         />
       )}
@@ -1904,9 +1957,7 @@ export function CodexFormFields({
           onSelectionConfirmed={onCodexAuthSelectionConfirmed}
           onSelectionInvalidated={onCodexAuthSelectionInvalidated}
           onManageAccounts={
-            onManageAuthAccounts
-              ? () => onManageAuthAccounts("codex_oauth")
-              : undefined
+            onManageAuthAccounts ? handleManageCodexAccounts : undefined
           }
           selectionLabel={codexOauthSelectionLabel}
           noneOptionLabel={codexOauthNoneOptionLabel}
@@ -1949,14 +2000,7 @@ export function CodexFormFields({
           websiteUrl={websiteUrl}
           isPartner={isPartner}
           partnerPromotionKey={partnerPromotionKey}
-          placeholder={{
-            official: t("providerForm.codexOfficialNoApiKey", {
-              defaultValue: "官方供应商无需 API Key",
-            }),
-            thirdParty: t("providerForm.codexApiKeyAutoFill", {
-              defaultValue: "输入 API Key，将自动填充到配置",
-            }),
-          }}
+          placeholder={apiKeyPlaceholders}
         />
       )}
     </>
@@ -2001,7 +2045,7 @@ export function CodexFormFields({
           onChange={onBaseUrlChange}
           initialEndpoints={speedTestEndpoints}
           visible={isEndpointModalOpen}
-          onClose={() => onEndpointModalToggle(false)}
+          onClose={closeEndpointModal}
           autoSelect={autoSelect}
           onAutoSelectChange={onAutoSelectChange}
           onCustomEndpointsChange={onCustomEndpointsChange}

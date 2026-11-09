@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo } from "react";
 import { useTranslation } from "react-i18next";
 import {
   AlertTriangle,
@@ -53,13 +53,13 @@ interface XaiOAuthSectionProps {
   helpSide?: "top" | "bottom";
 }
 
-export const XaiOAuthSection: React.FC<XaiOAuthSectionProps> = ({
+export const XaiOAuthSection = memo(function XaiOAuthSection({
   className,
   mode,
   selectedAccountId,
   onAccountSelect,
   helpSide,
-}) => {
+}: XaiOAuthSectionProps) {
   const { t, i18n } = useTranslation();
   const [copied, setCopied] = React.useState(false);
   const {
@@ -482,6 +482,6 @@ export const XaiOAuthSection: React.FC<XaiOAuthSectionProps> = ({
       {removeDialog}
     </div>
   );
-};
+});
 
 export default XaiOAuthSection;

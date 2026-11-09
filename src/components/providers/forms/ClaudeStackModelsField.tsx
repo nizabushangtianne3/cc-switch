@@ -1,3 +1,4 @@
+import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ import {
   type FetchedModelSelection,
 } from "./FetchedModelPicker";
 import { ModelDropdown } from "./shared";
+import { useLatestRef } from "@/hooks/useLatestRef";
 import {
   hasClaudeOneMMarker,
   stripClaudeOneMMarker,
@@ -135,6 +137,20 @@ export function ClaudeStackModelsField({
     onRowsChange([...kept, ...additions]);
   };
 
+  // 模型选择器包了 memo：内联数组 / 对象 / 每次重建的回调都会把 memo 打穿，键入别的
+  // 字段时整个选择器（含弹窗）都会重跑。
+  const configuredModelIds = useMemo(
+    () => rows.map((row) => stripClaudeOneMMarker(row.model).trim()),
+    [rows],
+  );
+  const pickerMetadataSource = useMemo(() => ({ baseUrl }), [baseUrl]);
+  const applyFetchedModelsRef = useLatestRef(applyFetchedModels);
+  const stableApplyFetchedModels = useCallback(
+    (selection: FetchedModelSelection) =>
+      applyFetchedModelsRef.current(selection),
+    [applyFetchedModelsRef],
+  );
+
   return (
     <div className="space-y-3">
       <div className="space-y-1">
@@ -157,13 +173,11 @@ export function ClaudeStackModelsField({
           <div className="flex gap-2">
             <FetchedModelPicker
               models={fetchedModels}
-              configuredModelIds={rows.map((row) =>
-                stripClaudeOneMMarker(row.model).trim(),
-              )}
-              onApply={applyFetchedModels}
+              configuredModelIds={configuredModelIds}
+              onApply={stableApplyFetchedModels}
               onFetch={onFetchModels}
               isFetching={isFetchingModels}
-              metadataSource={{ baseUrl }}
+              metadataSource={pickerMetadataSource}
             />
             <Button
               type="button"

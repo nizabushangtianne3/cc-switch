@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Download, ListChecks, Loader2, RefreshCw } from "lucide-react";
@@ -58,7 +58,7 @@ function formatContextWindow(tokens: number): string {
  * 勾选状态就是「在不在列表里」：打开时已配置的模型都勾着，取消勾选即移除；点「应用」
  * 才把增删交给调用方，取消则什么都不改。配置里有、供应商没返回的模型单独列在最前面。
  */
-export function FetchedModelPicker({
+export const FetchedModelPicker = memo(function FetchedModelPicker({
   models,
   configuredModelIds,
   onApply,
@@ -125,7 +125,7 @@ export function FetchedModelPicker({
       </V7Dialog>
     </>
   );
-}
+});
 
 function FetchedModelPickerBody({
   models,

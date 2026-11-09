@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { ChevronRight, Plus, Trash2 } from "lucide-react";
@@ -385,6 +385,23 @@ export function KimiProviderForm({
     // 弹窗里已经显示过这些参数，补完不再提示。
     for (const [key, id] of added) fillModelMetadataFor(key, id, true);
   };
+
+  // 模型选择器包了 memo：内联数组 / 对象 / 每次重建的回调都会把 memo 打穿，键入别的
+  // 字段时整个选择器（含弹窗）都会重跑。
+  const configuredModelIds = useMemo(
+    () => Object.values(config.models).map((model) => model.model),
+    [config.models],
+  );
+  const pickerMetadataSource = useMemo(
+    () => ({ baseUrl, presets: kimiPresetModelSources }),
+    [baseUrl],
+  );
+  const applyFetchedModelsRef = useLatestRef(handleApplyFetchedModels);
+  const stableApplyFetchedModels = useCallback(
+    (selection: FetchedModelSelection) =>
+      applyFetchedModelsRef.current(selection),
+    [applyFetchedModelsRef],
+  );
   const updateProvider = (patch: Partial<KimiProviderConfig["provider"]>) =>
     update({ ...config, provider: { ...config.provider, ...patch } });
   const updateModel = (
@@ -635,13 +652,11 @@ export function KimiProviderForm({
               <div className="flex gap-1">
                 <FetchedModelPicker
                   models={fetchedModels}
-                  configuredModelIds={Object.values(config.models).map(
-                    (model) => model.model,
-                  )}
-                  onApply={handleApplyFetchedModels}
+                  configuredModelIds={configuredModelIds}
+                  onApply={stableApplyFetchedModels}
                   onFetch={handleFetchModels}
                   isFetching={isFetchingModels}
-                  metadataSource={{ baseUrl, presets: kimiPresetModelSources }}
+                  metadataSource={pickerMetadataSource}
                 />
                 <Button
                   type="button"

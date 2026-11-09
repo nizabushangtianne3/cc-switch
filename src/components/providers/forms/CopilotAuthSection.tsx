@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -64,14 +64,14 @@ const cleanDomain = (value: string) =>
  * - select：供应商表单里选用哪个 GitHub 账号（+ 管理账号入口）。
  * - manage：授权中心里的 GitHub Copilot 账号区（v7 Auth 画板）。
  */
-export const CopilotAuthSection: React.FC<CopilotAuthSectionProps> = ({
+export const CopilotAuthSection = memo(function CopilotAuthSection({
   className,
   mode = "manage",
   selectedAccountId,
   onAccountSelect,
   onManageAccounts,
   helpSide,
-}) => {
+}: CopilotAuthSectionProps) {
   const { t, i18n } = useTranslation();
   const [deploymentType, setDeploymentType] =
     React.useState<DeploymentType>("github.com");
@@ -478,7 +478,7 @@ export const CopilotAuthSection: React.FC<CopilotAuthSectionProps> = ({
       />
     </ManagedAccountsGroup>
   );
-};
+});
 
 const CopilotAccountAvatar: React.FC<{ account: GitHubAccount }> = ({
   account,

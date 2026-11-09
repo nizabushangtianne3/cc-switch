@@ -332,6 +332,16 @@ export function ClaudeFormFields({
     [opensModelPicker, t],
   );
 
+  // 账号管理入口：OAuth 区块包了 memo，内联箭头每次渲染都是新引用会把 memo 打穿
+  const handleManageCopilotAccounts = useCallback(
+    () => onManageAuthAccounts?.("github_copilot"),
+    [onManageAuthAccounts],
+  );
+  const handleManageCodexAccounts = useCallback(
+    () => onManageAuthAccounts?.("codex_oauth"),
+    [onManageAuthAccounts],
+  );
+
   const handleFetchModels = useCallback(() => {
     if (!baseUrl || !apiKey) {
       showFetchModelsError(null, t, {
@@ -709,9 +719,7 @@ export function ClaudeFormFields({
           selectedAccountId={selectedGitHubAccountId}
           onAccountSelect={onGitHubAccountSelect}
           onManageAccounts={
-            onManageAuthAccounts
-              ? () => onManageAuthAccounts("github_copilot")
-              : undefined
+            onManageAuthAccounts ? handleManageCopilotAccounts : undefined
           }
         />
       )}
@@ -723,9 +731,7 @@ export function ClaudeFormFields({
           selectedAccountId={selectedCodexAccountId}
           onAccountSelect={onCodexAccountSelect}
           onManageAccounts={
-            onManageAuthAccounts
-              ? () => onManageAuthAccounts("codex_oauth")
-              : undefined
+            onManageAuthAccounts ? handleManageCodexAccounts : undefined
           }
           fastModeEnabled={codexFastMode}
           onFastModeChange={onCodexFastModeChange}

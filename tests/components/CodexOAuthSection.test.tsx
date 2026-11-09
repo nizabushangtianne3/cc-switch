@@ -704,7 +704,15 @@ describe("CodexOAuthSection", () => {
         (account: { id: string }) => account.id !== "account-1",
       ),
     });
-    rerender(<CodexOAuthSection {...props} />);
+    // 区块包了 memo：同 props 的 rerender 会被跳过。真实路径里账户列表变化是经
+    // React Query 订阅推送的（直接更新该 fiber，绕过 memo）；测试换的是模块 mock，
+    // 需要一次 identity 变化的回调把新列表送进组件。语义透过包装器保持不变。
+    rerender(
+      <CodexOAuthSection
+        {...props}
+        onAccountSelect={(id) => onAccountSelect(id)}
+      />,
+    );
 
     await waitFor(() => expect(onSelectionInvalidated).toHaveBeenCalledOnce());
     expect(onAccountSelect).toHaveBeenCalledWith(null);

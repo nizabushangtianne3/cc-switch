@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery } from "@tanstack/react-query";
@@ -266,6 +266,15 @@ export function ClaudeDesktopProviderForm({
   onManageAuthAccounts,
 }: ClaudeDesktopProviderFormProps) {
   const { t } = useTranslation();
+  // 账号管理入口：OAuth 区块包了 memo，内联箭头每次渲染都是新引用会把 memo 打穿
+  const handleManageCopilotAccounts = useCallback(
+    () => onManageAuthAccounts?.("github_copilot"),
+    [onManageAuthAccounts],
+  );
+  const handleManageCodexAccounts = useCallback(
+    () => onManageAuthAccounts?.("codex_oauth"),
+    [onManageAuthAccounts],
+  );
   const initialMode = isOAuthProviderType(initialData?.meta?.providerType)
     ? "proxy"
     : (initialData?.meta?.claudeDesktopMode ?? "direct");
@@ -1045,7 +1054,7 @@ export function ClaudeDesktopProviderForm({
                     onAccountSelect={setSelectedGitHubAccountId}
                     onManageAccounts={
                       onManageAuthAccounts
-                        ? () => onManageAuthAccounts("github_copilot")
+                        ? handleManageCopilotAccounts
                         : undefined
                     }
                   />
@@ -1056,7 +1065,7 @@ export function ClaudeDesktopProviderForm({
                     onAccountSelect={setSelectedCodexAccountId}
                     onManageAccounts={
                       onManageAuthAccounts
-                        ? () => onManageAuthAccounts("codex_oauth")
+                        ? handleManageCodexAccounts
                         : undefined
                     }
                     fastModeEnabled={codexFastMode}

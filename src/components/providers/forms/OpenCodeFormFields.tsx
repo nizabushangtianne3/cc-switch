@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { FormLabel } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -48,7 +48,7 @@ import {
   type FetchedModelSelection,
 } from "./FetchedModelPicker";
 import type { ProviderCategory, OpenCodeModel } from "@/types";
-import { useCommittableRef } from "@/hooks/useLatestRef";
+import { useCommittableRef, useLatestRef } from "@/hooks/useLatestRef";
 import { useModelMetadataFill } from "@/hooks/useModelMetadataFill";
 import type { PresetModelSource } from "@/lib/modelMetadata";
 import { opencodePresetModelSources } from "@/config/presetModelMetadata";
@@ -464,6 +464,20 @@ export function OpenCodeFormFields({
     for (const id of Object.keys(additions)) fillModelMetadataFor(id, true);
   };
 
+  // 模型选择器包了 memo：内联数组 / 对象 / 每次重建的回调都会把 memo 打穿，键入别的
+  // 字段时整个选择器（含弹窗）都会重跑。
+  const configuredModelIds = useMemo(() => Object.keys(models), [models]);
+  const pickerMetadataSource = useMemo(
+    () => ({ baseUrl, presets: presetModelSources }),
+    [baseUrl],
+  );
+  const applyFetchedModelsRef = useLatestRef(handleApplyFetchedModels);
+  const stableApplyFetchedModels = useCallback(
+    (selection: FetchedModelSelection) =>
+      applyFetchedModelsRef.current(selection),
+    [applyFetchedModelsRef],
+  );
+
   // Remove a model entry
   const handleRemoveModel = (key: string) => {
     const newModels = { ...models };
@@ -867,11 +881,11 @@ export function OpenCodeFormFields({
           <div className="flex gap-1">
             <FetchedModelPicker
               models={fetchedModels}
-              configuredModelIds={Object.keys(models)}
-              onApply={handleApplyFetchedModels}
+              configuredModelIds={configuredModelIds}
+              onApply={stableApplyFetchedModels}
               onFetch={handleFetchModels}
               isFetching={isFetchingModels}
-              metadataSource={{ baseUrl, presets: presetModelSources }}
+              metadataSource={pickerMetadataSource}
             />
             <Button
               type="button"

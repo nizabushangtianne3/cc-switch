@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -75,7 +75,7 @@ interface CodexOAuthSectionProps {
  * 通过 OpenAI Device Code 流程登录 ChatGPT Plus/Pro 账号，
  * 用于将 Claude Code 请求反代到 Codex 后端 API。
  */
-export const CodexOAuthSection: React.FC<CodexOAuthSectionProps> = ({
+export const CodexOAuthSection = memo(function CodexOAuthSection({
   className,
   mode = "manage",
   showAccountQuota = false,
@@ -94,7 +94,7 @@ export const CodexOAuthSection: React.FC<CodexOAuthSectionProps> = ({
   fastModeEnabled = false,
   onFastModeChange,
   helpSide,
-}) => {
+}: CodexOAuthSectionProps) {
   const { t, i18n } = useTranslation();
   const [loginMethod, setLoginMethod] =
     React.useState<CodexLoginMethod>("browser");
@@ -535,6 +535,6 @@ export const CodexOAuthSection: React.FC<CodexOAuthSectionProps> = ({
       />
     </ManagedAccountsGroup>
   );
-};
+});
 
 export default CodexOAuthSection;

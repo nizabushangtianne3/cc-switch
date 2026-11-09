@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { memo } from "react";
 import ApiKeyInput from "../ApiKeyInput";
 import { ApiKeyPoolEditor } from "./ApiKeyPoolEditor";
 import type { ApiKeyEntry, ApiKeyStrategy, ProviderCategory } from "@/types";
@@ -32,7 +33,7 @@ interface ApiKeySectionProps extends ApiKeyPoolProps {
   partnerPromotionKey?: string;
 }
 
-export function ApiKeySection({
+export const ApiKeySection = memo(function ApiKeySection({
   id = "apiKey",
   label = "API Key",
   value,
@@ -125,4 +126,4 @@ export function ApiKeySection({
       hint={promotion || undefined}
     />
   );
-}
+});

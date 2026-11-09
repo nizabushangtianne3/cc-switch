@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Zap, Loader2, Plus, X, AlertCircle, Save } from "lucide-react";
 import type { AppId } from "@/lib/api";
@@ -90,7 +90,7 @@ const buildInitialEntries = (
   return Array.from(map.values());
 };
 
-const EndpointSpeedTest: React.FC<EndpointSpeedTestProps> = ({
+const EndpointSpeedTest = memo(function EndpointSpeedTest({
   appId,
   providerId,
   value,
@@ -101,7 +101,7 @@ const EndpointSpeedTest: React.FC<EndpointSpeedTestProps> = ({
   autoSelect,
   onAutoSelectChange,
   onCustomEndpointsChange,
-}) => {
+}: EndpointSpeedTestProps) {
   const { t } = useTranslation();
   const [entries, setEntries] = useState<EndpointEntry[]>(() =>
     buildInitialEntries(initialEndpoints, value),
@@ -657,6 +657,6 @@ const EndpointSpeedTest: React.FC<EndpointSpeedTestProps> = ({
       </div>
     </FullScreenPanel>
   );
-};
+});
 
 export default EndpointSpeedTest;
