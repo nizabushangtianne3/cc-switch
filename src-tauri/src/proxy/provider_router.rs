@@ -55,12 +55,29 @@ pub struct ProviderRouter {
 impl ProviderRouter {
     /// 创建新的供应商路由器
     pub fn new(db: Arc<Database>) -> Self {
-        Self {
+        let router = Self {
             db,
             circuit_breakers: Arc::new(RwLock::new(HashMap::new())),
             key_cursors: Arc::new(RwLock::new(HashMap::new())),
             unsupported_params: Arc::new(Default::default()),
+        };
+        // 预热：settings 里已学到的模型参数黑名单，进程重启后首请求即生效，
+        // 不必等某家再 400 一次。
+        if let Some(persisted) = crate::settings::get_unsupported_params_by_model() {
+            let mut guard = router
+                .unsupported_params
+                .write()
+                .unwrap_or_else(|e| e.into_inner());
+            for (provider_id, models) in persisted {
+                for (model, paths) in models {
+                    guard
+                        .entry((provider_id.clone(), model))
+                        .or_default()
+                        .extend(paths);
+                }
+            }
         }
+        router
     }
 
     /// 这家这个模型已确认不支持的请求参数（发送前剥掉用）。
@@ -85,6 +102,11 @@ impl ProviderRouter {
             model,
             paths,
         );
+        // 落盘：内存缓存重启即失，持久层让重启后首请求也不触雷。
+        // 只在首次学到某组参数时调用（settings 侧还有幂等判重），写盘开销一次性。
+        if let Err(e) = crate::settings::remember_unsupported_params(provider_id, model, paths) {
+            log::warn!("模型参数黑名单持久化失败: provider_id={provider_id}, error={e}");
+        }
     }
 
     /// 选择可用的供应商（支持故障转移）
@@ -609,6 +631,56 @@ mod tests {
 
         let breaker = router.get_or_create_circuit_breaker("claude", "test").await;
         assert!(breaker.allow_request().await.allowed);
+    }
+
+    /// 模型参数黑名单经 settings 持久化：进程「重启」（同 HOME 新建 router）后
+    /// 预热命中，首请求发送前就剥掉，不必等上游再 400 一次。
+    #[tokio::test]
+    #[serial]
+    async fn unsupported_params_survive_router_restart_via_settings() {
+        let _home = TempHome::new().await;
+        let db = Arc::new(Database::memory().unwrap());
+
+        let router = ProviderRouter::new(db.clone());
+        router
+            .remember_unsupported_params("p1", "m1", &["temperature".to_string()])
+            .await;
+        assert_eq!(
+            router.unsupported_params_for("p1", "m1").await,
+            vec!["temperature"]
+        );
+
+        // 同 HOME 新建 router（模拟重启）：settings 里的记录应预热进内存缓存
+        let restarted = ProviderRouter::new(db);
+        assert_eq!(
+            restarted.unsupported_params_for("p1", "m1").await,
+            vec!["temperature"]
+        );
+    }
+
+    /// 重复 remember 幂等：并集持久化，重启后不重复、不乱序。
+    #[tokio::test]
+    #[serial]
+    async fn remembering_unsupported_params_is_idempotent_across_restarts() {
+        let _home = TempHome::new().await;
+        let db = Arc::new(Database::memory().unwrap());
+        let router = ProviderRouter::new(db.clone());
+        router
+            .remember_unsupported_params("p1", "m1", &["temperature".to_string()])
+            .await;
+        router
+            .remember_unsupported_params(
+                "p1",
+                "m1",
+                &["temperature".to_string(), "top_p".to_string()],
+            )
+            .await;
+
+        let restarted = ProviderRouter::new(db);
+        assert_eq!(
+            restarted.unsupported_params_for("p1", "m1").await,
+            vec!["temperature", "top_p"]
+        );
     }
 
     #[tokio::test]

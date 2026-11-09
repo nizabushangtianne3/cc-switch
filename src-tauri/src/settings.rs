@@ -679,6 +679,12 @@ pub struct AppSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proxy_client_host: Option<String>,
 
+    /// 模型参数能力黑名单：`provider_id` → `model` → 上游 400 拒绝过、去参重试成功
+    /// 的请求参数路径。进程内缓存重启即失，这里做持久层：重启后首请求也不触雷。
+    /// 见 [`crate::proxy::unsupported_param_rectifier`]。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unsupported_params_by_model: Option<BTreeMap<String, BTreeMap<String, Vec<String>>>>,
+
     // ===== Skill 同步设置 =====
     /// Skill 同步方式：auto（默认，优先 symlink）、symlink、copy
     #[serde(default)]
@@ -798,6 +804,7 @@ impl Default for AppSettings {
             current_provider_hermes: None,
             current_provider_agy: None,
             proxy_client_host: None,
+            unsupported_params_by_model: None,
             skill_sync_method: SyncMethod::default(),
             skill_storage_location: SkillStorageLocation::default(),
             webdav_sync: None,
@@ -1519,6 +1526,49 @@ pub fn get_current_provider(app_type: &AppType) -> Option<String> {
     }
 }
 
+/// 模型参数能力黑名单（持久层）；`None` 表示这台机器还没学到过。
+pub fn get_unsupported_params_by_model() -> Option<BTreeMap<String, BTreeMap<String, Vec<String>>>>
+{
+    get_settings().unsupported_params_by_model
+}
+
+/// 把「这家这个模型不支持这些参数」并进黑名单（幂等）。settings 是全量 JSON 重写，
+/// 先读后判：全部已记过就不写盘——正常只在首次遇到某模型拒收时调用一次。
+pub fn remember_unsupported_params(
+    provider_id: &str,
+    model: &str,
+    paths: &[String],
+) -> Result<(), AppError> {
+    if paths.is_empty() {
+        return Ok(());
+    }
+    let already_known = get_settings()
+        .unsupported_params_by_model
+        .as_ref()
+        .and_then(|providers| providers.get(provider_id))
+        .and_then(|models| models.get(model))
+        .is_some_and(|known| paths.iter().all(|path| known.contains(path)));
+    if already_known {
+        return Ok(());
+    }
+    mutate_settings(|settings| {
+        let providers = settings
+            .unsupported_params_by_model
+            .get_or_insert_with(BTreeMap::new);
+        let models = providers
+            .entry(provider_id.to_string())
+            .or_insert_with(BTreeMap::new);
+        let entry = models.entry(model.to_string()).or_default();
+        for path in paths {
+            if !entry.contains(path) {
+                entry.push(path.clone());
+            }
+        }
+        entry.sort();
+        entry.dedup();
+    })
+}
+
 /// 设置指定应用类型的当前供应商 ID（保存到本地 settings）
 ///
 /// 这是设备级别的设置，不随数据库同步。
@@ -1707,6 +1757,41 @@ mod tests {
         };
         settings.normalize_paths();
         assert_eq!(settings.language.as_deref(), Some("ko"));
+    }
+
+    /// 模型参数黑名单持久层：默认 None 不写盘；旧 settings 缺字段读入仍是 None；
+    /// 带值 round-trip 不丢。
+    #[test]
+    fn unsupported_params_by_model_serde_round_trip() {
+        assert!(AppSettings::default().unsupported_params_by_model.is_none());
+
+        // None 不序列化出键：settings 文件不因新字段变大
+        let saved = serde_json::to_string(&AppSettings::default()).expect("serialize");
+        assert!(!saved.contains("unsupportedParamsByModel"), "{saved}");
+
+        // 旧文件缺字段：lenient 解析不炸、字段为 None
+        let (old, lossy) = parse_settings_lenient(r#"{"language":"zh"}"#);
+        assert!(!lossy);
+        assert!(old.unsupported_params_by_model.is_none());
+
+        let mut settings = AppSettings::default();
+        let mut models = BTreeMap::new();
+        models.insert(
+            "kimi-k3".to_string(),
+            vec!["temperature".to_string(), "reasoning.effort".to_string()],
+        );
+        let mut providers = BTreeMap::new();
+        providers.insert("p-codex".to_string(), models);
+        settings.unsupported_params_by_model = Some(providers);
+
+        let saved = serde_json::to_string(&settings).expect("serialize");
+        let (reloaded, lossy) = parse_settings_lenient(&saved);
+        assert!(!lossy);
+        let table = reloaded.unsupported_params_by_model.expect("persisted");
+        assert_eq!(
+            table["p-codex"]["kimi-k3"],
+            vec!["temperature", "reasoning.effort"]
+        );
     }
 
     #[test]
