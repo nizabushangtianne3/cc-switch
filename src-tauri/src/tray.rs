@@ -3091,9 +3091,8 @@ fn emit_switched(app: &tauri::AppHandle, app_type: &AppType, provider_id: &str) 
         "autoFailoverEnabled": auto_failover,
         "providerId": provider_id
     });
-    if let Err(e) = app.emit("proxy-flags-changed", event_data.clone()) {
-        log::error!("发射 proxy-flags-changed 事件失败: {e}");
-    }
+    // proxy-flags-changed 与 provider-switched 曾是同一份 payload 的成对发射，
+    // 但全仓没有任何监听方（前端只听 provider-switched），属死发射，已删。
     if let Err(e) = app.emit("provider-switched", event_data) {
         log::error!("发射 provider-switched 事件失败: {e}");
     }
