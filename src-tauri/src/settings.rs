@@ -1184,6 +1184,27 @@ pub fn with_settings<T>(f: impl FnOnce(&AppSettings) -> T) -> T {
     f(&guard)
 }
 
+/// 测试用：只清空能力缓存字段。并行测试要读其他设置字段，不能整份重置；
+/// 调用方负责先把 settings 文件重定向到临时 HOME，否则这次清空会写回真实文件。
+#[cfg(test)]
+pub(crate) fn clear_unsupported_params_for_test() {
+    let _ = mutate_settings(|settings| {
+        settings.unsupported_params_by_model = None;
+    });
+}
+
+/// 测试用：整体替换能力缓存字段。隔离收尾时把字段还原成隔离前的值——整流在
+/// 隔离期内写进 store 的 fixture 会被别的测试的 scope-drop 连同设置快照写回
+/// 真实 settings.json，必须在这里堵掉。同样要求调用方已重定向 settings 文件。
+#[cfg(test)]
+pub(crate) fn restore_unsupported_params_for_test(
+    value: Option<BTreeMap<String, BTreeMap<String, Vec<String>>>>,
+) {
+    let _ = mutate_settings(|settings| {
+        settings.unsupported_params_by_model = value;
+    });
+}
+
 pub fn get_settings_for_frontend() -> AppSettings {
     let mut settings = get_settings();
     if let Some(sync) = &mut settings.webdav_sync {

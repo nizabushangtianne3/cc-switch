@@ -8007,6 +8007,7 @@ mod tests {
 
     mod codex_stack {
         use super::*;
+        use std::collections::BTreeMap;
         use tokio::sync::Mutex;
 
         struct Seen {
@@ -8067,6 +8068,47 @@ mod tests {
         fn forwarder(stack: bool) -> RequestForwarder {
             let _ = rustls::crypto::ring::default_provider().install_default();
             test_forwarder(Duration::from_secs(5), Duration::from_secs(5)).stack_request(stack)
+        }
+
+        /// 能力缓存测试的隔离：持共享 HOME 锁，把 settings 文件重定向到临时 HOME，
+        /// 并只清空能力缓存字段。不用 `config::TestHomeScope`——那个整份重置设置，
+        /// 并行跑着的 opencode/sync 测试会读到被重置的字段而连坐失败。
+        struct CacheTestHome {
+            _lock: tokio::sync::MutexGuard<'static, ()>,
+            previous_test_home: Option<std::ffi::OsString>,
+            previous_params: Option<BTreeMap<String, BTreeMap<String, Vec<String>>>>,
+        }
+
+        impl CacheTestHome {
+            async fn new() -> Self {
+                let _lock = crate::config::test_home_lock().lock().await;
+                let path = std::env::temp_dir().join("cc-switch-forwarder-cache");
+                let _ = std::fs::remove_dir_all(&path);
+                std::fs::create_dir_all(&path).expect("create the test home");
+                let previous_test_home = std::env::var_os("CC_SWITCH_TEST_HOME");
+                std::env::set_var("CC_SWITCH_TEST_HOME", &path);
+                let previous_params = crate::settings::get_unsupported_params_by_model();
+                crate::settings::clear_unsupported_params_for_test();
+                Self {
+                    _lock,
+                    previous_test_home,
+                    previous_params,
+                }
+            }
+        }
+
+        impl Drop for CacheTestHome {
+            fn drop(&mut self) {
+                // 先把 store 里的字段还原成隔离前的值（这次写落在临时 HOME），再
+                // 还原环境变量。否则整流写进 store 的 fixture 会被别的测试的
+                // scope-drop 连同设置快照带回真实 settings.json。
+                let previous = self.previous_params.take();
+                crate::settings::restore_unsupported_params_for_test(previous);
+                match &self.previous_test_home {
+                    Some(value) => std::env::set_var("CC_SWITCH_TEST_HOME", value),
+                    None => std::env::remove_var("CC_SWITCH_TEST_HOME"),
+                }
+            }
         }
 
         /// 第一个请求回网关的 HTML 400（Azure 应用网关签名），之后回 200 JSON。
@@ -8716,6 +8758,9 @@ mod tests {
         /// 不支持这个参数」进了能力缓存——同一 forwarder 的后续请求发送前就剥掉。
         #[tokio::test]
         async fn unsupported_param_400_strips_param_and_caches_for_next_requests() {
+            // 能力缓存读写都隔离到临时 HOME：否则会把 fixture 写进真实
+            // settings.json，下次跑批又被预热回来（见 ProviderRouter::new）。
+            let _home = CacheTestHome::new().await;
             let seen = Arc::new(Mutex::new(Vec::new()));
             let attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
             let app = {
@@ -9085,6 +9130,7 @@ mod tests {
         /// thinking，HTTP 200）：窥探流开头后剥参重试，客户端最终拿到正常流。
         #[tokio::test]
         async fn in_stream_error_event_naming_param_triggers_strip_and_retry() {
+            let _home = CacheTestHome::new().await;
             let upstream = raw_upstream(vec![
                 anthropic_sse_error_event("thinking"),
                 anthropic_sse_completed(),
@@ -9168,6 +9214,7 @@ mod tests {
         /// 时，发送前直接在出站体剥掉——一次到位，不先被 400/流内错误拒一次。
         #[tokio::test]
         async fn cached_unsupported_param_strips_from_outbound_body() {
+            let _home = CacheTestHome::new().await;
             let upstream =
                 raw_upstream(vec![anthropic_sse_completed(), anthropic_sse_completed()]).await;
             let relay = provider(&upstream, "anthropic");

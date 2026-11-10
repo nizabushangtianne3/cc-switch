@@ -700,20 +700,32 @@ fn remove_plugins(config: &mut Value, prefixes: &[&str]) {
 mod tests {
     use super::*;
 
-    struct TestHomeGuard(Option<std::ffi::OsString>, crate::settings::AppSettings);
+    struct TestHomeGuard {
+        // 和全仓库共用一把 HOME 锁。以前这个 guard 只拿模块内的 #[serial]，并行
+        // 跑时会和别的模块（proxy 的能力缓存测试等）互相拆掉对方的临时主目录——
+        // 表现就是偶发的「找不到指定的路径 / 配置被覆盖」。持锁到期才归还。
+        _home_lock: tokio::sync::MutexGuard<'static, ()>,
+        previous_env: Option<std::ffi::OsString>,
+        previous_settings: crate::settings::AppSettings,
+    }
     impl TestHomeGuard {
         fn set(home: &std::path::Path) -> Self {
+            let _home_lock = crate::config::test_home_lock().blocking_lock();
             let previous_env = std::env::var_os("CC_SWITCH_TEST_HOME");
             std::env::set_var("CC_SWITCH_TEST_HOME", home);
-            let guard = Self(previous_env, crate::settings::get_settings());
+            let previous_settings = crate::settings::get_settings();
             crate::settings::update_settings(Default::default()).unwrap();
-            guard
+            Self {
+                _home_lock,
+                previous_env,
+                previous_settings,
+            }
         }
     }
     impl Drop for TestHomeGuard {
         fn drop(&mut self) {
-            crate::settings::update_settings(self.1.clone()).unwrap();
-            match self.0.take() {
+            crate::settings::update_settings(self.previous_settings.clone()).unwrap();
+            match self.previous_env.take() {
                 Some(value) => std::env::set_var("CC_SWITCH_TEST_HOME", value),
                 None => std::env::remove_var("CC_SWITCH_TEST_HOME"),
             }

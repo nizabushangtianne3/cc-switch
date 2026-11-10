@@ -57,11 +57,47 @@ pub(crate) fn parse_unsupported_params(body: &str) -> Vec<String> {
             .and_then(Value::as_str)
             .unwrap_or("");
         parse_message(&mut paths, message);
+        // 兜底：结构化字段和措辞模式都没拿到时，扫描消息里被引号包住的「像参数
+        // 名」的 token。网关点名参数还有一种形态——名字在措辞前面，如
+        // `"thinking" is not supported for this model...`（Anthropic 系的流内
+        // error 事件就这样，且不带结构化 param 字段），上面的模式只看得见
+        // 措辞后面的词。合法性仍由 push_param 把关（点分 ident、非核心键）。
+        //
+        // 只对 JSON 错误信封、且上游明说「不支持」的措辞兜底：参数名可能在
+        // 措辞前面（`"thinking" is not supported for this model`），上面的模式
+        // 只看得见后面的词。没有「不支持」措辞的错误（Codex 的签名诊断
+        // `Invalid \`signature\` in \`thinking\` block` 等）不兜底——那里被引号
+        // 包住的词经常不是参数名，收了会抢走别的整流器。
+        if paths.is_empty() && message_indicates_unsupported(message) {
+            collect_quoted_params(message, &mut paths);
+        }
     } else {
         parse_message(&mut paths, body);
     }
 
     paths
+}
+
+/// 上游明说「不支持」的措辞：引号兜底只在这类消息里跑。
+fn message_indicates_unsupported(message: &str) -> bool {
+    let lower = message.to_lowercase();
+    lower.contains("not support") || lower.contains("unsupported")
+}
+
+/// 扫描文本里引号（单引号 / 双引号 / 反引号）包住的 token，收下合法参数路径。
+fn collect_quoted_params(text: &str, paths: &mut Vec<String>) {
+    let mut index = 0;
+    while index < text.len() {
+        let quote = text.as_bytes()[index];
+        if quote == b'\'' || quote == b'"' || quote == b'`' {
+            if let Some(offset) = text[index + 1..].find(quote as char) {
+                push_param(paths, &text[index + 1..index + 1 + offset]);
+                index += offset + 2;
+                continue;
+            }
+        }
+        index += 1;
+    }
 }
 
 /// 措辞模式：引号或反引号点名的参数名。宁少勿猜。
@@ -301,6 +337,24 @@ mod tests {
     fn parses_plain_text_body() {
         let body = "Unsupported parameter: 'top_p' is not supported with this model";
         assert_eq!(parse_unsupported_params(body), vec!["top_p"]);
+    }
+
+    #[test]
+    fn parses_param_named_before_the_wording() {
+        // Anthropic 系流内 error 事件的形态：参数名在措辞前面，且没有结构化
+        // param 字段（AMD 实测）。
+        let body = r#"{"error":{"type":"invalid_request_error","message":"\"thinking\" is not supported for this model. Remove the \"thinking\" parameter or use a model that supports extended thinking."}}"#;
+        assert_eq!(parse_unsupported_params(body), vec!["thinking"]);
+        // 带点分的嵌套路径也收（引号兜底对合法点分 ident 一视同仁）
+        let nested = r#"{"error":{"message":"\"reasoning.effort\" is not supported"}}"#;
+        assert_eq!(parse_unsupported_params(nested), vec!["reasoning.effort"]);
+        // 没有「不支持」措辞的消息不兜底：Codex 的签名诊断就是这样，引号里的
+        // 词不是参数名，收了会抢走签名整流器
+        let signature_like = r#"{"error":{"message":"messages.1.content.0: Invalid `signature` in `thinking` block"}}"#;
+        assert!(parse_unsupported_params(signature_like).is_empty());
+        // 「不支持」措辞里引号包住的非参数 token（带连字符）不收
+        let model_named = r#"{"error":{"message":"model \"kimi-k3\" does not support thinking"}}"#;
+        assert!(parse_unsupported_params(model_named).is_empty());
     }
 
     #[test]
