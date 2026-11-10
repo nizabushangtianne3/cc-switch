@@ -1131,10 +1131,43 @@ fn write_settings_to_path(
     crate::config::atomic_write_private(path, json.as_bytes())
 }
 
-static SETTINGS_STORE: OnceLock<RwLock<AppSettings>> = OnceLock::new();
+/// 设置 store，外加它被加载时见到的 `CC_SWITCH_TEST_HOME`。测试切临时 HOME
+/// （再切回真实 HOME）后，下一次访问按当前 HOME 重读——否则会把上一个 HOME
+/// 的设置写进当前 HOME 的 settings.json，用户的偏好被静默清空。
+static SETTINGS_STORE: OnceLock<(RwLock<Option<std::ffi::OsString>>, RwLock<AppSettings>)> =
+    OnceLock::new();
 
 fn settings_store() -> &'static RwLock<AppSettings> {
-    SETTINGS_STORE.get_or_init(|| RwLock::new(AppSettings::load_from_file()))
+    let (loaded_home, store) = SETTINGS_STORE.get_or_init(|| {
+        (
+            RwLock::new(std::env::var_os("CC_SWITCH_TEST_HOME")),
+            RwLock::new(AppSettings::load_from_file()),
+        )
+    });
+    let current_home = std::env::var_os("CC_SWITCH_TEST_HOME");
+    let home_changed = {
+        let guard = loaded_home.read().unwrap_or_else(|e| {
+            log::warn!("设置 HOME 锁已毒化，使用恢复值: {e}");
+            e.into_inner()
+        });
+        *guard != current_home
+    };
+    if home_changed {
+        let fresh = AppSettings::load_from_file();
+        {
+            let mut home = loaded_home.write().unwrap_or_else(|e| {
+                log::warn!("设置 HOME 锁已毒化，使用恢复值: {e}");
+                e.into_inner()
+            });
+            *home = current_home;
+        }
+        let mut guard = store.write().unwrap_or_else(|e| {
+            log::warn!("设置锁已毒化，使用恢复值: {e}");
+            e.into_inner()
+        });
+        *guard = fresh;
+    }
+    store
 }
 
 pub(crate) fn resolve_override_path(raw: &str) -> PathBuf {
@@ -1182,27 +1215,6 @@ pub fn with_settings<T>(f: impl FnOnce(&AppSettings) -> T) -> T {
         e.into_inner()
     });
     f(&guard)
-}
-
-/// 测试用：只清空能力缓存字段。并行测试要读其他设置字段，不能整份重置；
-/// 调用方负责先把 settings 文件重定向到临时 HOME，否则这次清空会写回真实文件。
-#[cfg(test)]
-pub(crate) fn clear_unsupported_params_for_test() {
-    let _ = mutate_settings(|settings| {
-        settings.unsupported_params_by_model = None;
-    });
-}
-
-/// 测试用：整体替换能力缓存字段。隔离收尾时把字段还原成隔离前的值——整流在
-/// 隔离期内写进 store 的 fixture 会被别的测试的 scope-drop 连同设置快照写回
-/// 真实 settings.json，必须在这里堵掉。同样要求调用方已重定向 settings 文件。
-#[cfg(test)]
-pub(crate) fn restore_unsupported_params_for_test(
-    value: Option<BTreeMap<String, BTreeMap<String, Vec<String>>>>,
-) {
-    let _ = mutate_settings(|settings| {
-        settings.unsupported_params_by_model = value;
-    });
 }
 
 pub fn get_settings_for_frontend() -> AppSettings {

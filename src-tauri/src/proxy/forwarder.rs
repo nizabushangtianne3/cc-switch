@@ -8007,7 +8007,6 @@ mod tests {
 
     mod codex_stack {
         use super::*;
-        use std::collections::BTreeMap;
         use tokio::sync::Mutex;
 
         struct Seen {
@@ -8070,13 +8069,13 @@ mod tests {
             test_forwarder(Duration::from_secs(5), Duration::from_secs(5)).stack_request(stack)
         }
 
-        /// 能力缓存测试的隔离：持共享 HOME 锁，把 settings 文件重定向到临时 HOME，
-        /// 并只清空能力缓存字段。不用 `config::TestHomeScope`——那个整份重置设置，
-        /// 并行跑着的 opencode/sync 测试会读到被重置的字段而连坐失败。
+        /// 能力缓存测试的隔离：持共享 HOME 锁，把 settings 重定向到临时 HOME。
+        /// store 的切换由 settings_store() 感知 HOME 变化后自动重读覆盖。不用
+        /// `config::TestHomeScope`——那个整份重置设置，并行跑着的 opencode/sync
+        /// 测试会读到被重置的字段而连坐失败。
         struct CacheTestHome {
             _lock: tokio::sync::MutexGuard<'static, ()>,
             previous_test_home: Option<std::ffi::OsString>,
-            previous_params: Option<BTreeMap<String, BTreeMap<String, Vec<String>>>>,
         }
 
         impl CacheTestHome {
@@ -8087,23 +8086,17 @@ mod tests {
                 std::fs::create_dir_all(&path).expect("create the test home");
                 let previous_test_home = std::env::var_os("CC_SWITCH_TEST_HOME");
                 std::env::set_var("CC_SWITCH_TEST_HOME", &path);
-                let previous_params = crate::settings::get_unsupported_params_by_model();
-                crate::settings::clear_unsupported_params_for_test();
                 Self {
                     _lock,
                     previous_test_home,
-                    previous_params,
                 }
             }
         }
 
         impl Drop for CacheTestHome {
             fn drop(&mut self) {
-                // 先把 store 里的字段还原成隔离前的值（这次写落在临时 HOME），再
-                // 还原环境变量。否则整流写进 store 的 fixture 会被别的测试的
-                // scope-drop 连同设置快照带回真实 settings.json。
-                let previous = self.previous_params.take();
-                crate::settings::restore_unsupported_params_for_test(previous);
+                // settings_store() 感知 HOME 切换后会按当前 HOME 自动重读，
+                // 这里只还原环境变量，store 的收敛由那边管。
                 match &self.previous_test_home {
                     Some(value) => std::env::set_var("CC_SWITCH_TEST_HOME", value),
                     None => std::env::remove_var("CC_SWITCH_TEST_HOME"),
