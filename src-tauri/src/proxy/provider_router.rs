@@ -69,11 +69,9 @@ impl ProviderRouter {
                 .write()
                 .unwrap_or_else(|e| e.into_inner());
             for (provider_id, models) in persisted {
+                let by_model = guard.entry(provider_id).or_default();
                 for (model, paths) in models {
-                    guard
-                        .entry((provider_id.clone(), model))
-                        .or_default()
-                        .extend(paths);
+                    by_model.entry(model).or_default().extend(paths);
                 }
             }
         }

@@ -19,9 +19,10 @@ use serde_json::Value;
 /// 请求语义核心键：被上游误报时也不能删，删了请求就废了。
 const PROTECTED_KEYS: &[&str] = &["model", "messages", "stream", "input"];
 
-/// (provider_id, model) → 该模型不支持的参数路径集合。
+/// provider_id → model → 该模型不支持的参数路径集合。和 settings 里的
+/// `unsupported_params_by_model` 同形；读取用 `&str` 直接查，热路径零分配。
 pub(crate) type UnsupportedParamCache =
-    std::sync::RwLock<HashMap<(String, String), HashSet<String>>>;
+    std::sync::RwLock<HashMap<String, HashMap<String, HashSet<String>>>>;
 
 /// 从上游 400 响应体提取被点名「不支持」的参数路径。
 ///
@@ -232,8 +233,10 @@ pub(crate) fn cached_params(
     model: &str,
 ) -> Vec<String> {
     let guard = cache.read().unwrap_or_else(|e| e.into_inner());
+    // 两层都用 &str 直接查（String: Borrow<str>），常见的不命中路径一个字节都不分配。
     guard
-        .get(&(provider_id.to_string(), model.to_string()))
+        .get(provider_id)
+        .and_then(|by_model| by_model.get(model))
         .map(|paths| {
             let mut list: Vec<String> = paths.iter().cloned().collect();
             list.sort();
@@ -254,7 +257,9 @@ pub(crate) fn remember_params(
     }
     let mut guard = cache.write().unwrap_or_else(|e| e.into_inner());
     let entry = guard
-        .entry((provider_id.to_string(), model.to_string()))
+        .entry(provider_id.to_string())
+        .or_default()
+        .entry(model.to_string())
         .or_default();
     for path in paths {
         entry.insert(path.clone());
