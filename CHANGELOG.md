@@ -5,6 +5,12 @@ All notable changes to CC Switch will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.33] - 2026-11-10
+
+Fixes a systemic test-isolation gap that let the test suite silently clear user preferences: test modules that swap Home to a temp directory loaded default settings into the global cache but never restored it, so a later parallel write persisted the defaults into the real settings.json and language, visibleApps and whatsNewSeenVersion were all lost. The settings cache now records the Home it was loaded from and re-reads on change, so every existing test guard converges back to the real file with no per-guard changes and no production overhead. The user settings.json was restored from backup and verified.
+
+**Stats**: 1 commit | 2 files changed | +41 insertions | -36 deletions
+
 ## [4.0.32] - 2026-11-10
 
 Anthropic-style upstreams reject converter-injected parameters with HTTP 200 plus a first error event in the stream, with no structured param field and the parameter named before the wording, so the previous rectifier missed that form and the session still aborted mid-stream. A quoted-token fallback now collects quoted parameter names when neither structured fields nor wording patterns produce anything, gated to JSON error envelopes that say the parameter is unsupported. Also fixes capability-cache tests reading and writing the real settings.json (fixture entries leaked into user settings and were prewarmed on the next launch) and a race where opencode tests and other modules tore down each other's temp home directories.
