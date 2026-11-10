@@ -10,7 +10,6 @@ import { listen } from "@tauri-apps/api/event";
 import { toast } from "@/lib/toast";
 import { settingsApi } from "@/lib/api";
 import type {
-  NodeRequirementGap,
   ToolInstallation,
   ToolInstallationReport,
   ToolUninstallPlan,
@@ -18,44 +17,27 @@ import type {
 import type { AppId } from "@/lib/api/types";
 import { extractErrorMessage } from "@/utils/errorUtils";
 import { isWindows } from "@/lib/platform";
+import {
+  TOOL_NAMES,
+  beginToolVersionRequests,
+  currentToolVersionsCache,
+  emptyToolVersions,
+  isLatestToolVersionRequest,
+  mergeToolVersions,
+  setToolVersionsCache,
+  toolVersionsCacheIsFresh,
+  useToolVersionsCache,
+  type ToolName,
+  type ToolVersion,
+} from "./useToolUpdates";
 import { isUpdateAvailable } from "@/lib/version";
 
 /**
- * 「应用」页的安装 / 升级 / 卸载逻辑。任务、确认队列和版本结果放在模块级的
- * store 里：离开页面也不中断，回来立刻恢复进度。
+ * 「应用」页的安装 / 升级 / 卸载逻辑。任务、确认队列放在模块级的 store 里：
+ * 离开页面也不中断，回来立刻恢复进度。版本探测结果（和它自己的 store）在
+ * `./useToolUpdates`，那里入口也能用、又不拖累本文件。
  */
 
-export interface ToolVersion {
-  name: string;
-  version: string | null;
-  latest_version: string | null;
-  error: string | null;
-  // 后端已定位到可执行文件但 --version 报错（装了却跑不起来）。直接读此字段，
-  // 不要靠匹配 error 文案反推——避免前端与后端字符串硬耦合。
-  installed_but_broken: boolean;
-  env_type: "windows" | "wsl" | "macos" | "linux" | "unknown";
-  wsl_distro: string | null;
-  // 有新版本、但这处安装用的 Node 达不到新版本的要求：不给升级，提示先升级 Node。
-  update_blocked_by_node: NodeRequirementGap | null;
-}
-
-export const TOOL_NAMES = [
-  "claude",
-  "codex",
-  "gemini",
-  "grok",
-  "opencode",
-  "openclaw",
-  "hermes",
-  "pi",
-  "mcode",
-  "kimi",
-  "dsh",
-  "agy",
-  "omp",
-  "copilot",
-] as const;
-export type ToolName = (typeof TOOL_NAMES)[number];
 export type ToolLifecycleAction = "install" | "update" | "uninstall";
 
 export function hermesUninstallMayLeaveFiles(plan: ToolUninstallPlan) {
@@ -268,16 +250,6 @@ export const TOOL_APP_IDS: Record<ToolName, AppId> = {
   copilot: "copilot",
 };
 
-// 工具版本探测代价高：每个工具一次 `--version` 子进程 + 一次 npm/github/pypi 网络请求。
-// 「应用」页离开就卸载，每次回来都重挂，若都全量重查纯属浪费。用「模块级」缓存（生命周期 = JS 模块 = 应用会话，不随组件卸载销毁）
-// 跨重挂存活：重挂时若缓存仍新鲜（距上次全量加载 < TTL）直接复用、跳过探测；超期或用户
-// 手动「刷新」才强制重查。at = 最近一次「全量加载」完成时刻；单工具刷新（切 shell / 升级
-// 后）只更新数据、不重置 at，避免一次局部刷新把整体 TTL 续命。
-const TOOL_VERSIONS_CACHE_TTL_MS = 10 * 60 * 1000; // 10 分钟
-const EMPTY_TOOL_VERSIONS: ToolVersion[] = [];
-let toolVersionRequestSequence = 0;
-const latestToolVersionRequests = new Map<string, number>();
-
 /**
  * 安装 / 升级 / 卸载的进度（后端 `tool-lifecycle-progress` 事件）。所有写入在后端
  * 串行执行，前面有别的工具在跑时先是 queued；轮到它后 running，并带命令最新一行输出。
@@ -293,7 +265,6 @@ interface ToolLifecycleProgressEvent {
 }
 
 interface ToolManagementState {
-  toolVersionsCache: { data: ToolVersion[]; at: number } | null;
   busyTools: ReadonlyMap<ToolName, ToolLifecycleAction>;
   toolProgress: ReadonlyMap<ToolName, ToolProgress>;
   pendingUpgrades: readonly PendingUpgrade[];
@@ -305,7 +276,6 @@ interface ToolManagementState {
 // 安装/升级不会随设置页卸载而结束。将任务、确认队列与版本结果一起保留在会话中，
 // 让新挂载的页面立即恢复进度，并收到原任务的完成结果。
 let toolManagementState: ToolManagementState = {
-  toolVersionsCache: null,
   busyTools: new Map(),
   toolProgress: new Map(),
   pendingUpgrades: [],
@@ -363,66 +333,9 @@ function ensureToolProgressListener() {
   });
 }
 
-// 把探测结果按 name 合并进已有列表：替换同名项、追加新项；空列表时直接采用新结果。
-// 组件 state 与模块缓存共用同一套合并语义（单工具与全量探测都经此函数）。
-function mergeToolVersions(
-  prev: ToolVersion[],
-  updated: ToolVersion[],
-): ToolVersion[] {
-  if (prev.length === 0) return updated;
-  const byName = new Map(updated.map((t) => [t.name, t]));
-  const merged = prev.map((t) => byName.get(t.name) ?? t);
-  const existing = new Set(prev.map((t) => t.name));
-  for (const u of updated) {
-    if (!existing.has(u.name)) merged.push(u);
-  }
-  return merged;
-}
-
-/**
- * 设置里打开了「启动时检查应用更新」时，启动后在后台查一次（结果进同一个模块缓存）。
- * 不弹任何提示，只让侧栏「应用」上出现圆点。
- */
-export async function checkToolUpdatesInBackground(): Promise<void> {
-  const cache = toolManagementState.toolVersionsCache;
-  if (cache && Date.now() - cache.at < TOOL_VERSIONS_CACHE_TTL_MS) return;
-  const requestId = ++toolVersionRequestSequence;
-  TOOL_NAMES.forEach((name) => latestToolVersionRequests.set(name, requestId));
-  try {
-    const results = await settingsApi.getToolVersions([...TOOL_NAMES]);
-    const current = results.filter(
-      (tool) => latestToolVersionRequests.get(tool.name) === requestId,
-    );
-    if (current.length === 0) return;
-    const latest = toolManagementState.toolVersionsCache;
-    updateToolManagementState({
-      toolVersionsCache: {
-        data: mergeToolVersions(latest?.data ?? [], current),
-        at: Date.now(),
-      },
-    });
-  } catch (error) {
-    console.error("[useToolManagement] Background update check failed", error);
-  }
-}
-
-/** 已检查过的命令行应用里有没有可升级的（不触发检查，只读缓存）。 */
-export function useToolUpdatesAvailable(): boolean {
-  const { toolVersionsCache } = useSyncExternalStore(
-    subscribeToolManagement,
-    getToolManagementState,
-  );
-  return (
-    toolVersionsCache?.data.some((tool) =>
-      isUpdateAvailable(tool.version, tool.latest_version),
-    ) ?? false
-  );
-}
-
 export function useToolManagement() {
   const { t } = useTranslation();
   const {
-    toolVersionsCache,
     busyTools,
     toolProgress,
     pendingUpgrades,
@@ -430,7 +343,8 @@ export function useToolManagement() {
     installReports,
   } = useSyncExternalStore(subscribeToolManagement, getToolManagementState);
   useEffect(ensureToolProgressListener, []);
-  const toolVersions = toolVersionsCache?.data ?? EMPTY_TOOL_VERSIONS;
+  const toolVersionsCache = useToolVersionsCache();
+  const toolVersions = toolVersionsCache?.data ?? emptyToolVersions();
   const pendingUpgrade = pendingUpgrades[0] ?? null;
   // 有缓存（哪怕已超期）就先展示旧值、初始不 loading；超期时由挂载副作用触发后台
   // 重查（stale-while-revalidate）。无缓存（首次）才从 loading 起步。
@@ -487,10 +401,7 @@ export function useToolManagement() {
       if (toolNames.length === 0) return [];
 
       // 请求顺序跨组件挂载保留，旧页面的迟到响应不能覆盖后续刷新或升级结果。
-      const requestId = ++toolVersionRequestSequence;
-      toolNames.forEach((name) =>
-        latestToolVersionRequests.set(name, requestId),
-      );
+      const requestId = beginToolVersionRequests(toolNames);
 
       // 单工具刷新使用统一后端入口（get_tool_versions）并带工具过滤。
       setLoadingTools((prev) => {
@@ -504,8 +415,8 @@ export function useToolManagement() {
           toolNames,
           wslOverrides,
         );
-        const current = updated.filter(
-          (tool) => latestToolVersionRequests.get(tool.name) === requestId,
+        const current = updated.filter((tool) =>
+          isLatestToolVersionRequest(tool.name, requestId),
         );
         if (current.length === 0) return [];
 
@@ -513,12 +424,10 @@ export function useToolManagement() {
         // 刷新不算全量、不重置 TTL）；缓存为空时以 at=0 起步——0 是「尚未完成全量加载」
         // 的过期哨兵，确保探测中途切走/切回时，残缺缓存被判过期而触发重查，而非把半套
         // 数据当成完整结果复用。真实时间戳只由 loadAllToolVersions 的 finally 盖上。
-        const cache = toolManagementState.toolVersionsCache;
-        updateToolManagementState({
-          toolVersionsCache: {
-            data: mergeToolVersions(cache?.data ?? [], current),
-            at: cache?.at ?? 0,
-          },
+        const cache = currentToolVersionsCache();
+        setToolVersionsCache({
+          data: mergeToolVersions(cache?.data ?? [], current),
+          at: cache?.at ?? 0,
         });
 
         // 返回刷新结果，调用方可据此判断版本是否真的探到（避免读 state 撞 stale closure）。
@@ -530,7 +439,7 @@ export function useToolManagement() {
         setLoadingTools((prev) => {
           const next = { ...prev };
           for (const name of toolNames) {
-            if (latestToolVersionRequests.get(name) === requestId) {
+            if (isLatestToolVersionRequest(name, requestId)) {
               next[name] = false;
             }
           }
@@ -544,14 +453,10 @@ export function useToolManagement() {
   const loadAllToolVersions = useCallback(
     async (options?: { force?: boolean }) => {
       const force = options?.force ?? false;
-      const cache = toolManagementState.toolVersionsCache;
+      const cache = currentToolVersionsCache();
       // 命中新鲜缓存：切回「关于」Tab 触发的重挂直接复用上次结果，跳过 6 个 `--version`
       // 子进程 + 6 个 latest 版本网络请求。手动「刷新」传 force 绕过缓存强制重查。
-      if (
-        !force &&
-        cache &&
-        Date.now() - cache.at < TOOL_VERSIONS_CACHE_TTL_MS
-      ) {
+      if (!force && cache && toolVersionsCacheIsFresh(cache.at)) {
         setIsLoadingTools(false);
         return;
       }
@@ -570,11 +475,9 @@ export function useToolManagement() {
         );
       } finally {
         // 全量探测结束：把缓存时间戳刷新为现在，标记「刚完成一次全量加载」、重置 TTL。
-        const latestCache = toolManagementState.toolVersionsCache;
+        const latestCache = currentToolVersionsCache();
         if (latestCache) {
-          updateToolManagementState({
-            toolVersionsCache: { ...latestCache, at: Date.now() },
-          });
+          setToolVersionsCache({ ...latestCache, at: Date.now() });
         }
         setIsLoadingTools(false);
       }

@@ -1,4 +1,4 @@
-import type { ToolName } from "./useToolManagement";
+import type { ToolName } from "./useToolUpdates";
 
 // Audited against official installation docs, 2026-10-12.
 // An npm package does not imply support for every other package manager.

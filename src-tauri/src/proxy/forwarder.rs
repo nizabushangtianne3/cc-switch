@@ -10707,6 +10707,40 @@ mod tests {
             json!({"model": "gpt-5.1-codex", "messages": messages})
         }
 
+        fn time_calls<F: FnMut()>(label: &str, iterations: usize, mut f: F) {
+            for _ in 0..100 {
+                f();
+            }
+            let start = Instant::now();
+            for _ in 0..iterations {
+                f();
+            }
+            println!(
+                "{label}: {:.3} us/call",
+                start.elapsed().as_secs_f64() * 1e6 / iterations as f64
+            );
+        }
+
+        /// 每个代理请求都要经 `DeviceStore::for_device()` 重取一次主目录
+        /// （handler_context 里那个）。拆开量：环境变量读、系统主目录查询、
+        /// 完整 `get_home_dir`、以及整棵 DeviceStore 构造。
+        #[test]
+        #[ignore]
+        fn home_dir_costs() {
+            time_calls("std::env::var_os", 20_000, || {
+                std::hint::black_box(std::env::var_os("CC_SWITCH_TEST_HOME"));
+            });
+            time_calls("dirs::home_dir", 20_000, || {
+                std::hint::black_box(dirs::home_dir());
+            });
+            time_calls("config::get_home_dir", 20_000, || {
+                std::hint::black_box(crate::config::get_home_dir());
+            });
+            time_calls("DeviceStore::for_device", 20_000, || {
+                std::hint::black_box(crate::live::engine::DeviceStore::for_device());
+            });
+        }
+
         #[test]
         #[ignore]
         fn canonical_json_string_costs() {

@@ -86,14 +86,13 @@ import {
   ENV_BADGE_CONFIG,
   ONE_CLICK_INSTALL_COMMANDS,
   TOOL_APP_IDS,
-  TOOL_NAMES,
   toolDisplayName,
   useToolManagement,
   WSL_SHELL_FLAG_OPTIONS,
   WSL_SHELL_OPTIONS,
   type ToolLifecycleAction,
-  type ToolName,
 } from "./useToolManagement";
+import { TOOL_NAMES, type ToolName } from "./useToolUpdates";
 
 /** 安装来源的显示名：只标认得出的，认不出（system）就不标，免得标错。 */
 const SOURCE_LABEL: Record<string, string> = {

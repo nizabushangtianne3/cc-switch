@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ToolName } from "@/components/apps/useToolManagement";
+import type { ToolName } from "@/components/apps/useToolUpdates";
 import { uninstallCommandsFor } from "@/components/apps/toolUninstallCommands";
 
 type UninstallEnvironment = "windows" | "macos" | "linux";

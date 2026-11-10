@@ -21,9 +21,9 @@ import { ToolInstallRow } from "@/components/settings/ToolInstallRow";
 import {
   hermesUninstallMayLeaveFiles,
   toolDisplayName,
-  type ToolName,
   type WslShellPreference,
 } from "./useToolManagement";
+import type { ToolName } from "./useToolUpdates";
 
 export function ToolUninstallConfirmDialog({
   tool,

@@ -106,12 +106,24 @@
 
 - 现状：`handler_context.rs` 的 `DeviceStore::for_device()` 每请求调
   `config::get_home_dir()`：`std::env::var_os` + `CC_SWITCH_TEST_HOME` 解析 + `PathBuf`。
-- 实测（release，20 000 轮）：`dirs::home_dir` 0.610 µs/次，
-  `config::get_home_dir` 2.800 µs/次，即每次请求白付约 2.2 µs + 2 次分配。
-  纯透传一次 forward 约 0.92 ms，占约 0.3%。
-- 方案：进程级缓存设备根，按 `CC_SWITCH_TEST_HOME` 的当前值失效；
-  `settings.rs` 已有同一环境变量的 RwLock 快照，可以合过来。
-- 状态：**待办**（收益小、要动测试切 HOME 的路径，排在前四项之后）
+- 实测（`perf_probe::home_dir_costs`；release 与 debug 两轮，比例一致）：
+
+  | 环节 | 耗时 |
+  | --- | --- |
+  | `std::env::var_os("CC_SWITCH_TEST_HOME")` | ~2.35 µs |
+  | `dirs::home_dir()` | ~0.55 µs |
+  | `config::get_home_dir()` | ~2.8 µs |
+  | `DeviceStore::for_device()` | ~3.0 µs |
+
+  **大头是环境变量读本身（约 70%），不是 `SHGetKnownFolderPath`。**
+- 结论：**不动**。要把这 2.35 µs 省掉，缓存就不能每请求读环境变量；而
+  `CC_SWITCH_TEST_HOME` 一变更就得失效，全仓有 37 个文件会改它（`TestHomeScope`
+  之外还有直接 `env::set_var` 的）。为 0.3% 的单请求收益引入「缓存不同步 = 测试
+  写错目录」的风险不划算。剩下的 0.65 µs 缓存下来也看不出差别。
+- 若将来要把入口侧的 `DeviceStore` 换成进程级实例，正确做法是让
+  `config::get_home_dir()` 自己带缓存，并由那个环境变量的唯一写入口负责作废。
+
+ ### P1-2 改写出站体时的序列化与深拷贝
 
 ### P1-2 改写出站体时的序列化与深拷贝
 
@@ -134,10 +146,6 @@
 - 前端懒加载块仍偏大：`AuthSettingsPanel-*.js` 846.60 kB；
   `pnpm build:renderer` 有 6 个块 > 500 kB（main 655 kB、disableContextMenu 580 kB、
   index 444 kB、UsageTrendChart 360 kB…）。
-- `App.tsx` 静态引入 `useToolManagement.ts`（1 088 行 / 42 KB）只为拿
-  `checkToolUpdatesInBackground` 和 `useToolUpdatesAvailable` 两个小函数，
-  整个「应用」页的安装/升级/卸载逻辑因此进了入口块。这两个函数依赖模块级
-  toolVersionsCache，要拆就得连 store 一起搬，单独排期。
 - 入口块仍静态拖着 `src/icons/extracted/index.ts`（187 KB 源码，约 126 个图标文件）：
   大 PNG 由 Vite 作为独立资源发出，JS 侧开销是 URL 表，暂无收益，先记为未决。
 - 状态：**待办**
@@ -150,6 +158,39 @@
 | 2 | P0-2 | 拆出 `src/config/copilotEnv.ts` | 入口块 -88.11 kB；typecheck + 4 个预设测试 |
 | 3 | P0-3 | 合并/删除 SSE 扫描同构实现 | sse 测试不变，全量测试通过 |
 | 4 | P0-4 | xAI 整流透传分支一次分配 | 该文件测试不变 |
+
+### P2-1 入口块拖着「应用」页的整套安装/卸载逻辑
+
+- 位置：[`src/App.tsx`](src/App.tsx) → `src/components/apps/useToolUpdates.ts`（新）、
+  [`src/components/apps/useToolManagement.ts`](src/components/apps/useToolManagement.ts)
+- 现状：`App.tsx` 静态引入 `useToolManagement.ts`（1 088 行 / 42 KB）只为拿
+  `checkToolUpdatesInBackground` 和 `useToolUpdatesAvailable` 两个小函数，
+  整个「应用」页的安装 / 升级 / 卸载逻辑因此进了入口块。
+- 处理：版本探测的 store（缓存、请求序号守卫、合并、TTL 判新鲜）连同
+  `TOOL_NAMES` / `ToolName` / `ToolVersion` 一起拆到 `useToolUpdates.ts`——
+  一条「应用」页逻辑的导入都没有；`useToolManagement.ts` 改成从它取，
+  `toolVersionsCache` 从 `ToolManagementState` 里摘出去，版本监听和任务监听分开。
+- 证据（`pnpm build:renderer`）：
+
+  | 指标 | 拆前 | 拆后 |
+  | --- | --- | --- |
+  | `main-*.js` 体积 | 655.20 kB | 643.22 kB |
+  | gzip | 210.80 kB | 206.95 kB |
+  | 全量 JS 产物 | 6 761.9 kB | 6 761.8 kB |
+
+  全量不变说明只是把代码搬进了懒加载块（版本搬运现在是 `AppsPage-*.js` 里的 40.2 kB），
+  没有重复打包；入口块少 11.98 kB。
+- 状态：**已完成**
+- 测试：`tests/components/AppsPage.test.tsx` 58 个用例全过（含「重挂 + 过期缓存」
+  这类直接压模块缓存的）；`tests/components/apps/*`、`npmBinCollision` 全过；
+  typecheck + prettier 通过
+
+### 第二轮落地清单
+
+| # | 项 | 关键改动 | 验证 |
+| --- | --- | --- | --- |
+| 5 | P2-1 | 拆出 `useToolUpdates.ts`，入口块 -11.98 kB | AppsPage 58 用例 + 前端全量 |
+| 6 | P1-1 | 量完判定「不动」，记在账本里 | `perf_probe::home_dir_costs` |
 
 落地后复验（全部本地跑过，不依赖 CI）：
 

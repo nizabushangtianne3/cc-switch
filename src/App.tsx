@@ -95,7 +95,7 @@ import { RefreshAllQuotaButton } from "@/components/settings/auth/RefreshAllQuot
 import {
   checkToolUpdatesInBackground,
   useToolUpdatesAvailable,
-} from "@/components/apps/useToolManagement";
+} from "@/components/apps/useToolUpdates";
 import { proxyApi } from "@/lib/api/proxy";
 import type { AppMode, StartupAttachFailure } from "@/types/proxy";
 import { PROMPT_APP_IDS } from "@/lib/query/prompts";

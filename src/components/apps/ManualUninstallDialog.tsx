@@ -20,12 +20,8 @@ import {
 import { copyText } from "@/lib/clipboard";
 import { isLinux, isMac, isWindows } from "@/lib/platform";
 import { toast } from "@/lib/toast";
-import {
-  TOOL_NAMES,
-  toolDisplayName,
-  type ToolName,
-  type ToolVersion,
-} from "./useToolManagement";
+import { toolDisplayName } from "./useToolManagement";
+import { TOOL_NAMES, type ToolName, type ToolVersion } from "./useToolUpdates";
 import {
   UNINSTALL_METHODS,
   uninstallCommandsFor,
