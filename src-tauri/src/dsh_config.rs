@@ -741,7 +741,11 @@ fn get_providers_from(
                 models.insert(id.into(), model);
             }
         }
-        config["name"] = config.get("displayName").cloned().unwrap_or(json!(id));
+        // unwrap_or 的参数无条件求值：有 displayName 时也白造一份 Value。
+        config["name"] = config
+            .get("displayName")
+            .cloned()
+            .unwrap_or_else(|| json!(id));
         config["options"] = json!({"baseURL": config.get("baseURL"),"apiKey":key,"headers":config.get("headers").cloned().unwrap_or(json!({}))});
         config["models"] = Value::Object(models);
         result.insert(id.into(), config);
@@ -1249,7 +1253,7 @@ fn native_provider(
         object.remove("headers");
         object.insert(
             "displayName".into(),
-            config.get("name").cloned().unwrap_or(json!(id)),
+            config.get("name").cloned().unwrap_or_else(|| json!(id)),
         );
         object.insert("baseURL".into(), config["options"]["baseURL"].clone());
         if let Some(headers) = config.pointer("/options/headers") {

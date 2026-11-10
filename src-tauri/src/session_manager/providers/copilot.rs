@@ -240,7 +240,7 @@ pub fn load_messages(path: &Path) -> Result<Vec<SessionMessage>, String> {
                 let model = data["model"]
                     .as_str()
                     .map(str::to_string)
-                    .or(usage.model.clone());
+                    .or_else(|| usage.model.clone());
                 let output = usage.output.or_else(|| data["outputTokens"].as_u64());
                 if model.is_some() || output.is_some() || usage.input.is_some() {
                     message.meta = Some(MessageMeta {

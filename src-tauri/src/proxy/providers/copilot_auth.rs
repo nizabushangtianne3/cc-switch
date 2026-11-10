@@ -927,9 +927,10 @@ impl CopilotAuthManager {
 
         // 返回新 token
         let tokens = self.copilot_tokens.read().await;
-        tokens.get(account_id).map(|t| t.token.clone()).ok_or(
-            CopilotAuthError::CopilotTokenFetchFailed("刷新后仍无令牌".to_string()),
-        )
+        tokens
+            .get(account_id)
+            .map(|t| t.token.clone())
+            .ok_or_else(|| CopilotAuthError::CopilotTokenFetchFailed("刷新后仍无令牌".to_string()))
     }
 
     /// 获取有效的 Copilot Token（向后兼容：使用第一个账号）

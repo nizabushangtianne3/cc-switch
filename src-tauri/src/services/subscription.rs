@@ -1584,7 +1584,7 @@ async fn query_gemini_quota(access_token: &str) -> Result<SubscriptionQuota, Str
 
             let entry = category_map
                 .entry(category)
-                .or_insert((remaining, bucket.reset_time.clone()));
+                .or_insert_with(|| (remaining, bucket.reset_time.clone()));
             if remaining < entry.0 {
                 entry.0 = remaining;
                 if bucket.reset_time.is_some() {

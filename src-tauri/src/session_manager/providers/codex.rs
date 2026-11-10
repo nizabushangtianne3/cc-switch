@@ -1637,7 +1637,10 @@ impl RolloutParser {
                 if let [command] = commands.as_slice() {
                     *kind = command.kind;
                     *title = title_shell(&command.command);
-                    *detail = command.cwd.clone().or(detail.take());
+                    // `or` 的参数是无条件执行的：左支已有 cwd 时也会把 detail
+                    // take 成 None。detail 在此之后只被赋值、不再被读，改惰性求值
+                    // 后结果一致，且省掉一次Option 克隆。
+                    *detail = command.cwd.clone().or_else(|| detail.take());
                 } else if commands.is_empty() {
                     if let Some(fc) = &file_change {
                         *kind = diff_kind(&fc.diff);
@@ -1691,7 +1694,7 @@ impl RolloutParser {
                         *id = format!("{call_id}#{}", k + 1);
                         *kind = command.kind;
                         *title = title_shell(&command.command);
-                        *detail = command.cwd.clone().or(detail.take());
+                        *detail = command.cwd.clone().or_else(|| detail.take());
                     }
                     block
                 })
@@ -1725,7 +1728,7 @@ impl RolloutParser {
         let extra_status = file_change
             .as_ref()
             .map(|f| f.status)
-            .or(mcp.as_ref().map(|m| m.status));
+            .or_else(|| mcp.as_ref().map(|m| m.status));
         let spec = match out {
             Some(out) => {
                 let mut status = output_status(&out, last_command);
@@ -1749,7 +1752,7 @@ impl RolloutParser {
                     duration_ms: last_command
                         .and_then(|c| c.duration_ms)
                         .or(out.duration_ms)
-                        .or(mcp.as_ref().and_then(|m| m.duration_ms)),
+                        .or_else(|| mcp.as_ref().and_then(|m| m.duration_ms)),
                     images,
                     ..ResultSpec::empty(last_id, status)
                 }

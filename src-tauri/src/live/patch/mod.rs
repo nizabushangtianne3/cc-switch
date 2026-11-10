@@ -226,9 +226,11 @@ pub(crate) fn line_column(text: &str, offset: usize) -> (usize, usize) {
     let offset = offset.min(text.len());
     let before = &text[..offset];
     let line = before.matches('\n').count() + 1;
-    let column = before.rfind('\n').map_or(before.chars().count(), |nl| {
-        before[nl + 1..].chars().count()
-    }) + 1;
+    // map_or 的第一个参数无条件求值：找到换行时也白把整段前缀数一遍字符。
+    let column = before.rfind('\n').map_or_else(
+        || before.chars().count(),
+        |nl| before[nl + 1..].chars().count(),
+    ) + 1;
     (line, column)
 }
 

@@ -1792,7 +1792,8 @@ const WSL_AUTO_SHELL_FLAGS: [&str; 3] = ["-lic", "-lc", "-c"];
 /// `WSL_AUTO_SHELL_FLAGS` 依次重试，或只用调用方已校验过的 `flag`。
 #[cfg(any(target_os = "windows", test))]
 fn wsl_auto_shell_command(payload: &str, flag: Option<&str>) -> String {
-    let flags = flag.map_or(WSL_AUTO_SHELL_FLAGS.to_vec(), |flag| vec![flag]);
+    // map_or 的第一个参数无条件求值：调用方给了 flag 也白 to_vec 一份常量清单。
+    let flags = flag.map_or_else(|| WSL_AUTO_SHELL_FLAGS.to_vec(), |flag| vec![flag]);
     let last = flags.len() - 1;
     flags
         .iter()

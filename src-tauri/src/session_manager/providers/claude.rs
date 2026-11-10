@@ -1064,8 +1064,9 @@ fn claude_tool_title(
     let kind = normalized.kind;
 
     if kind == ToolKind::Mcp {
+        // unwrap_or 的参数同样无条件求值：命中 MCP 名时也白造一个元组。
         let (server, tool) = split_mcp_name(raw_name)
-            .unwrap_or((normalized.server.as_deref().unwrap_or_default(), raw_name));
+            .unwrap_or_else(|| (normalized.server.as_deref().unwrap_or_default(), raw_name));
         return (kind, title_mcp(server, tool), first_string_field(input));
     }
 

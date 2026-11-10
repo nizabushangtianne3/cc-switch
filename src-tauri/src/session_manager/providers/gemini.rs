@@ -290,13 +290,16 @@ pub(crate) fn format_thoughts(value: &Value) -> Option<MergedThoughts> {
 
 /// 会话文件相对 `tmp/` 的路径：取末尾三段 `<hash>/chats/<file>`（不足三段时取已有部分）。
 fn relative_to_tmp_root(path: &Path) -> String {
-    let parts: Vec<String> = path
+    let mut parts: Vec<String> = path
         .components()
         .rev()
         .take(3)
         .map(|c| c.as_os_str().to_string_lossy().to_string())
         .collect();
-    parts.into_iter().rev().collect::<Vec<_>>().join("/")
+    // 原写法把整份 parts 反转后再 collect 成一个新 Vec 才能 join——每个会话文件
+    // 路径都要多分配一次。原地 reverse + slice join 是同一个结果，零额外分配。
+    parts.reverse();
+    parts.join("/")
 }
 
 /// Gemini content 可能是字符串，也可能是 `[{text}]` 数组。

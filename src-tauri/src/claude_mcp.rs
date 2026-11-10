@@ -258,7 +258,8 @@ pub fn validate_command_in_path(cmd: &str) -> Result<bool, AppError> {
 
     #[cfg(windows)]
     let exts: Vec<String> = env::var("PATHEXT")
-        .unwrap_or(".COM;.EXE;.BAT;.CMD".into())
+        // unwrap_or 的参数无条件求值：读到了 PATHEXT 也白造一份 String。
+        .unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into())
         .split(';')
         .map(|s| s.trim().to_uppercase())
         .collect();

@@ -916,7 +916,10 @@ fn get_omp_config_root() -> Result<PathBuf, AppError> {
         None,
         None,
     )?;
-    Ok(agent.parent().map_or(agent.clone(), Path::to_path_buf))
+    // map_or 的第一个参数是无条件求值的：None 分支也要白克隆一份 PathBuf。
+    Ok(agent
+        .parent()
+        .map_or_else(|| agent.clone(), Path::to_path_buf))
 }
 
 /// One variable from a dotenv file: `[export ]NAME=value`. The last assignment wins, and an empty

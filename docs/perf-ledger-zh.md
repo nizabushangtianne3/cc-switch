@@ -154,15 +154,20 @@
   `react/jsx-runtime`（预设文件和界面共用）塞进了手动块：904 字节的
   `alert-*.js` 也得 `import{r as a,j as s}from"./provider-presets-..."`。
   另给 `src/lib/utils.ts`（`cn`）单独切一块也只解决一半——`cva` 那条路径同样中招。
-- 决定性证据：打开「授权中心」这一个界面，前后静态依赖总字节
+- 决定性证据：打开「授权中心」这一个界面，静态依赖总字节
 
-  | 懒加载界面的静态依赖 | 自动分块 | manualChunks 切预设 |
+  | 懒加载界面的静态依赖（不含已在内存的入口块） | 自动分块 | manualChunks 切预设 |
   | --- | --- | --- |
-  | 授权中心（`AuthCenterPanel`） | 1 230.7 kB | **1 880.5 kB** |
+  | 授权中心（`AuthCenterPanel`） | 596.42 kB | 1 294.6 kB |
 
-  多出来的 650 kB 就是那份不显示的预设目录。「授权中心不下载预设」的初衷
+  多出来的约 700 kB 就是那份不显示的预设目录，「授权中心不下载预设」的初衷
   恰好被反过来。给共享助手单独切块也堵不住，jsx-runtime 这类跨整个界面的运行时
   依赖总会落进手动块。
+
+  ⚠️ 这两栏都是「静态 import 闭包的字节和」。第一次测量时 dist 里有上次实验的
+  残留文件（`emptyOutDir` 不清 root 之外的目录），导致自动分块那栏一度被记成
+  1 230.7 kB；清空重建后修正为 596.42 kB。manualChunks 那栏是同一次污染构建里
+  测的，只当量级看，方向和结论不变。
 - 处置：**回滚**，配置回到原始的自动分块。结论：这块的分块边界得由「界面自己按需
   拉预设」来解决（表单里改成动态 import），不是 manualChunks 能一步到位的。
 - 顺带记下一个诊断事实：`alert-*.js` 这种小块的 import 语句是判断「某个大块被谁
@@ -178,9 +183,89 @@
   index 444 kB、UsageTrendChart 360 kB…）。
 - 入口块仍静态拖着 `src/icons/extracted/index.ts`（187 KB 源码，约 126 个图标文件）：
   大 PNG 由 Vite 作为独立资源发出，JS 侧开销是 URL 表，暂无收益，先记为未决。
+
+#### P2-2 图标表的 101 个内联 SVG 躺在「所有懒加载界面」的公共块里
+
+- 证据（`build.sourcemap` 临时开一次，读 `disableContextMenu-*.map` 的 `sources`
+  拿到精确的模块归属，分析完即关掉）：
+
+  | 项 | 数 |
+  | --- | --- |
+  | 被懒加载块静态 import 的公共块 | `disableContextMenu-*.js` 566 kB，80 / 99 个 chunk 拖着它 |
+  | 该块的源码构成 | 143 个源文件 = 67 node_modules + **54 个 `src/icons`** + 12 lib + 其余 9 |
+  | `src/icons/extracted/index.ts` | 187 KB 源码里 **101 个内联 SVG 字面量共 178.8 KB** |
+
+  公共块的 vendor 侧是 react-query（25 模块）、lucide（16）、react-i18next（7）、
+  radix（2）这些真·公共底座，砍不动；app 侧 75 个源文件里 54 个是图标——
+  也就是说这 566 kB 里约三分之一是一份「绝大多数界面根本不显示」的 SVG 字符串表。
+- 谁在同步读它：`ProviderIcon`（渲染）、`ProviderIconBox` / `IconPicker` /
+  `BasicFormFields`（元数据与衬底判断）。内联 SVG 的价值是 `currentColor` 继承
+  文字色（`adaptSvgToTheme` 把近黑单墨图标改写成 currentColor），改成 `?url`
+  资源文件会丢掉这个能力，不是纯搬移。
+- 方案（要做就得做全套）：把 101 个 SVG 落成 `src/icons/extracted/generated/*.svg`
+  独立文件，`icons` 换成 `import.meta.glob(..., { query: "?raw", eager: false })`，
+  渲染路径改成按 key 取异步内容。附带能把 `needsLightBacking` 的「每次解析 SVG
+  取色」固化成预计算名单（输入是固定的 101 + 52 个 key，输出必然固定）——
+  这条顺带把每张卡 render 时的取色开销归零，且可以用「名单与运行时分析结果逐 key
+  相等」的测试兜住。
+- 状态：**待办**（收益已实测，见下；改动面大且收益薄，排在不改档）
+- 附带把那条「顺带」也量了，免得下一轮再琢磨一遍：`needsLightBacking` 的取色判断
+  热路径每轮（154 个 key 全查一遍）**0.041 ms**，冷路径（含 102 个 SVG 的解析与
+  取色）是一次性的 1~5 ms 量级。把它固化成预计算名单只能省掉这两项里更小的那个，
+  还要为一个 Map 换一个 Set —— 不做，已连同实测数一起记在这里。
+- 顺带订正一条旧记录：`vite.config.ts` 的 `build.emptyOutDir` 不清 root 之外的
+  目录（这里 root=`src`、outDir=`../dist`），跨实验的 chunk 文件会残留。凡是要
+  「改动前 / 改动后」比字节的，必须先手工清空 dist 再构建，否则比的是两份不同
+  的源码状态。上一版 manualChunks 的对比数就是这么错的，已按清空重测的数字订正。
 - 状态：**待办**
 
 ## 落地清单（第一轮，提交 da72f940）
+
+### P0-5 无条件求值的 `unwrap_or` / `or` / `map_or` / `or_insert`
+
+- 位置：`copilot_auth.rs`、`omp_config.rs`、`hermes_config.rs`、`dsh_config.rs`（2 处）、
+  `claude_mcp.rs`、`live/patch/mod.rs`、`commands/misc.rs`、`services/subscription.rs`、
+  `session_manager/providers/{codex,claude,copilot}.rs`（4 处）、
+  `session_manager/providers/gemini.rs`
+- 现状：`Option::unwrap_or(f)` / `or(f)` / `map_or(f, _)` / `Entry::or_insert(f)` 的**参数
+  是无条件求值**的——`Some` 分支也要为那个 `f` 付一次代价。扫描手段：
+  `cargo clippy --lib -- -W clippy::or_fun_call -W clippy::needless_collect
+  -W clippy::redundant_clone -W clippy::map_clone -W clippy::useless_vec
+  -W clippy::boxed_local`（默认 lint 集不含这些 nursery 项，所以平时是静音的）。
+- 其中两处不只是分配，是真实的多余工作：
+  - `live/patch/mod.rs:225`：`rfind('\n').map_or(before.chars().count(), ...)`——
+    找到换行时也白把整段前缀数一遍字符（O(n)）。live patch 每次写入都走这里。
+  - `session_manager/providers/codex.rs:1636/1690`：
+    `command.cwd.clone().or(detail.take())`——左支有 cwd 时 `detail.take()` 也已执行，
+    `detail` 被置空。此处 `detail` 之后只被赋值不再被读，改惰性求值后终值一致。
+- 处理：一律换成 `unwrap_or_else` / `or_else` / `map_or_else` / `or_insert_with`，
+  或去掉多余的中间 `collect`。
+- 状态：**已完成**
+- 测试：`cargo test --lib` 5007 passed / 0 failed（改前改后同为 5007，无行为差异）；
+  默认 lint 的 clippy 仍 0 warning；nursery 这组从 24 条降到 8 条
+- 剩下 8 条判定不改并写明原因：`uri.path()`、常量三元、`ip.into()`、Option 的
+  `as_ref()` 这些参数本身免费，套一层闭包只会把可读性弄差；
+  `services/skill.rs:2382` 的 `or_insert(UnmanagedSkill{..})` 要把三个局部 move 进
+  闭包，被迫提前 clone 一次 `label`，反而在 and_modify 分支上多一次 String 克隆。
+
+### 图标表诊断（P2-2）与热路径取价量化
+
+- 用 `build.sourcemap` 开一次（分析完即关）拿到精确的模块归属，结论见 P2-2：
+  懒加载界面的公共块 566 kB 里 143 个源文件中 54 个是 `src/icons`，
+  `index.ts` 187 KB 源码 = 101 个内联 SVG 字面量共 178.8 KB；
+  vendor 侧是 react-query / lucide / react-i18next / radix 这些真底座，砍不动。
+- 顺手把账本里「顺带固化 needsLightBacking 名单」那条也量了再下结论：
+  154 个 key 全查一遍的热路径 **0.041 ms**，冷路径（102 个 SVG 解析取色）一次性
+  1~5 ms。固化名单只能省掉更小的那项，还要用一个 Set 换一个 Map——不做。
+- 状态：**已诊断，不改**（P2-2 保留为待办，改动面大、收益薄）
+
+### 测量口径订正
+
+- 上一版账本用 `1 230.7 kB` 当自动分块的基线，那是**被污染的数字**：
+  Vite 的 `build.emptyOutDir` 不清 root 之外的 outDir（这里 root=`src`、outDir=`../dist`），
+  上次实验的 chunk 文件会残留，前后比的是两份不同源码状态。清空 dist 重建后，
+  自动分块打开授权中心的静态依赖是 **596.42 kB**。账本已订正。
+- 方法论：凡是「改动前 / 改动后」比字节，先手工清空构建目录。
 
 | # | 项 | 关键改动 | 验证 |
 | --- | --- | --- | --- |

@@ -914,7 +914,8 @@ pub fn apply_switch_defaults(
 
     let current = get_model_config()?.unwrap_or_default();
     let merged = HermesModelConfig {
-        default: first_model_id.or(current.default.clone()),
+        // `or` 的参数照样 unconditional：没有显式默认值时也要克隆一份旧默认值。
+        default: first_model_id.or_else(|| current.default.clone()),
         provider: Some(provider_id.to_string()),
         ..current
     };
