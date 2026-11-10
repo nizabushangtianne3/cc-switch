@@ -1172,6 +1172,18 @@ pub fn get_settings() -> AppSettings {
         .clone()
 }
 
+/// 借览设置：只需要读个别字段的热路径用它，避免为一个小字段克隆整个结构体。
+///
+/// 闭包里只能读——同一把读写锁，在闭包里调用会写设置的方法（`mutate_settings`
+/// 等）会直接死锁。
+pub fn with_settings<T>(f: impl FnOnce(&AppSettings) -> T) -> T {
+    let guard = settings_store().read().unwrap_or_else(|e| {
+        log::warn!("设置锁已毒化，使用恢复值: {e}");
+        e.into_inner()
+    });
+    f(&guard)
+}
+
 pub fn get_settings_for_frontend() -> AppSettings {
     let mut settings = get_settings();
     if let Some(sync) = &mut settings.webdav_sync {

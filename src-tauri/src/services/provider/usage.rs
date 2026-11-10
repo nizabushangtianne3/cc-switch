@@ -69,9 +69,8 @@ pub(crate) async fn execute_and_format_usage_result(
                 }
             }
 
-            let lang = settings::get_settings()
-                .language
-                .unwrap_or_else(|| "zh".to_string());
+            let lang =
+                settings::with_settings(|s| s.language.clone()).unwrap_or_else(|| "zh".to_string());
 
             let msg = match err {
                 AppError::Localized { zh, en, .. } => {
