@@ -5,6 +5,12 @@ All notable changes to CC Switch will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.32] - 2026-11-10
+
+Anthropic-style upstreams reject converter-injected parameters with HTTP 200 plus a first error event in the stream, with no structured param field and the parameter named before the wording, so the previous rectifier missed that form and the session still aborted mid-stream. A quoted-token fallback now collects quoted parameter names when neither structured fields nor wording patterns produce anything, gated to JSON error envelopes that say the parameter is unsupported. Also fixes capability-cache tests reading and writing the real settings.json (fixture entries leaked into user settings and were prewarmed on the next launch) and a race where opencode tests and other modules tore down each other's temp home directories.
+
+**Stats**: 1 commit | 4 files changed | +139 insertions | -5 deletions
+
 ## [4.0.31] - 2026-11-10
 
 This release covers the last remaining form of an upstream rejecting an unsupported parameter: Anthropic-style gateways answer with HTTP 200 plus a first `event: error` in the stream, which the 400 rectifier could not see, so streaming responses are now primed before reaching the client and error events return to the retry loop for strip-and-retry. It also moves parameter stripping to the outbound body after conversion, because injected parameters (`thinking` from `reasoning.effort`, default `max_tokens`) never existed in the request body the client sent, which made both the rectifier and the capability cache no-ops on converted paths.
