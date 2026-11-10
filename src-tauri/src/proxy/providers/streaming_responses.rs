@@ -2808,7 +2808,6 @@ fn create_anthropic_sse_stream_from_responses_raw<E: std::error::Error + Send + 
                         // the JSON payload. Compatible gateways sometimes omit the
                         // `event:` line, so fall back to the payload type.
                         let event_name = event_type
-                            .as_deref()
                             .filter(|name| !name.is_empty())
                             .or_else(|| probe.as_ref().and_then(|probe| probe.r#type))
                             .or_else(|| data.get("type").and_then(Value::as_str))

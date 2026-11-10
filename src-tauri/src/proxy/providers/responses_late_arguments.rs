@@ -77,6 +77,9 @@ struct Block {
 impl Block {
     fn parse(raw: &str) -> Self {
         let (event_name, payload) = scan_sse_block(raw);
+        // 事件名要活到重放这个块的时候，而 `raw` 之后才转成自持的 String：
+        // 那一行之前不能持有对它的借用，所以在这里把名字复制一份。
+        let event_name = event_name.map(str::to_string);
         let event = payload
             .as_deref()
             .and_then(|text| serde_json::from_str::<Value>(text).ok());

@@ -6,9 +6,9 @@ import {
   copilotApiFormatOf,
   compactCopilotEnv,
   copilotOfficialPreset,
-  copilotProviderPresets,
   isCopilotByok,
-} from "./copilotProviderPresets";
+} from "./copilotEnv";
+import { copilotProviderPresets } from "./copilotProviderPresets";
 
 describe("copilotProviderPresets", () => {
   it("translates catalog presets into Copilot CLI BYOK variables", () => {

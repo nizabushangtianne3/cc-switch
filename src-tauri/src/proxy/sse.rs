@@ -270,25 +270,18 @@ pub(crate) fn content_block_delta_sse(
 /// the common path allocates nothing for the payload; the multi-line case that
 /// the SSE spec also allows still joins with newlines exactly as before.
 ///
-/// `event` stays owned because every caller drains the buffer before using it,
-/// which would invalidate a borrow of the block. Taking the last `event:` line
-/// when a block repeats the field matches what the previous inline loops did.
-pub(crate) fn scan_sse_block(block: &str) -> (Option<String>, Option<Cow<'_, str>>) {
-    let mut event: Option<String> = None;
-
-    for line in block.lines() {
-        if let Some(name) = strip_sse_field(line, "event") {
-            event = Some(name.trim().to_string());
-        }
-    }
-
-    (event, sse_block_data(block))
-}
-
-/// 与 `scan_sse_block` 同义，但事件名也借用块文本：省掉每个块一次 String
-/// 分配。调用方必须保证在使用借用的期间不动缓冲——codex_chat 主循环已是
-/// chunk 级 drain（块处理期间不 drain），正好适用。
-pub(crate) fn scan_sse_block_ref(block: &str) -> (Option<&'_ str>, Option<Cow<'_, str>>) {
+/// 拆出一个 SSE 块的 `event:` 名与 `data:` 载荷，事件名借用块文本。
+///
+/// 事件名曾经是 `String`：每个块一次堆分配，长流式响应几百个块就是几百次，
+/// 而名字只用来和几个字面量比一比。现在统一借用，需要 owned 的调用方自己
+/// `.map(str::to_string)`——全仓只有 `responses_late_arguments` 那一个。
+///
+/// 借用约束：使用期间不能动块所在的缓冲。所有调用点的块循环都是「推进游标、
+/// 整 chunk 结束时才 drain 一次」（见 `streaming_responses` / `streaming_codex_chat` /
+/// `streaming_codex_anthropic` / xAI 整流），块处理期间借用一直有效。
+///
+/// 同一块里重复的 `event:` 后者胜出，与旧的内联循环一致。
+pub(crate) fn scan_sse_block(block: &str) -> (Option<&'_ str>, Option<Cow<'_, str>>) {
     let mut event: Option<&str> = None;
 
     for line in block.lines() {
@@ -303,7 +296,7 @@ pub(crate) fn scan_sse_block_ref(block: &str) -> (Option<&'_ str>, Option<Cow<'_
 /// 只取一个 SSE 块的 `data:` 载荷，连 `event:` 名字都不看。
 ///
 /// 调用方不用事件名时走这里：`scan_sse_block` 每个块都要为那个名字分配一个
-/// String，而 data 载荷本身是借用的、一个字节都不复制。单行 data 照旧零分配，
+/// 名字，而 data 载荷本身是借用的、一个字节都不复制。单行 data 照旧零分配，
 /// 多行 data 用换行拼一份，语义与 `scan_sse_block` 完全一致。
 pub(crate) fn sse_block_data(block: &str) -> Option<Cow<'_, str>> {
     let mut data: SmallVec<[&str; 2]> = SmallVec::new();
@@ -717,7 +710,7 @@ mod tests {
         let (event, payload) =
             scan_sse_block("event: response.output_text.delta\ndata: {\"delta\":\"hi\"}");
 
-        assert_eq!(event.as_deref(), Some("response.output_text.delta"));
+        assert_eq!(event, Some("response.output_text.delta"));
         let payload = payload.expect("data line");
         assert!(matches!(payload, Cow::Borrowed(_)), "单行 data 不该分配");
         assert_eq!(&*payload, "{\"delta\":\"hi\"}");
@@ -791,7 +784,7 @@ mod tests {
     fn scan_sse_block_joins_multiple_data_lines_with_newlines() {
         let (event, payload) = scan_sse_block("event: chunk\ndata: {\"a\":1,\ndata: \"b\":2}");
 
-        assert_eq!(event.as_deref(), Some("chunk"));
+        assert_eq!(event, Some("chunk"));
         let payload = payload.expect("data lines");
         assert!(matches!(payload, Cow::Owned(_)), "多行必须拼一份");
         assert_eq!(&*payload, "{\"a\":1,\n\"b\":2}");
@@ -801,14 +794,14 @@ mod tests {
     fn scan_sse_block_takes_the_last_event_line() {
         // 与旧内联循环一致：同一块里重复的 event: 后者胜出
         let (event, payload) = scan_sse_block("event: first\nevent: second\ndata: {}");
-        assert_eq!(event.as_deref(), Some("second"));
+        assert_eq!(event, Some("second"));
         assert_eq!(&*payload.expect("data"), "{}");
     }
 
     #[test]
     fn scan_sse_block_reports_no_payload_without_a_data_line() {
         let (event, payload) = scan_sse_block("event: ping\n");
-        assert_eq!(event.as_deref(), Some("ping"));
+        assert_eq!(event, Some("ping"));
         assert!(payload.is_none());
 
         let (event, payload) = scan_sse_block(": comment only");

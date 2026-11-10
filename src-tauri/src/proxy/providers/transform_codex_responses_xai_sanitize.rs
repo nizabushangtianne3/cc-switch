@@ -1145,22 +1145,35 @@ fn rewrite_xai_native_sse_block(
     restore_map: &HashMap<String, NamespacedName>,
 ) -> Bytes {
     let (event_name, payload) = scan_sse_block(block);
+
+    // 原样回吐这个块，只把流分帧要的分隔符补回去。
+    //
+    // 绝大多数块一条都不用改（没有 namespace 要还原、参数本来就是整数），所以这条
+    // 路径是每块必过的热路。`format!` 会先建一个 String 再被 `Bytes::from` 整段
+    // 拷进 Bytes：每个块两次分配两次拷贝。这里按最终长度一次分配搞定。
+    let passthrough = || -> Bytes {
+        let mut out = Vec::with_capacity(block.len() + 2);
+        out.extend_from_slice(block.as_bytes());
+        out.extend_from_slice(b"\n\n");
+        Bytes::from(out)
+    };
+
     let Some(data) = payload else {
-        return Bytes::from(format!("{block}\n\n"));
+        return passthrough();
     };
     if data.trim() == "[DONE]" {
-        return Bytes::from(format!("{block}\n\n"));
+        return passthrough();
     }
 
     let mut event: Value = match serde_json::from_str(&data) {
         Ok(value) => value,
-        Err(_) => return Bytes::from(format!("{block}\n\n")),
+        Err(_) => return passthrough(),
     };
 
     let mut changed = restore_sse_event_namespaces(&mut event, restore_map);
     changed |= normalize_xai_function_call_integer_arguments(&mut event);
     if !changed {
-        return Bytes::from(format!("{block}\n\n"));
+        return passthrough();
     }
 
     let restored = serde_json::to_string(&event).unwrap_or_else(|_| data.into_owned());

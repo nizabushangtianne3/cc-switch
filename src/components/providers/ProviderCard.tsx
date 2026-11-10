@@ -39,7 +39,7 @@ import {
   extractCodexExperimentalBearerToken,
   extractProviderBaseUrl,
 } from "@/utils/providerConfigUtils";
-import { isCopilotByok } from "@/config/copilotProviderPresets";
+import { isCopilotByok } from "@/config/copilotEnv";
 import { resolveManagedAccountId } from "@/lib/authBinding";
 import { isMac } from "@/lib/platform";
 import {

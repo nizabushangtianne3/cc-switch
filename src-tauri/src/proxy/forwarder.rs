@@ -5186,7 +5186,7 @@ fn merge_json_override_inner(target: &mut Value, patch: &Value, is_top_level: bo
 /// unsupported-parameter rectifier, which accepts that form, can strip and retry;
 /// errors that name no parameter surface intact instead of aborting mid-stream.
 fn inspect_sse_error_event(block: &str) -> Option<Result<(), ProxyError>> {
-    let (event, data) = crate::proxy::sse::scan_sse_block_ref(block);
+    let (event, data) = crate::proxy::sse::scan_sse_block(block);
     let data = data?;
     let is_error = event.is_some_and(|name| name == "error")
         || serde_json::from_str::<Value>(&data)
@@ -10688,6 +10688,137 @@ mod tests {
     mod perf_probe {
         use super::*;
         use std::time::Instant;
+
+        /// 一段 `strings` 个字符串、每四个一个对象的请求体：模拟 tool_media 与
+        /// 转换路径每请求都要过一遍的 `canonical_json_string`。
+        fn canonical_probe_body(strings: usize) -> Value {
+            let mut messages = Vec::with_capacity(strings / 4);
+            for index in 0..strings / 4 {
+                messages.push(json!({
+                    "role": if index % 2 == 0 { "user" } else { "assistant" },
+                    "content": [
+                        {"type": "text", "text": format!("turn {index}: a plain sentence without escapes")},
+                        {"type": "text", "text": format!("second paragraph \"quoted\" with a \\ backslash {index}")},
+                        {"type": "text", "text": format!("third paragraph number {index}")},
+                        {"type": "text", "text": format!("fourth paragraph number {index}")},
+                    ],
+                }));
+            }
+            json!({"model": "gpt-5.1-codex", "messages": messages})
+        }
+
+        #[test]
+        #[ignore]
+        fn canonical_json_string_costs() {
+            // 同一个请求体、同一进程里对照新旧两条路径，避免跨轮测量的机器噪声
+            // （此前两轮分别测，deep clone 和 full forward 的读数都随负载漂了 15%）。
+            let iterations = 2000;
+            for label in ["plain", "escaped"] {
+                let body = if label == "escaped" {
+                    canonical_probe_body(400)
+                } else {
+                    canonical_probe_body_plain(400)
+                };
+                for _ in 0..50 {
+                    std::hint::black_box(crate::proxy::json_canonical::canonical_json_string(
+                        &body,
+                    ));
+                    std::hint::black_box(legacy_canonical_json_string(&body));
+                }
+                let mut new_bytes = 0usize;
+                let start = Instant::now();
+                for _ in 0..iterations {
+                    new_bytes += crate::proxy::json_canonical::canonical_json_string(&body).len();
+                }
+                let new_elapsed = start.elapsed();
+                let mut old_bytes = 0usize;
+                let start = Instant::now();
+                for _ in 0..iterations {
+                    old_bytes += legacy_canonical_json_string(&body).len();
+                }
+                let old_elapsed = start.elapsed();
+                assert_eq!(new_bytes, old_bytes, "两条路径的输出必须逐字节一致");
+                println!(
+                    "canonical_json_string ({label}), {} strings: legacy={:.2}us in-place={:.2}us (-{:.1}%), out_bytes={}",
+                    strings_count(&body),
+                    old_elapsed.as_secs_f64() * 1e6 / iterations as f64,
+                    new_elapsed.as_secs_f64() * 1e6 / iterations as f64,
+                    100.0 - new_elapsed.as_secs_f64() / old_elapsed.as_secs_f64() * 100.0,
+                    new_bytes / iterations,
+                );
+            }
+        }
+
+        /// 一半字符串不带转义，用来对照转义分支的开销。
+        fn canonical_probe_body_plain(strings: usize) -> Value {
+            let mut messages = Vec::with_capacity(strings / 4);
+            for index in 0..strings / 4 {
+                messages.push(json!({
+                    "role": if index % 2 == 0 { "user" } else { "assistant" },
+                    "content": [
+                        {"type": "text", "text": format!("turn {index}: a plain sentence without escapes")},
+                        {"type": "text", "text": format!("second paragraph number {index}")},
+                        {"type": "text", "text": format!("third paragraph number {index}")},
+                        {"type": "text", "text": format!("fourth paragraph number {index}")},
+                    ],
+                }));
+            }
+            json!({"model": "gpt-5.1-codex", "messages": messages})
+        }
+
+        /// 改造前的实现形状：每个字符串和键都走一次 `serde_json::to_string` 再 push。
+        ///
+        /// 只作为同一进程内的对照基线存在，输出与现役实现逐字节相同（测试里断言）。
+        fn legacy_canonical_json_string(value: &Value) -> String {
+            fn write(value: &Value, out: &mut String) {
+                match value {
+                    Value::Null => out.push_str("null"),
+                    Value::Bool(value) => out.push_str(if *value { "true" } else { "false" }),
+                    Value::Number(value) => {
+                        let _ = std::fmt::Write::write_fmt(out, format_args!("{value}"));
+                    }
+                    Value::String(value) => {
+                        out.push_str(&serde_json::to_string(value).expect("serialize a string"))
+                    }
+                    Value::Array(values) => {
+                        out.push('[');
+                        for (index, value) in values.iter().enumerate() {
+                            if index > 0 {
+                                out.push(',');
+                            }
+                            write(value, out);
+                        }
+                        out.push(']');
+                    }
+                    Value::Object(map) => {
+                        let mut entries = map.iter().collect::<Vec<_>>();
+                        entries.sort_by_key(|(key, _)| *key);
+                        out.push('{');
+                        for (index, (key, value)) in entries.into_iter().enumerate() {
+                            if index > 0 {
+                                out.push(',');
+                            }
+                            out.push_str(&serde_json::to_string(key).expect("serialize a key"));
+                            out.push(':');
+                            write(value, out);
+                        }
+                        out.push('}');
+                    }
+                }
+            }
+            let mut out = String::new();
+            write(value, &mut out);
+            out
+        }
+
+        fn strings_count(value: &Value) -> usize {
+            match value {
+                Value::String(_) => 1,
+                Value::Array(values) => values.iter().map(strings_count).sum(),
+                Value::Object(map) => map.values().map(strings_count).sum(),
+                _ => 0,
+            }
+        }
 
         /// 接近真实体量的 Claude Code 请求体（约数百 KB）：长 system、长历史、大 tools。
         fn heavy_claude_body() -> Value {

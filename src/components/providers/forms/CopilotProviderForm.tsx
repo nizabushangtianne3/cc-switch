@@ -27,19 +27,19 @@ import { resolveManagedAccountId } from "@/lib/authBinding";
 import type { ProviderFormData } from "@/lib/schemas/provider";
 import type { ProviderCategory, ProviderMeta } from "@/types";
 import {
+  COPILOT_API_FORMATS,
   COPILOT_ENV,
   COPILOT_OFFICIAL_PRESET_ID,
-  COPILOT_API_FORMATS,
   applyCopilotApiFormat,
-  copilotApiFormatOf,
   compactCopilotEnv,
+  copilotApiFormatOf,
   copilotEnvOf,
   copilotOfficialPreset,
-  copilotProviderPresets,
   formatCopilotHeaders,
   type CopilotApiFormatId,
   type CopilotEnv,
-} from "@/config/copilotProviderPresets";
+} from "@/config/copilotEnv";
+import { copilotProviderPresets } from "@/config/copilotProviderPresets";
 import { normalizeRequestHeaders } from "./helpers/requestHeaders";
 import { BasicFormFields, REQUIRED_LABEL } from "./BasicFormFields";
 import { ApiKeySection, EndpointField, ModelInputWithFetch } from "./shared";
