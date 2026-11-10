@@ -714,7 +714,7 @@ mod tests {
 
     /// 假的时钟和进程表：`clock` 是现在（Unix 毫秒），`table` 是 `ps` 的输出。
     fn fake_env(clock: Arc<AtomicU64>, table: Arc<Mutex<String>>, restarted: Arc<AtomicBool>) {
-        let now = clock.clone();
+        let now = clock;
         set_test_env(Env {
             process_table: Box::new(move || Some(table.lock().unwrap().clone())),
             daemon_started: Box::new(|| None),
@@ -732,7 +732,7 @@ mod tests {
         daemon: Arc<Mutex<Option<u64>>>,
         restarted: Arc<AtomicBool>,
     ) {
-        let now = clock.clone();
+        let now = clock;
         set_test_env(Env {
             process_table: Box::new(|| None),
             daemon_started: Box::new(move || *daemon.lock().unwrap()),
@@ -1237,7 +1237,7 @@ mod tests {
         let store = scope.store();
         let clock = Arc::new(AtomicU64::new(1_000_000));
         fake_env_without_table(
-            clock.clone(),
+            clock,
             Arc::new(Mutex::new(None)),
             Arc::new(AtomicBool::new(false)),
         );

@@ -1482,8 +1482,7 @@ mod tests {
 
         let backup_path =
             create_pruned_backup("hermes", "yaml", &["yaml", "yml"], "Test", "source");
-        crate::settings::update_settings(previous_retain.clone())
-            .expect("restore backup retention");
+        crate::settings::update_settings(previous_retain).expect("restore backup retention");
 
         match previous_test_home {
             Some(value) => std::env::set_var("CC_SWITCH_TEST_HOME", value),

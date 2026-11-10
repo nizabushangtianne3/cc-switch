@@ -554,7 +554,7 @@ mod tests {
         );
 
         // 未标注格式时按内容推断为 V2
-        let inferred = make_provider(p.settings_config.clone());
+        let inferred = make_provider(p.settings_config);
         assert_eq!(
             StreamCheckService::resolve_opencode_base_url(&inferred).unwrap(),
             "http://10.0.0.1/v1"

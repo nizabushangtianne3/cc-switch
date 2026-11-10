@@ -1673,7 +1673,7 @@ mod ensure_official_seed_tests {
 
         assert_eq!(
             db.resolve_current_provider("claude", Some("missing"))?,
-            Some(second.id.clone())
+            Some(second.id)
         );
         assert_eq!(
             db.resolve_current_provider("claude", Some(&first.id))?,

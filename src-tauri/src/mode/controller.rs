@@ -4714,7 +4714,7 @@ model_provider = "c"
                 .replace("\"gpt-b\"", "\"gpt-b2\"")
                 + "\n[mcp_servers.git]\ncommand = \"git\"\n"
         );
-        save("b", edited, view.settings.clone()).expect("save b");
+        save("b", edited, view.settings).expect("save b");
         let live = codex_text();
         assert!(
             live.contains("approval_policy = \"never\""),
@@ -4743,7 +4743,7 @@ model_provider = "c"
             .as_str()
             .unwrap()
             .replace("\"gpt-a\"", "\"gpt-a2\""));
-        save("a", edited, view.settings.clone()).expect("save a");
+        save("a", edited, view.settings).expect("save a");
         assert_eq!(codex_doc()["model"].as_str(), Some("gpt-a2"));
         assert!(codex_text().contains("[mcp_servers.git]"));
 
@@ -4759,7 +4759,7 @@ model_provider = "c"
             .as_str()
             .unwrap()
             .replace("\"never\"", "\"on-failure\""));
-        let err = save("a", edited, view.settings.clone()).expect_err("conflict");
+        let err = save("a", edited, view.settings).expect_err("conflict");
         assert!(
             err.to_string()
                 .contains(crate::live::patch::EDIT_CONFLICT_CODE),
@@ -5341,7 +5341,7 @@ model_provider = "c"
         edited["env"]["GEMINI_API_KEY"] = json!("key-a2");
         edited["env"]["DEBUG"] = json!("2");
         edited["config"]["ui"] = json!({ "theme": "dark" });
-        let mut row = a.clone();
+        let mut row = a;
         row.settings_config = edited;
         ProviderService::update_from_editor(
             &state,
@@ -5349,7 +5349,7 @@ model_provider = "c"
             Some("a"),
             row,
             Some(crate::services::provider::EditorSave {
-                base: view.settings.clone(),
+                base: view.settings,
                 draft: None,
                 on_conflict: Default::default(),
             }),
@@ -5383,7 +5383,7 @@ model_provider = "c"
         let mut edited = view.settings.clone();
         edited["env"]["GOOGLE_CLOUD_PROJECT"] = json!("p2");
         edited["env"]["DEBUG"] = json!("3");
-        let mut row = vertex.clone();
+        let mut row = vertex;
         row.settings_config = edited;
         ProviderService::update_from_editor(
             &state,
@@ -5681,7 +5681,7 @@ model_provider = "c"
         let edited = shown
             .replace("theme = \"dark\"", "theme = \"light\"")
             .replace("a-model", "a-model-2");
-        let mut row = a.clone();
+        let mut row = a;
         row.settings_config = json!({ "config": edited });
         ProviderService::update_from_editor(
             &state,

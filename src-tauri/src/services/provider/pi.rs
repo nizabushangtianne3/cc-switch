@@ -414,7 +414,7 @@ mod tests {
         let _agent = TestAgentDir::new();
         let state = state();
         let original = input("model-a");
-        ProviderService::add(&state, AppType::Pi, original.clone(), true).expect("add provider");
+        ProviderService::add(&state, AppType::Pi, original, true).expect("add provider");
         let settings_path = crate::pi_config::get_pi_settings_path().unwrap();
         fs::create_dir_all(settings_path.parent().unwrap()).unwrap();
         fs::write(
@@ -660,7 +660,7 @@ mod tests {
             &path,
             serde_json::to_vec(&json!({
                 "providers": {
-                    "cc-switch-test": minimal.clone()
+                    "cc-switch-test": minimal
                 }
             }))
             .expect("serialize models"),
@@ -873,7 +873,7 @@ mod tests {
         assert!(crate::pi_config::pi_provider_exists("cc-switch-test").unwrap());
 
         let original = input("model-a");
-        update(&state, Some("cc-switch-test"), original.clone())
+        update(&state, Some("cc-switch-test"), original)
             .expect("an edit that keeps every model does not need the default selection");
 
         ProviderService::remove_from_live_config(&state, AppType::Pi, "cc-switch-test")

@@ -350,7 +350,7 @@ mod tests {
         let config_dir = home.join("config");
         fs::create_dir_all(&config_dir).unwrap();
         let defaults = Defaults {
-            config_dir: default_dir.clone(),
+            config_dir: default_dir,
             profile: tmp.path().join(".claude.json"),
         };
         (tmp, defaults, config_dir, home)

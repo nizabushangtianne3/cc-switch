@@ -226,7 +226,7 @@ fn switching_back_parks_the_live_account_in_its_own_slot() {
         outcome,
         Outcome::Switched {
             adopted: None,
-            previous: Some((work.clone(), work_dir.clone())),
+            previous: Some((work, work_dir.clone())),
         }
     );
     assert_eq!(fx.refresh_of(&fx.default()).as_deref(), Some("rt-me"));
@@ -428,8 +428,8 @@ fn change_after_reading_cancels_the_switch() {
     }
     // 上一次切换做完了、还没被确认：这次取消后它要原样留着，给启动时核对卡片
     let prior = Journal {
-        target: me.clone(),
-        target_dir: me_dir.clone(),
+        target: me,
+        target_dir: me_dir,
         target_org: Some("org-me".into()),
         target_account: "fp".into(),
         before_account: None,
@@ -731,10 +731,7 @@ fn recovery_finds_the_target_in_its_new_folder_after_a_relogin() {
         &Slot::Account(new_dir.clone()),
         secret("org-work", "rt-work-new"),
     );
-    fx.accounts
-        .0
-        .borrow_mut()
-        .insert(work.clone(), new_dir.clone());
+    fx.accounts.0.borrow_mut().insert(work, new_dir.clone());
 
     recover(&fx.ctx()).unwrap();
     assert_eq!(fx.default_profile()["oauthAccount"]["accountUuid"], "work");

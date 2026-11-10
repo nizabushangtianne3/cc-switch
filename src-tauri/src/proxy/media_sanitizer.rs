@@ -1295,7 +1295,7 @@ mod tests {
                 "output": {
                     "content": [
                         {"type": "input_text", "text": "caption"},
-                        {"type": "input_image", "image_url": data_url.clone()},
+                        {"type": "input_image", "image_url": data_url},
                         {"type": "image", "mimeType": "image/webp", "data": "MCP_SENTINEL"}
                     ]
                 }
@@ -1348,7 +1348,7 @@ mod tests {
         let output = json!({
             "content": [{
                 "type": "input_image",
-                "image_url": data_url.clone()
+                "image_url": data_url
             }]
         })
         .to_string();
@@ -1378,7 +1378,7 @@ mod tests {
             "input": [{
                 "type": "function_call_output",
                 "call_id": "call_raw",
-                "output": data_url.clone()
+                "output": data_url
             }]
         });
 

@@ -2083,7 +2083,7 @@ mod tests {
                     "content": [{
                         "type": "tool_result",
                         "tool_use_id": "call_remote",
-                        "content": [remote_image.clone()]
+                        "content": [remote_image]
                     }]
                 }
             ]
@@ -2127,7 +2127,7 @@ mod tests {
                     "content": [{
                         "type": "tool_result",
                         "tool_use_id": "call_malformed",
-                        "content": [malformed_image.clone()]
+                        "content": [malformed_image]
                     }]
                 }
             ]

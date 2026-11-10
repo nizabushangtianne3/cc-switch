@@ -330,7 +330,7 @@ mod tests {
     #[test]
     fn secret_to_bytes_and_fingerprint_agree_only_for_equal_content() {
         let secret = Secret::parse(br#"{"a":1,"b":"x"}"#).expect("a json object parses");
-        assert_eq!(secret.fingerprint(), secret.clone().fingerprint());
+        assert_eq!(secret.fingerprint(), secret.fingerprint());
 
         let Value::Object(map) = json!({"a": 1, "b": "y"}) else {
             unreachable!()

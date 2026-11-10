@@ -4413,7 +4413,7 @@ mod tests {
         db.save_skill(&skill)?;
         let saved = db.get_installed_skill("s")?.unwrap();
         assert!(saved.apps.copilot && saved.apps.claude);
-        let mut apps = saved.apps.clone();
+        let mut apps = saved.apps;
         apps.copilot = false;
         db.update_skill_apps("s", &apps)?;
         let saved = db.get_all_installed_skills()?;

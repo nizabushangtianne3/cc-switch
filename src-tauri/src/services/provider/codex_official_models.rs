@@ -1107,7 +1107,7 @@ mod tests {
         seed_cache("ws|sub:bob", T0, "0.158.0", models(&["bobs"]));
         install(Some("0.158.0"), vec![fetched(&["alices"])], None);
         let alice = OfficialLogin::of(&login("ws", "alice")).unwrap();
-        assert_eq!(slugs(&rows_for_switch(&Ok(alice.clone()))), vec!["alices"]);
+        assert_eq!(slugs(&rows_for_switch(&Ok(alice))), vec!["alices"]);
         // 各存各的，互不覆盖。
         assert_eq!(cache_fetched_at("ws|sub:bob"), Some(T0));
     }
@@ -1152,7 +1152,7 @@ mod tests {
         }
         assert_eq!(cache_fetched_at("ws|sub:alice"), Some(T0));
         assert_eq!(
-            slugs(&rows_for_switch(&Ok(login.clone()))),
+            slugs(&rows_for_switch(&Ok(login))),
             vec!["cached", "new-model"]
         );
         // 后台检查还没开始（CC Switch 正在启动）时刷新完了：不重写，标记留给第一次检查。
@@ -1325,7 +1325,7 @@ mod tests {
 
         // 两个来源都没有：不可用。
         install(Some("0.158.0"), Vec::new(), None);
-        assert_eq!(rows_for_switch(&Ok(login.clone())), NativeRows::Unavailable);
+        assert_eq!(rows_for_switch(&Ok(login)), NativeRows::Unavailable);
         assert_eq!(
             last_source(),
             Some(NativeSource::Unavailable {
@@ -1402,7 +1402,7 @@ mod tests {
             None,
         );
         assert_eq!(
-            slugs(&rows_for_switch(&Ok(login.clone()))),
+            slugs(&rows_for_switch(&Ok(login))),
             vec!["codex-auto-review", "gpt-6-sol"]
         );
         assert_eq!(last_source(), Some(NativeSource::Fetched));
@@ -1513,6 +1513,6 @@ mod tests {
         .unwrap();
         install(Some("0.158.0"), Vec::new(), None);
         let login = OfficialLogin::of(&login("ws", "alice")).unwrap();
-        assert_eq!(rows_for_switch(&Ok(login.clone())), NativeRows::Unavailable);
+        assert_eq!(rows_for_switch(&Ok(login)), NativeRows::Unavailable);
     }
 }

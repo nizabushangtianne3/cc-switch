@@ -782,7 +782,7 @@ mod tests {
                 .save_provider(AppType::Codex.as_str(), &provider)
                 .expect("seed provider with explicit usage credentials");
 
-            let mut updated = provider.clone();
+            let mut updated = provider;
             updated.settings_config = codex_settings("https://api.b.example/v1/", "sk-b");
 
             ProviderService::update(state, AppType::Codex, None, updated)
@@ -883,7 +883,7 @@ mod tests {
                 .save_provider(AppType::Codex.as_str(), &provider)
                 .expect("seed provider with distinct usage credentials");
 
-            let mut updated = provider.clone();
+            let mut updated = provider;
             updated.settings_config = codex_settings("https://api.b.example/v1/", "sk-b");
             updated.meta = Some(ProviderMeta {
                 usage_script: Some(usage_script_with_credentials(
@@ -1305,7 +1305,7 @@ mod tests {
             .expect("set local current provider");
         write_live_for_state(&state, &AppType::Claude, &original).expect("seed live file");
 
-        let mut updated = original.clone();
+        let mut updated = original;
         updated.settings_config["env"]["ANTHROPIC_BASE_URL"] =
             Value::String("https://api.new.example".into());
         ProviderService::update(&state, AppType::Claude, None, updated)
@@ -1344,7 +1344,7 @@ mod tests {
         live["env"]["DEBUG"] = json!("1");
         write_json_file(&get_claude_settings_path(), &live).expect("user edit");
 
-        let mut updated = original.clone();
+        let mut updated = original;
         updated.settings_config["env"]
             .as_object_mut()
             .expect("env")
@@ -2483,7 +2483,7 @@ requires_openai_auth = true
             ProviderService::add(state, AppType::OpenClaw, original.clone(), false)
                 .expect("seed db-only provider");
 
-            let mut renamed = original.clone();
+            let mut renamed = original;
             renamed.id = "deepseek-copy".to_string();
 
             let err = ProviderService::update(
@@ -2514,7 +2514,7 @@ requires_openai_auth = true
     fn db_only_additive_update_survives_live_config_parse_errors() {
         with_test_home(|state, home| {
             let provider = openclaw_provider("deepseek");
-            ProviderService::add(state, AppType::OpenClaw, provider.clone(), false)
+            ProviderService::add(state, AppType::OpenClaw, provider, false)
                 .expect("seed db-only provider");
 
             let stored = state
@@ -2536,7 +2536,7 @@ requires_openai_auth = true
             fs::write(openclaw_dir.join("openclaw.json"), "{ invalid json5")
                 .expect("write malformed config");
 
-            let mut updated = stored.clone();
+            let mut updated = stored;
             updated.name = "DeepSeek Edited".to_string();
             updated.meta.get_or_insert_with(ProviderMeta::default);
 
@@ -4303,7 +4303,7 @@ wire_api = "responses"
             // Exercise the full-config fragment extraction as well as the writer.
             provider.settings_config = json!({
                 "$schema": "https://opencode.ai/config.json",
-                "provider": { provider.id.clone(): expected.clone() }
+                "provider": { provider.id.clone(): expected }
             });
             live::write_live_snapshot(&AppType::OpenCode, &provider)
                 .expect("write opencode provider");
@@ -4507,7 +4507,7 @@ wire_api = "responses"
             fs::write(openclaw_dir.join("openclaw.json"), "{ invalid json5")
                 .expect("write malformed config");
 
-            let mut updated = provider.clone();
+            let mut updated = provider;
             updated.name = "Legacy Edited".to_string();
 
             let err = ProviderService::update(state, AppType::OpenClaw, None, updated)
@@ -4882,7 +4882,7 @@ wire_api = "responses"
             crate::settings::set_current_provider(&AppType::Claude, Some(&child.id))
                 .expect("set local current child");
 
-            let mut old_live = child.settings_config.clone();
+            let mut old_live = child.settings_config;
             old_live["env"]["ANTHROPIC_BASE_URL"] =
                 Value::String("https://api.old.example".to_string());
             write_json_file(&get_claude_settings_path(), &old_live).expect("seed old live");

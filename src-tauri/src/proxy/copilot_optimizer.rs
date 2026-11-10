@@ -1373,7 +1373,7 @@ mod tests {
                 ]}
             ]
         });
-        let result = sanitize_orphan_tool_results(body.clone());
+        let result = sanitize_orphan_tool_results(body);
         // 无孤立 tool_result，不应有变化
         assert_eq!(result["messages"][1]["content"][0]["type"], "tool_result");
     }

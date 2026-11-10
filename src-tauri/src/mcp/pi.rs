@@ -415,7 +415,7 @@ mod tests {
 
         // 条目被删掉了（比如用户在 Pi 里删的）：从保存的连接定义里的 Pi 字段重建
         sync_file(&path, "srv", PiChange::Remove).unwrap();
-        let mut saved = spec.clone();
+        let mut saved = spec;
         saved
             .as_object_mut()
             .unwrap()

@@ -2581,7 +2581,7 @@ fn switch_claude_only_replaces_key_fields() {
         "ANTHROPIC_BASE_URL": "https://b.example",
         "ANTHROPIC_AUTH_TOKEN": "sk-b"
     }});
-    let state = seed_claude_switch_state(&[("a", a.clone()), ("b", b.clone())], "a", live);
+    let state = seed_claude_switch_state(&[("a", a.clone()), ("b", b)], "a", live);
     let snippet = r#"{"theme":"dark"}"#;
     state
         .db
@@ -3013,7 +3013,7 @@ fn recover_from_crash_without_backup_cleans_placeholder_instead_of_writing_it_ba
     let provider = Provider::with_id(
         "default".to_string(),
         "default".to_string(),
-        taken_over_live.clone(),
+        taken_over_live,
         None,
     );
     state
@@ -3377,7 +3377,7 @@ fn claude_editor_refuses_to_silently_overwrite_external_edits() {
 
     let a = json!({ "env": { "ANTHROPIC_BASE_URL": "https://a.example" } });
     let state = seed_claude_switch_state(
-        &[("a", a.clone())],
+        &[("a", a)],
         "a",
         r#"{ "env": { "ANTHROPIC_BASE_URL": "https://a.example" }, "x": 1 }"#,
     );

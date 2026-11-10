@@ -515,7 +515,7 @@ mod tests {
         assert!(stash.logins.contains_key(&key("alice")), "alice stashed");
 
         // bob 的登录在 live 里被 CLI 轮换过：切回 alice 时存下的是轮换后的那份。
-        let mut rotated_bob = bob.clone();
+        let mut rotated_bob = bob;
         rotated_bob["tokens"]["refresh_token"] = json!("refresh-bob-2");
         let to_alice = plan(input(
             Some(&rotated_bob),

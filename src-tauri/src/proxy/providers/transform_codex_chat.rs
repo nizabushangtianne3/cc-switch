@@ -3015,7 +3015,7 @@ mod tests {
                 "",
                 json!([
                     {"type": "input_text", "text": "screenshot follows"},
-                    {"type": "input_image", "image_url": data_url.clone()}
+                    {"type": "input_image", "image_url": data_url}
                 ]),
             ),
         ]);
@@ -4982,7 +4982,7 @@ mod tests {
                 "call_image",
                 json!([
                     {"type": "input_text", "text": "screenshot follows"},
-                    {"type": "input_image", "image_url": data_url.clone()}
+                    {"type": "input_image", "image_url": data_url}
                 ]),
             ),
         ]);
@@ -5014,7 +5014,7 @@ mod tests {
             test_function_call("call_2"),
             test_function_output(
                 "call_1",
-                json!({"type": "input_image", "image_url": first_url.clone()}),
+                json!({"type": "input_image", "image_url": first_url}),
             ),
             json!({
                 "type": "reasoning",
@@ -5827,8 +5827,8 @@ mod tests {
         let long_text = format!("{}end", "ordinary OCR text with spaces. ".repeat(3_500));
         let residual_base64 = "A".repeat(20_000);
         let encoded_output = json!([
-            {"type": "input_image", "image_url": data_url.clone()},
-            {"type": "text", "text": long_text.clone()},
+            {"type": "input_image", "image_url": data_url},
+            {"type": "text", "text": long_text},
             {"type": "video", "data": residual_base64}
         ])
         .to_string();

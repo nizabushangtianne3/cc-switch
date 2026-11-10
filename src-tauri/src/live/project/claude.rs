@@ -864,7 +864,7 @@ mod tests {
         let mut removed = projected.clone();
         removed.env.shift_remove(BEDROCK_BEARER_ENV);
         assert!(store_into_row(&row, &removed).get("apiKey").is_none());
-        let mut not_bedrock = projected.clone();
+        let mut not_bedrock = projected;
         not_bedrock.env.shift_remove("CLAUDE_CODE_USE_BEDROCK");
         let stored = store_into_row(&row, &not_bedrock);
         assert!(stored.get("apiKey").is_none());
@@ -944,7 +944,7 @@ mod tests {
             .is_none());
         assert!(routed.top.is_empty());
         // 行里自己写的说明优先。
-        let mut own = row.clone();
+        let mut own = row;
         own["env"]["ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION"] = json!("mine");
         let routed = proxy_projection(
             &ClaudeProjection::of(&own),

@@ -223,6 +223,28 @@
 
 ### P0-5 无条件求值的 `unwrap_or` / `or` / `map_or` / `or_insert`
 
+### P0-6 测试代码里 80 处多余 `.clone()`
+
+- 现状：`let mut x = y.clone()` 而后文只用 x、`Arc::new(ProviderRouter::new(db.clone()))`
+  之类——克隆出来的那份原值再没被读过。扫描手段同 P0-5：
+  `cargo clippy --lib --tests -- -W clippy::redundant_clone`，命中 160 条、
+  分布在 35 个文件，全部落在 `#[cfg(test)] mod tests` 或 `src-tauri/tests/` 里
+  （`cargo clippy --lib` 不带 `--tests` 时是 0 条，所以生产代码本来就没有）。
+- 处理：`cargo clippy --fix --lib --tests --allow-dirty --allow-staged --
+  -W clippy::redundant_clone` 按 clippy 自己的 suggestion 删，79 处；
+  diff 逐条审过，全是删除 `.clone()` 的等价替换。
+- 状态：**已完成**
+- 测试：`cargo test --lib` 5007 passed / 0 failed、`cargo test --tests` 5225 passed /
+  0 failed，与改前同一数字；默认 lint 的 clippy 0 warning；`cargo fmt --check` 干净
+
+### 踩坑：`clippy --fix` 一次只修一类 lint，删掉 `.clone()` 会生出下一条 warning
+
+删掉 `db.clone()` 后，`SourceLocation::Sqlite { db: db, ... }` 里的字段名和变量名
+变得同名，于是 `redundant_field_names`（默认 lint，CI 挂着 `-D warnings`）冒出来。
+`--fix` 一轮不会跟进修它。所以跑 `--fix` 之后**必须再跑一次默认集的
+`cargo clippy --lib --all-targets`**，把这类次生 warning 一次清掉，否则 CI 会挂
+在这一条上。本轮就是这样抓到并改成 `db,` 的。
+
 - 位置：`copilot_auth.rs`、`omp_config.rs`、`hermes_config.rs`、`dsh_config.rs`（2 处）、
   `claude_mcp.rs`、`live/patch/mod.rs`、`commands/misc.rs`、`services/subscription.rs`、
   `session_manager/providers/{codex,claude,copilot}.rs`（4 处）、

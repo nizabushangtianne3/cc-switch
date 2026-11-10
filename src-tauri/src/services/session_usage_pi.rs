@@ -2790,7 +2790,7 @@ mod tests {
 
         let db = Database::memory()?;
         set_child_cutoff(&db, 1_700_000_020)?;
-        let files = [parent.clone(), child_a.clone(), child_c.clone()];
+        let files = [parent.clone(), child_a.clone(), child_c];
         let first = sync_pi_files(&db, &PI, &files);
         assert!(first.errors.is_empty(), "{:?}", first.errors);
         assert_eq!(first.imported, 3);
@@ -2869,7 +2869,7 @@ mod tests {
 
         let db = Database::memory()?;
         set_child_cutoff(&db, 1_700_000_000)?;
-        let result = sync_pi_files(&db, &PI, &[parent.clone(), inside.clone()]);
+        let result = sync_pi_files(&db, &PI, &[parent, inside]);
         assert!(result.errors.is_empty(), "{:?}", result.errors);
         assert_eq!(pi_rows_input_and_unknown(&db)?, (2, 50, 2));
         Ok(())

@@ -380,7 +380,7 @@ mod tests {
             "messages": [],
             "tools": [
                 { "type": "function", "function": { "name": "desktop", "parameters": desktop_like_schema() } },
-                clean.clone(),
+                clean,
                 { "type": "web_search" }
             ]
         });

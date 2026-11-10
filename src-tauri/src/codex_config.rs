@@ -4847,7 +4847,7 @@ wire_api = "responses"
             reasoning_levels: None,
             default_reasoning_level: None,
         }];
-        let mut proxy_template = template.clone();
+        let mut proxy_template = template;
         proxy_template["apply_patch_tool_type"] = json!("freeform");
         proxy_template["supports_image_detail_original"] = json!(true);
         for profile in [
@@ -6207,7 +6207,7 @@ wire_api = "responses"
         let missing = dir.path().join("missing-codex");
         let pick = |catalog: &Value| catalog.get("models").cloned();
         assert_eq!(
-            first_bundled_catalog(vec![missing.clone()], pick).err(),
+            first_bundled_catalog(vec![missing], pick).err(),
             Some(CodexBundledModelsError::NoCli)
         );
 

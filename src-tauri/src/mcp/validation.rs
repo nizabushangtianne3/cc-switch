@@ -182,7 +182,7 @@ mod tests {
     #[test]
     fn extract_server_spec_unwraps_the_entry_around_the_spec() {
         let spec = json!({"command": "python", "args": ["server.py"]});
-        let entry = json!({"enabled": true, "server": spec.clone(), "source": "ui"});
+        let entry = json!({"enabled": true, "server": spec, "source": "ui"});
         assert_eq!(extract_server_spec(&entry).unwrap(), spec);
     }
 

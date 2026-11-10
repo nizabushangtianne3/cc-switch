@@ -536,7 +536,7 @@ mod tests {
         );
         // An unreadable native database never erases stored timing.
         native.execute_batch("DROP TABLE gen_metadata").unwrap();
-        let mut rewritten = rows.clone();
+        let mut rewritten = rows;
         rewritten[0]["output_tokens"] = json!(300);
         assert_eq!(
             import_records(&db, "timed", &rewritten, Some(&source)).unwrap(),

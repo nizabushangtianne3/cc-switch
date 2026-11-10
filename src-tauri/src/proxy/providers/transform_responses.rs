@@ -4814,7 +4814,7 @@ mod tests {
             "id": "resp_123",
             "status": "completed",
             "model": "gpt-5.6",
-            "output": [original.clone()],
+            "output": [original],
             "usage": {"input_tokens": 10, "output_tokens": 2}
         });
 

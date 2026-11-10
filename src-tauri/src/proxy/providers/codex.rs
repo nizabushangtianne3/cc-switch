@@ -1420,12 +1420,12 @@ context_window = 500000
         unmarked_custom.category = Some("official".to_string());
         assert!(!is_codex_official_provider(&unmarked_custom));
 
-        let mut category_less_fixed_custom = unmarked_custom.clone();
+        let mut category_less_fixed_custom = unmarked_custom;
         category_less_fixed_custom.id = crate::database::CODEX_OFFICIAL_PROVIDER_ID.to_string();
         category_less_fixed_custom.category = None;
         assert!(!is_codex_official_provider(&category_less_fixed_custom));
 
-        let mut category_less_fixed_api_key = official_api_key.clone();
+        let mut category_less_fixed_api_key = official_api_key;
         category_less_fixed_api_key.id = crate::database::CODEX_OFFICIAL_PROVIDER_ID.to_string();
         category_less_fixed_api_key.category = None;
         assert!(!is_codex_official_provider(&category_less_fixed_api_key));
@@ -1437,7 +1437,7 @@ context_window = 500000
         explicit_openai.category = Some("official".to_string());
         assert!(!is_codex_official_provider(&explicit_openai));
 
-        let mut managed_with_null_config = provider.clone();
+        let mut managed_with_null_config = provider;
         managed_with_null_config.category = None;
         managed_with_null_config.settings_config["config"] = JsonValue::Null;
         assert!(is_codex_official_provider(&managed_with_null_config));

@@ -5588,7 +5588,7 @@ mod tests {
         let db = Arc::new(Database::memory().expect("memory db"));
 
         RequestForwarder {
-            router: Arc::new(ProviderRouter::new(db.clone())),
+            router: Arc::new(ProviderRouter::new(db)),
             status: Arc::new(RwLock::new(ProxyStatus::default())),
             active_connections: Arc::new(AtomicUsize::new(0)),
             current_providers: Arc::new(RwLock::new(HashMap::new())),
@@ -10913,7 +10913,7 @@ mod tests {
             }
             elapsed_report("private-param scan", iterations, start.elapsed());
 
-            let mut prepared = body.clone();
+            let mut prepared = body;
             strip_private_params(&mut prepared);
             let start = Instant::now();
             for _ in 0..iterations {

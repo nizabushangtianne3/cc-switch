@@ -656,7 +656,7 @@ mod tests {
             raw: message_dir.to_string_lossy().into_owned(),
             location: SourceLocation::Path {
                 path: message_dir.clone(),
-                root: storage.clone(),
+                root: storage,
             },
         };
 
@@ -804,7 +804,7 @@ mod tests {
         let db = dir.path().join("state.db");
         std::fs::write(&db, "x").unwrap();
         let location = SourceLocation::Sqlite {
-            db: db.clone(),
+            db,
             session_id: "s".into(),
         };
         let before = fingerprint(&location).unwrap();

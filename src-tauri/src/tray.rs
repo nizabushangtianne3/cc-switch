@@ -4377,7 +4377,7 @@ mod tests {
         ));
 
         // 官方卡永远不算。
-        let mut official = copilot.clone();
+        let mut official = copilot;
         official.category = Some("official".to_string());
         assert!(!provider_needs_routing(&AppType::Claude, &official));
     }

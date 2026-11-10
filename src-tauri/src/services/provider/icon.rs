@@ -383,7 +383,7 @@ mod tests {
         // 缺 IEND
         assert!(validate_icon(Some(&data_uri(&png[..png.len() - 12]))).is_err());
         // 改坏一个字节，块校验和对不上
-        let mut corrupted = png.clone();
+        let mut corrupted = png;
         let mid = corrupted.len() / 2;
         corrupted[mid] ^= 0xff;
         assert!(validate_icon(Some(&data_uri(&corrupted))).is_err());
@@ -441,7 +441,7 @@ mod tests {
             )
             .unwrap()
         };
-        assert_eq!(icon_of("good"), Some(good.clone()));
+        assert_eq!(icon_of("good"), Some(good));
         assert_eq!(icon_of("long"), None);
         assert_eq!(icon_of("builtin"), Some("claude".to_string()));
     }

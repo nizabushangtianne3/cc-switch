@@ -12254,7 +12254,7 @@ mod tests {
 
         let candidates = tool_executable_candidates("codex", dir.path());
 
-        assert_eq!(candidates, vec![cmd.clone(), dir.path().join("codex.exe")]);
+        assert_eq!(candidates, vec![cmd, dir.path().join("codex.exe")]);
         assert!(!candidates.contains(&extensionless));
     }
 

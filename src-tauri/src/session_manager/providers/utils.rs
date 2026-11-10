@@ -516,7 +516,7 @@ mod tests {
         };
 
         // 第一次全部解析；解析不出会话的文件也记下来，下次不重复解析
-        let files = vec![a.clone(), b.clone(), c.clone()];
+        let files = vec![a.clone(), b.clone(), c];
         assert_eq!(ids(cache.scan(files.clone(), parse)), ["alpha", "beta"]);
         assert_eq!(calls.get(), 3);
 

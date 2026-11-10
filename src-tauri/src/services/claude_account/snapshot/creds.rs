@@ -281,7 +281,7 @@ mod tests {
         let fingerprint = account_fingerprint(&account);
 
         // 共享键被 Claude Code 改写不改变指纹。
-        let mut shared_changed = account.0.clone();
+        let mut shared_changed = account.0;
         shared_changed.insert(
             "mcpOAuth".to_string(),
             serde_json::json!({"server": "other"}),
@@ -353,7 +353,7 @@ mod tests {
         );
 
         // 空串当没有填。
-        let mut map = account.0.clone();
+        let mut map = account.0;
         map.get_mut("claudeAiOauth")
             .unwrap()
             .as_object_mut()
