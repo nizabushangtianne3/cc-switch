@@ -506,7 +506,10 @@ pub async fn send_request(
 }
 
 /// hyper-util 标准客户端发送：title-case header，原始大小写扩展对它无效。
-async fn send_via_hyper_util(
+///
+/// 对调用方暴露：forwarder 的 reqwest 路径被个别网关按客户端形态拒掉时，
+/// 用同一份字节改走这里重发（见 forwarder 的网关拒绝重试）。
+pub(crate) async fn send_via_hyper_util(
     uri: &http::Uri,
     method: &http::Method,
     headers: &http::HeaderMap,

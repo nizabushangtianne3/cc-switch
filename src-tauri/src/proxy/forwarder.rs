@@ -3356,7 +3356,7 @@ impl RequestForwarder {
             for (key, value) in &ordered_headers {
                 request = request.header(key, value);
             }
-            let send = request.body(body_bytes).send();
+            let send = request.body(body_bytes.clone()).send();
             let send_result = if request_is_streaming {
                 let header_timeout = if self.streaming_first_byte_timeout.is_zero() {
                     timeout
@@ -3375,7 +3375,31 @@ impl RequestForwarder {
                 send.await
             };
             let reqwest_resp = send_result.map_err(map_reqwest_send_error)?;
-            ProxyResponse::Reqwest(reqwest_resp)
+            let mut response = ProxyResponse::Reqwest(reqwest_resp);
+            // 个别网关按客户端形态整条拒掉 reqwest 的请求（Azure 应用网关对
+            // 该客户端返回 HTML 400，同一份字节经标准客户端却能通过）。这类
+            // 响应对调用方没有任何有用信息，用标准客户端重发一次再放弃。
+            if upstream_proxy_url.is_none() && response.is_gateway_rejection() {
+                log::warn!(
+                    "[{tag}] reqwest 客户端被网关拒绝（{}），同一份字节改走标准客户端重发",
+                    response.status()
+                );
+                if let Ok(uri) = url.parse::<http::Uri>() {
+                    if let Ok(retried) = super::hyper_client::send_via_hyper_util(
+                        &uri,
+                        method,
+                        &ordered_headers,
+                        extensions,
+                        &body_bytes,
+                        timeout,
+                    )
+                    .await
+                    {
+                        response = retried;
+                    }
+                }
+            }
+            response
         } else {
             // HTTP 代理或直连：走 hyper raw write（保持 header 大小写）
             // 如果有 HTTP 代理，hyper_client 会用 CONNECT 隧道穿过代理
@@ -7932,6 +7956,41 @@ mod tests {
             test_forwarder(Duration::from_secs(5), Duration::from_secs(5)).stack_request(stack)
         }
 
+        /// 第一个请求回网关的 HTML 400（Azure 应用网关签名），之后回 200 JSON。
+        /// 用于验证 reqwest 路径被网关整条拒掉时会改走标准客户端重发。
+        async fn gateway_then_ok_upstream() -> Upstream {
+            let seen = Arc::new(Mutex::new(Vec::new()));
+            let app = {
+                let seen = seen.clone();
+                axum::Router::new().fallback(move |headers: HeaderMap, body: Bytes| {
+                    let seen = seen.clone();
+                    async move {
+                        seen.lock().await.push(Seen {
+                            headers,
+                            body: serde_json::from_slice(&body).unwrap_or(Value::Null),
+                        });
+                        let attempt = seen.lock().await.len();
+                        if attempt == 1 {
+                            return (
+                                StatusCode::BAD_REQUEST,
+                                [(http::header::CONTENT_TYPE, "text/html")],
+                                "<html><head><title>400 Bad Request</title></head><body><center>Microsoft-Azure-Application-Gateway/v2.0</center></body></html>".to_string(),
+                            );
+                        }
+                        (
+                            StatusCode::OK,
+                            [(http::header::CONTENT_TYPE, "application/json")],
+                            json!({ "id": "r1", "object": "response", "output": [] }).to_string(),
+                        )
+                    }
+                })
+            };
+            Upstream {
+                base_url: serve_upstream(app).await,
+                seen,
+            }
+        }
+
         /// 官方做路由时 Codex 每个请求都带的 ChatGPT 身份。
         fn chatgpt_headers() -> HeaderMap {
             let mut headers = HeaderMap::new();
@@ -7953,6 +8012,39 @@ mod tests {
                 );
             }
             headers
+        }
+
+        /// reqwest 路径（OpenAI 系格式）被网关整条拒掉时，同一份字节改走标准
+        /// 客户端重发：客户端最终拿到第二次的 200，首条 HTML 400 不露面。
+        #[tokio::test]
+        async fn reqwest_path_retries_with_standard_client_on_gateway_rejection() {
+            let upstream = gateway_then_ok_upstream().await;
+            let relay = provider(&upstream, "openai_chat");
+            let request = json!({
+                "model": "row-model",
+                "input": [{ "role": "user", "content": [{ "type": "input_text", "text": "hi" }] }],
+                "stream": true,
+                "reasoning": { "effort": "high" },
+            });
+
+            let forwarder = forwarder(false);
+            forwarder
+                .forward_with_retry(
+                    &AppType::Codex,
+                    http::Method::POST,
+                    "/responses",
+                    &request,
+                    chatgpt_headers(),
+                    Extensions::new(),
+                    std::slice::from_ref(&relay),
+                )
+                .await
+                .map_err(|error| error.error)
+                .expect("gateway rejection should be retried into a success");
+
+            let seen = upstream.seen.lock().await;
+            assert_eq!(seen.len(), 2, "网关拒绝后应重发一次");
+            assert_eq!(seen[1].body["model"], "row-model");
         }
 
         fn body(model: &str, tools: Value) -> Value {
