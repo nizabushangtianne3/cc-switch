@@ -9209,6 +9209,51 @@ mod tests {
             );
         }
 
+        /// 流内 error 事件但不点名参数（限流、上下文超长之类）：原样 surfaced，
+        /// 不重发——整流只对「被点名的参数」有效，别的错误重发一次只会再撞一次。
+        #[tokio::test]
+        async fn in_stream_error_without_param_name_surfaces_without_retry() {
+            let upstream = raw_upstream(vec![(
+                200,
+                "text/event-stream",
+                "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"prompt is too long: 300000 tokens > 200000 maximum\"}}\n\n".to_string(),
+            )])
+            .await;
+            let relay = provider(&upstream, "anthropic");
+            let request = json!({
+                "model": "row-model",
+                "instructions": "You are Codex, based on GPT-5.",
+                "input": [{ "role": "user", "content": [{ "type": "input_text", "text": "hi" }] }],
+                "tools": [],
+                "reasoning": { "effort": "high" },
+                "stream": true,
+            });
+
+            let forwarder = forwarder(false);
+            let error = match forwarder
+                .forward_with_retry(
+                    &AppType::Codex,
+                    http::Method::POST,
+                    "/responses",
+                    &request,
+                    chatgpt_headers(),
+                    Extensions::new(),
+                    std::slice::from_ref(&relay),
+                )
+                .await
+            {
+                Ok(_) => panic!("non-param error should surface"),
+                Err(error) => error,
+            };
+
+            let message = error.error.to_string();
+            assert!(
+                message.contains("prompt is too long"),
+                "客户端应拿到上游的原始错误，实际: {message}"
+            );
+            assert_eq!(upstream.seen.lock().await.len(), 1, "非参数错误不得重发");
+        }
+
         async fn forward_sub_agent(
             upstream: &Upstream,
             request: Value,
