@@ -399,6 +399,16 @@ impl ProxyResponse {
             .unwrap_or(false)
     }
 
+    /// 网关级拒绝：4xx/5xx 且响应不是 JSON（HTML / 纯文本错误页）。
+    ///
+    /// 手工保持 header 大小写的 raw 路径会被个别网关按客户端形态整条拒掉
+    /// （Azure 应用网关对该客户端返回 HTML 400，而同一份字节经标准客户端
+    /// 能通过）。这类响应对调用方没有任何有用信息，值得用标准客户端重发
+    /// 一次再放弃。真正的 API 错误（不支持的参数等）都是 JSON，不会误触发。
+    pub fn is_gateway_rejection(&self) -> bool {
+        matches!(self.status().as_u16(), 400 | 403 | 404 | 502 | 503) && !self.is_json()
+    }
+
     /// Consume the response and return a byte-chunk stream (for SSE pass-through).
     pub fn bytes_stream(self) -> ProxyByteStream {
         self.into_parts().body
@@ -458,7 +468,29 @@ pub async fn send_request(
         .map_err(|_| ProxyError::Timeout(format!("请求超时: {}s", timeout.as_secs())))?;
 
         match result {
-            Ok(resp) => return Ok(resp),
+            Ok(resp) => {
+                // 网关把 raw 路径的客户端形态整条拒掉时（HTML 400 之类），同一份
+                // 字节改走标准客户端再发一次——标准客户端能通过这些网关。
+                if proxy_url.is_none() && resp.is_gateway_rejection() {
+                    log::warn!(
+                        "[HyperClient] Raw write hit a gateway rejection ({}), retrying with the standard client",
+                        resp.status()
+                    );
+                    if let Ok(retried) = send_via_hyper_util(
+                        &uri,
+                        method,
+                        &headers,
+                        original_extensions,
+                        &body,
+                        timeout,
+                    )
+                    .await
+                    {
+                        return Ok(retried);
+                    }
+                }
+                return Ok(resp);
+            }
             Err(e) => {
                 if proxy_url.is_some() {
                     // Don't bypass configured proxy with direct connect fallback
@@ -470,14 +502,25 @@ pub async fn send_request(
         }
     }
 
-    // Fallback: hyper-util Client (title-case headers, no proxy support)
+    send_via_hyper_util(&uri, method, &headers, original_extensions, &body, timeout).await
+}
+
+/// hyper-util 标准客户端发送：title-case header，原始大小写扩展对它无效。
+async fn send_via_hyper_util(
+    uri: &http::Uri,
+    method: &http::Method,
+    headers: &http::HeaderMap,
+    original_extensions: &http::Extensions,
+    body: &Bytes,
+    timeout: std::time::Duration,
+) -> Result<ProxyResponse, ProxyError> {
     let mut req = http::Request::builder()
         .method(method.clone())
-        .uri(&uri)
-        .body(http_body_util::Full::new(body))
+        .uri(uri)
+        .body(http_body_util::Full::new(body.clone()))
         .map_err(|e| ProxyError::ForwardFailed(format!("Failed to build request: {e}")))?;
 
-    *req.headers_mut() = headers;
+    *req.headers_mut() = headers.clone();
     *req.extensions_mut() = original_extensions.clone();
 
     let client = global_hyper_client();
@@ -1417,6 +1460,167 @@ mod tests {
         let mut extensions = http::Extensions::new();
         extensions.insert(Arc::new(OriginalHeaderCases::from_raw_bytes(raw)));
         (headers, extensions)
+    }
+
+    /// 按请求序号脚本化响应的假上游：第 n 个请求拿到 `script[n]`，超出后沿用
+    /// 最后一条。返回 URI 和「已收到请求数」计数器。
+    async fn scripted_upstream(
+        script: Vec<(http::StatusCode, &'static str, &'static str)>,
+    ) -> (http::Uri, Arc<std::sync::atomic::AtomicUsize>) {
+        use std::sync::atomic::AtomicUsize;
+        use std::sync::atomic::Ordering;
+
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind loopback");
+        let addr = listener.local_addr().expect("local addr");
+        let seen = Arc::new(AtomicUsize::new(0));
+        let server_seen = seen.clone();
+        tokio::spawn(async move {
+            loop {
+                let Ok((socket, _)) = listener.accept().await else {
+                    break;
+                };
+                let seen = server_seen.clone();
+                let script = script.clone();
+                tokio::spawn(async move {
+                    let service = hyper::service::service_fn(move |_req| {
+                        let index = seen.fetch_add(1, Ordering::SeqCst);
+                        let (status, content_type, body) = script
+                            .get(index)
+                            .copied()
+                            .unwrap_or_else(|| *script.last().expect("script"));
+                        let mut resp = hyper::Response::new(http_body_util::Full::new(
+                            Bytes::from_static(body.as_bytes()),
+                        ));
+                        *resp.status_mut() = status;
+                        resp.headers_mut().insert(
+                            http::header::CONTENT_TYPE,
+                            http::HeaderValue::from_static(content_type),
+                        );
+                        async move { Ok::<_, std::convert::Infallible>(resp) }
+                    });
+                    let _ = hyper::server::conn::http1::Builder::new()
+                        .serve_connection(hyper_util::rt::TokioIo::new(socket), service)
+                        .await;
+                });
+            }
+        });
+        (
+            http::Uri::builder()
+                .scheme("http")
+                .authority(format!("127.0.0.1:{}", addr.port()))
+                .path_and_query("/")
+                .build()
+                .expect("upstream uri"),
+            seen,
+        )
+    }
+
+    #[test]
+    fn gateway_rejection_only_matches_non_json_error_statuses() {
+        let html_400 = ProxyResponse::buffered(
+            http::StatusCode::BAD_REQUEST,
+            http::HeaderMap::new(),
+            Bytes::new(),
+        );
+        assert!(
+            html_400.is_gateway_rejection(),
+            "无 content-type 的 400 视作网关拒绝"
+        );
+        let mut json_headers = http::HeaderMap::new();
+        json_headers.insert(
+            http::header::CONTENT_TYPE,
+            http::HeaderValue::from_static("application/json"),
+        );
+        let api_400 =
+            ProxyResponse::buffered(http::StatusCode::BAD_REQUEST, json_headers, Bytes::new());
+        assert!(
+            !api_400.is_gateway_rejection(),
+            "API 的 JSON 400 不是网关拒绝"
+        );
+        let ok = buffered_with_content_type(Some("application/json"));
+        assert!(!ok.is_gateway_rejection(), "200 永不触发");
+        let sse_200 = buffered_with_content_type(Some("text/event-stream"));
+        assert!(!sse_200.is_gateway_rejection(), "SSE 200 永不触发");
+        let html_200 =
+            ProxyResponse::buffered(http::StatusCode::OK, http::HeaderMap::new(), Bytes::new());
+        assert!(
+            !html_200.is_gateway_rejection(),
+            "200 的 HTML 也不是网关拒绝"
+        );
+    }
+
+    /// raw 路径拿到网关的 HTML 400 时，自动改走标准客户端重发；客户端最终
+    /// 拿到的是第二次的 200 JSON（AMD 的 Azure 网关就是这样：raw 形态被整条
+    /// 拒掉，标准客户端能通过）。
+    #[tokio::test]
+    async fn raw_path_retries_with_standard_client_on_gateway_rejection() {
+        use std::sync::atomic::Ordering;
+
+        super::upstream_pool::clear_for_test();
+        let (uri, seen) = scripted_upstream(vec![
+            (
+                http::StatusCode::BAD_REQUEST,
+                "text/html",
+                "<html><head><title>400 Bad Request</title></head></html>",
+            ),
+            (http::StatusCode::OK, "application/json", r#"{"ok":true}"#),
+        ])
+        .await;
+        let (headers, extensions) = post_extensions();
+
+        let resp = send_request(
+            uri,
+            "test",
+            &http::Method::POST,
+            headers,
+            &extensions,
+            Bytes::from_static(b"{}"),
+            std::time::Duration::from_secs(10),
+            None,
+        )
+        .await
+        .expect("retry should succeed");
+
+        assert_eq!(resp.status(), http::StatusCode::OK);
+        let body = proxy_body_bytes_with_limit(resp.into_parts().body, 1024)
+            .await
+            .expect("body");
+        assert_eq!(&body[..], br#"{"ok":true}"#);
+        assert_eq!(seen.load(Ordering::SeqCst), 2, "应重发一次");
+    }
+
+    /// 真正的 API 错误（JSON 400，如「不支持的参数」）不触发重发：整流层
+    /// 会自己解析它，多打一次只是浪费配额。
+    #[tokio::test]
+    async fn raw_path_does_not_retry_on_json_api_error() {
+        use std::sync::atomic::Ordering;
+
+        super::upstream_pool::clear_for_test();
+        let (uri, seen) = scripted_upstream(vec![(
+            http::StatusCode::BAD_REQUEST,
+            "application/json",
+            r#"{"error":{"param":"thinking","message":"unsupported"}}"#,
+        )])
+        .await;
+        let (headers, extensions) = post_extensions();
+
+        let resp = send_request(
+            uri,
+            "test",
+            &http::Method::POST,
+            headers,
+            &extensions,
+            Bytes::from_static(b"{}"),
+            std::time::Duration::from_secs(10),
+            None,
+        )
+        .await
+        .expect("first response surfaces");
+
+        assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
+        assert_eq!(seen.load(Ordering::SeqCst), 1, "JSON 400 不得重发");
     }
 
     #[tokio::test]
