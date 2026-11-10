@@ -524,11 +524,13 @@ impl RequestForwarder {
         request: &Value,
         error: &ProxyError,
     ) -> Option<(Value, String, Vec<String>)> {
-        if !matches!(error, ProxyError::UpstreamError { status: 400, .. }) {
-            return None;
-        }
+        // 两种拒绝形态：HTTP 400，以及 HTTP 200 但流里第一条事件就是 error
+        // （见 rectify_sse_error_event_start，Anthropic 系网关的典型形态）。
         let body = match error {
-            ProxyError::UpstreamError { body, .. } => body.as_deref()?,
+            ProxyError::UpstreamError {
+                status: 400 | 200,
+                body,
+            } => body.as_deref()?,
             _ => return None,
         };
         let paths = super::unsupported_param_rectifier::parse_unsupported_params(body);
@@ -536,40 +538,13 @@ impl RequestForwarder {
             return None;
         }
         let mut retry = request.clone();
-        if !super::unsupported_param_rectifier::strip_request_params(&mut retry, &paths) {
-            return None;
-        }
+        // 请求体里直接有的先剥（透传格式）；转换器注入的参数（`thinking` 来自
+        // `reasoning.effort` 等）请求体里没有，由 `forward` 在出站体上按同一组
+        // 路径剥（`rectified_params`）。这里不再以「剥掉了东西」为前提——
+        // 否则 anthropic / chat 转换路径永远等不到重试。
+        super::unsupported_param_rectifier::strip_request_params(&mut retry, &paths);
         let model = request.get("model").and_then(Value::as_str)?.to_string();
         Some((retry, model, paths))
-    }
-
-    /// 发送前按能力缓存剥掉这家这个模型不支持的参数；没有命中就原样返回。
-    async fn strip_cached_unsupported_params(
-        &self,
-        app_type_str: &str,
-        provider: &Provider,
-        body: Arc<Value>,
-    ) -> Arc<Value> {
-        let model = match body.get("model").and_then(Value::as_str) {
-            Some(model) => model,
-            None => return body,
-        };
-        let paths = self
-            .router
-            .unsupported_params_for(&provider.id, model)
-            .await;
-        if paths.is_empty() {
-            return body;
-        }
-        let mut stripped = (*body).clone();
-        if !super::unsupported_param_rectifier::strip_request_params(&mut stripped, &paths) {
-            return body;
-        }
-        log::info!(
-            "[{app_type_str}] [RECT-043] provider={} model={model} 按能力缓存剥掉不支持的参数 {paths:?}",
-            provider.id
-        );
-        Arc::new(stripped)
     }
 
     /// 一个供应商本次请求的 Key 尝试顺序。
@@ -1151,12 +1126,6 @@ impl RequestForwarder {
                 Arc::clone(&body)
             };
 
-            // 能力缓存预检：这家这个模型已知不支持的参数，发送前就剥掉——同一会话
-            // 后续请求和新会话都不再触发 400。
-            let provider_body = self
-                .strip_cached_unsupported_params(app_type_str, provider, provider_body)
-                .await;
-
             attempted_providers += 1;
 
             // 更新状态中的当前 Provider 信息（per-attempt 维度的标识）
@@ -1210,6 +1179,7 @@ impl RequestForwarder {
                         &extensions,
                         adapter.as_ref(),
                         api_key.as_deref(),
+                        &[],
                         &mut attempted_codex_upstream_format,
                     )
                     .await
@@ -1271,6 +1241,7 @@ impl RequestForwarder {
                                         &extensions,
                                         adapter.as_ref(),
                                         api_key.as_deref(),
+                                        &[],
                                         &mut media_retry_codex_upstream_format,
                                     )
                                     .await
@@ -1339,6 +1310,7 @@ impl RequestForwarder {
                                     &extensions,
                                     adapter.as_ref(),
                                     api_key.as_deref(),
+                                    &[],
                                     &mut retry_codex_upstream_format,
                                 )
                                 .await
@@ -1390,6 +1362,7 @@ impl RequestForwarder {
                                         &extensions,
                                         adapter.as_ref(),
                                         api_key.as_deref(),
+                                        &retry_paths,
                                         &mut retry_codex_upstream_format,
                                     )
                                     .await
@@ -1470,6 +1443,7 @@ impl RequestForwarder {
                                         &extensions,
                                         adapter.as_ref(),
                                         api_key.as_deref(),
+                                        &[],
                                         &mut opaque_retry_codex_upstream_format,
                                     )
                                     .await
@@ -1573,6 +1547,7 @@ impl RequestForwarder {
                                             &extensions,
                                             adapter.as_ref(),
                                             api_key.as_deref(),
+                                            &[],
                                             &mut signature_retry_codex_upstream_format,
                                         )
                                         .await
@@ -1662,6 +1637,7 @@ impl RequestForwarder {
                                         &extensions,
                                         adapter.as_ref(),
                                         api_key.as_deref(),
+                                        &[],
                                         &mut budget_retry_codex_upstream_format,
                                     )
                                     .await
@@ -1823,6 +1799,11 @@ impl RequestForwarder {
         extensions: &Extensions,
         adapter: &dyn ProviderAdapter,
         api_key_override: Option<&str>,
+        // 本次重试新学到的「这家这个模型不支持的参数」。作用于出站体：转换器
+        // 注入的参数（`thinking` 来自 `reasoning.effort`、`max_tokens` 是默认值）
+        // 在调用方的请求体里不存在，只有出站体上剥得掉。能力缓存的历史结论由
+        // 本函数自己查（RECT-043），和这个参数合并后一起剥。
+        rectified_params: &[String],
         codex_upstream_format_out: &mut Option<CodexUpstreamFormat>,
     ) -> Result<(ProxyResponse, Option<String>, Option<String>), ProxyError> {
         *codex_upstream_format_out = None;
@@ -2462,6 +2443,38 @@ impl RequestForwarder {
         } else {
             mapped_body
         };
+
+        // RECT-043 出站体版：能力缓存的参数必须在这层剥。转换器注入的参数
+        // （anthropic 的 `thinking` 来自 `reasoning.effort`、`max_tokens` 是默认
+        // 值、chat 的 `thinking` 同理）在调用方的请求体里根本不存在，在那边剥
+        // 是空转；只有出站体上剥得掉。`rectified_params` 是本次重试刚学到的，
+        // 和能力缓存的历史结论合并，一起剥。
+        {
+            let app_tag = app_type.as_str();
+            let cached = match body.get("model").and_then(Value::as_str) {
+                Some(model) => {
+                    self.router
+                        .unsupported_params_for(&provider.id, model)
+                        .await
+                }
+                None => Vec::new(),
+            };
+            let mut paths = cached;
+            paths.extend_from_slice(rectified_params);
+            paths.sort();
+            paths.dedup();
+            if !paths.is_empty()
+                && super::unsupported_param_rectifier::strip_request_params(
+                    request_body.to_mut(),
+                    &paths,
+                )
+            {
+                log::info!(
+                    "[{app_tag}] [RECT-043] provider={} 出站体剥掉不支持的参数 {paths:?}",
+                    provider.id
+                );
+            }
+        }
 
         // Codex 远程压缩，以及同一线程里别家回合留下的状态（见 `codex_compaction`）。
         // Chat / Anthropic 转换在转换器里处理；这里管原样转发的两种上游：官方清掉
@@ -3462,6 +3475,11 @@ impl RequestForwarder {
                 response = self
                     .hold_encrypted_agent_task_stream(response, request)
                     .await?;
+            } else if codex_responses_to_anthropic && response.is_sse() {
+                // 流式 Anthropic 兜底：上游可能 200 但第一条事件就是点名参数的
+                // error 事件（400 整流器抓不到这种形态）。窥探流开头，是就剥参
+                // 重试，否则原样交还。放在链尾：不抢占上面各分支的既有行为。
+                response = self.rectify_sse_error_event_start(response).await?;
             }
             Ok((response, resolved_claude_api_format, outbound_model))
         } else {
@@ -3650,6 +3668,73 @@ impl RequestForwarder {
                 log::warn!(
                     "[Claude/Responses] semantic stream priming exceeded {MAX_PRIME_BYTES} bytes; committing buffered stream"
                 );
+                let replay = futures::stream::iter(replay_chunks.into_iter().map(Ok)).chain(stream);
+                return Ok(ProxyResponse::streamed(status, headers, replay));
+            }
+        }
+    }
+
+    /// 上游返回 200，但流的第一条事件就是 error 事件的形态（Anthropic 系网关
+    /// 拒绝转换注入的参数时就这样回：先发一条 `event: error` 再断流，客户端
+    /// 见到流内报错就中止会话，后续同会话请求全废）。HTTP 400 整流器抓不到
+    /// 这种形态，这里在把流交给客户端之前先窥探第一条事件：
+    ///
+    /// 是 error 事件时变成 `UpstreamError { status: 200 }` 回到重试循环，由
+    /// RECT-040 剥参重试（整流器认 200 形态）；解析不出参数时错误原样
+    /// surfaced，客户端至少拿到完整错误而不是流内中断。不是 error 事件时，读过
+    /// 的字节原样接回去，客户端看到的流和没经过这里一样。Anthropic / OpenAI
+    /// 的 error 事件都出现在任何输出之前，所以只看第一条完整块就能定论。
+    async fn rectify_sse_error_event_start(
+        &self,
+        response: ProxyResponse,
+    ) -> Result<ProxyResponse, ProxyError> {
+        const MAX_PRIME_BYTES: usize = 64 * 1024;
+
+        let parts = response.into_parts();
+        let status = parts.status;
+        let headers = parts.headers;
+        let mut stream = parts.body;
+        let mut replay_chunks: Vec<Bytes> = Vec::new();
+        let mut parse_buffer = String::new();
+        let mut utf8_tail = Utf8TailDecoder::default();
+
+        loop {
+            let next = if self.streaming_first_byte_timeout.is_zero() {
+                stream.next().await
+            } else {
+                tokio::time::timeout(self.streaming_first_byte_timeout, stream.next())
+                    .await
+                    .map_err(|_| {
+                        ProxyError::Timeout(format!(
+                            "SSE 流在 {}s 内没有产出第一个事件",
+                            self.streaming_first_byte_timeout.as_secs()
+                        ))
+                    })?
+            };
+
+            let Some(chunk) = next else {
+                // 流在任何完整事件前就结束了：交出手上的字节，让下游自己收尾。
+                let replay = futures::stream::iter(replay_chunks.into_iter().map(Ok));
+                return Ok(ProxyResponse::streamed(status, headers, replay));
+            };
+            let chunk = chunk.map_err(|error| {
+                ProxyError::ForwardFailed(format!("窥探 SSE 流开头时读失败: {error}"))
+            })?;
+            utf8_tail.append(&mut parse_buffer, &chunk);
+            replay_chunks.push(chunk);
+
+            if let Some((end, _delim)) = crate::proxy::sse::next_sse_block_range(&parse_buffer) {
+                let block = &parse_buffer[..end];
+                if let Some(outcome) = inspect_sse_error_event(block) {
+                    // error 事件：回到重试循环整流；不是 error：原样交还。
+                    outcome?;
+                }
+                let replay = futures::stream::iter(replay_chunks.into_iter().map(Ok)).chain(stream);
+                return Ok(ProxyResponse::streamed(status, headers, replay));
+            }
+
+            if replay_chunks.iter().map(Bytes::len).sum::<usize>() >= MAX_PRIME_BYTES {
+                log::warn!("[SSE] 流开头窥探超过 {MAX_PRIME_BYTES} 字节仍无完整事件，按原样交还");
                 let replay = futures::stream::iter(replay_chunks.into_iter().map(Ok)).chain(stream);
                 return Ok(ProxyResponse::streamed(status, headers, replay));
             }
@@ -5068,6 +5153,33 @@ fn merge_json_override_inner(target: &mut Value, patch: &Value, is_top_level: bo
             }
         }
     }
+}
+
+/// Inspect one complete SSE block for a semantic error event.
+///
+/// `None` means the block carries no error and priming can commit the stream.
+/// `Some(Err(_))` wraps the upstream's error body as `UpstreamError { status: 200 }`
+/// — the in-stream form of a rejection (Anthropic gateways answer a converted
+/// parameter they don't support with `event: error` inside a 200) — so the
+/// unsupported-parameter rectifier, which accepts that form, can strip and retry;
+/// errors that name no parameter surface intact instead of aborting mid-stream.
+fn inspect_sse_error_event(block: &str) -> Option<Result<(), ProxyError>> {
+    let (event, data) = crate::proxy::sse::scan_sse_block_ref(block);
+    let data = data?;
+    let is_error = event.is_some_and(|name| name == "error")
+        || serde_json::from_str::<Value>(&data)
+            .ok()
+            .is_some_and(|value| {
+                value.get("type").and_then(Value::as_str) == Some("error")
+                    || value.get("error").is_some_and(|error| !error.is_null())
+            });
+    if !is_error {
+        return None;
+    }
+    Some(Err(ProxyError::UpstreamError {
+        status: 200,
+        body: Some(data.into_owned()),
+    }))
 }
 
 fn apply_local_proxy_header_overrides(
@@ -7146,6 +7258,7 @@ mod tests {
                     &Extensions::new(),
                     adapter.as_ref(),
                     None,
+                    &[],
                     &mut codex_upstream_format,
                 )
                 .await
@@ -8933,6 +9046,26 @@ mod tests {
             ])
         }
 
+        /// Anthropic 形态的 SSE：第一条事件就是点名参数的 error 事件（HTTP 200）。
+        fn anthropic_sse_error_event(param: &str) -> (u16, &'static str, String) {
+            (
+                200,
+                "text/event-stream",
+                format!(
+                    "event: error\ndata: {{\"type\":\"error\",\"error\":{{\"type\":\"invalid_request_error\",\"message\":\"\\\"{param}\\\" is not supported for this model. Remove the \\\"{param}\\\" parameter or use a model that supports extended thinking.\",\"param\":\"{param}\",\"code\":\"unsupported_parameter\"}}}}\n\n"
+                ),
+            )
+        }
+
+        /// Anthropic 形态的正常 SSE 流（转换回 Responses 后客户端能拿到文本）。
+        fn anthropic_sse_completed() -> (u16, &'static str, String) {
+            (
+                200,
+                "text/event-stream",
+                "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"row-model\",\"content\":[],\"stop_reason\":null,\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"ok\"}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n".to_string(),
+            )
+        }
+
         /// 子 agent 的第一个请求：末尾是主 agent 那家签发的任务密文。`history` 放在它前面。
         fn sub_agent_request(history: Vec<Value>) -> Value {
             let mut input = history;
@@ -8946,6 +9079,134 @@ mod tests {
                 ]
             }));
             json!({ "model": "listed", "input": input, "stream": true })
+        }
+
+        /// 流里第一条事件就是点名参数的 error 事件（Anthropic 网关拒绝转换注入的
+        /// thinking，HTTP 200）：窥探流开头后剥参重试，客户端最终拿到正常流。
+        #[tokio::test]
+        async fn in_stream_error_event_naming_param_triggers_strip_and_retry() {
+            let upstream = raw_upstream(vec![
+                anthropic_sse_error_event("thinking"),
+                anthropic_sse_completed(),
+            ])
+            .await;
+            let relay = provider(&upstream, "anthropic");
+            let request = json!({
+                "model": "row-model",
+                "instructions": "You are Codex, based on GPT-5.",
+                "input": [{ "role": "user", "content": [{ "type": "input_text", "text": "hi" }] }],
+                "tools": [],
+                "reasoning": { "effort": "high" },
+                "stream": true,
+            });
+
+            let forwarder = forwarder(false);
+            let result = forwarder
+                .forward_with_retry(
+                    &AppType::Codex,
+                    http::Method::POST,
+                    "/responses",
+                    &request,
+                    chatgpt_headers(),
+                    Extensions::new(),
+                    std::slice::from_ref(&relay),
+                )
+                .await
+                .map_err(|error| error.error)
+                .expect("in-stream param rejection should be rectified into success");
+
+            let text = body_text(result).await;
+            assert!(
+                text.contains("ok"),
+                "客户端应拿到第二次的正常流，实际: {text}"
+            );
+            let seen = upstream.seen.lock().await;
+            assert_eq!(seen.len(), 2, "应剥参重试一次");
+            assert!(
+                seen[1].body.get("thinking").is_none(),
+                "重试应剥掉被点名的参数，实际: {}",
+                seen[1].body
+            );
+        }
+
+        /// 正常流第一条事件不是 error：窥探后原样交还，客户端拿到的流和没经过
+        /// 整流一样，且不产生第二次请求。
+        #[tokio::test]
+        async fn normal_sse_stream_passes_through_after_priming() {
+            let upstream = raw_upstream(vec![anthropic_sse_completed()]).await;
+            let relay = provider(&upstream, "anthropic");
+            let request = json!({
+                "model": "row-model",
+                "instructions": "You are Codex, based on GPT-5.",
+                "input": [{ "role": "user", "content": [{ "type": "input_text", "text": "hi" }] }],
+                "tools": [],
+                "reasoning": { "effort": "high" },
+                "stream": true,
+            });
+
+            let forwarder = forwarder(false);
+            let result = forwarder
+                .forward_with_retry(
+                    &AppType::Codex,
+                    http::Method::POST,
+                    "/responses",
+                    &request,
+                    chatgpt_headers(),
+                    Extensions::new(),
+                    std::slice::from_ref(&relay),
+                )
+                .await
+                .map_err(|error| error.error)
+                .expect("normal stream should pass through");
+
+            let text = body_text(result).await;
+            assert!(text.contains("ok"), "客户端应拿到完整流，实际: {text}");
+            assert_eq!(upstream.seen.lock().await.len(), 1, "正常流不得重发");
+        }
+
+        /// 能力缓存命中转换器注入的参数（`thinking`：请求体里没有、出站体里才有）
+        /// 时，发送前直接在出站体剥掉——一次到位，不先被 400/流内错误拒一次。
+        #[tokio::test]
+        async fn cached_unsupported_param_strips_from_outbound_body() {
+            let upstream =
+                raw_upstream(vec![anthropic_sse_completed(), anthropic_sse_completed()]).await;
+            let relay = provider(&upstream, "anthropic");
+            let forwarder = forwarder(false);
+            // 预填能力缓存：这家这个模型不支持 thinking（整流学到的结论）
+            forwarder
+                .router
+                .remember_unsupported_params(&relay.id, "row-model", &["thinking".to_string()])
+                .await;
+            let request = json!({
+                "model": "row-model",
+                "instructions": "You are Codex, based on GPT-5.",
+                "input": [{ "role": "user", "content": [{ "type": "input_text", "text": "hi" }] }],
+                "tools": [],
+                "reasoning": { "effort": "high" },
+                "stream": true,
+            });
+
+            forwarder
+                .forward_with_retry(
+                    &AppType::Codex,
+                    http::Method::POST,
+                    "/responses",
+                    &request,
+                    chatgpt_headers(),
+                    Extensions::new(),
+                    std::slice::from_ref(&relay),
+                )
+                .await
+                .map_err(|error| error.error)
+                .expect("cached param should be stripped before sending");
+
+            let seen = upstream.seen.lock().await;
+            assert_eq!(seen.len(), 1, "缓存命中后应一次到位，不触发上游拒绝");
+            assert!(
+                seen[0].body.get("thinking").is_none(),
+                "出站体应已剥掉 thinking，实际: {}",
+                seen[0].body
+            );
         }
 
         async fn forward_sub_agent(
