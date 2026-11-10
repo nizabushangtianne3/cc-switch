@@ -138,6 +138,28 @@
 
 ### P2 结构项（影响面大，需单独排期）
 
+#### 试过并撤销：给规范化输出缓冲按原始长度预分配
+
+- 想法：`canonicalize_json_string_if_parseable` 的 `canonical_json_string` 用
+  `String::new()` 起步，倍增到几十 KB 要十几次 realloc、每次把已写内容整段拷一遍。
+  而调用方手里就有原始文本——它的长度正是规范化输出的上界（键排序只改顺序、
+  不改字节数），按它 `with_capacity` 就能省掉这段拷贝。
+- 实测（debug、同进程同体、2000 轮、两条路径输出逐字节一致）：
+  text=27 648 B → out=27 648 B，零容量 2502.06 µs、预分配 2449.56 µs，**-2.1%**。
+- 结论：**撤销**。这段的成本几乎全在逐字符串转义与键排序上，倍增拷贝只占 0.2% 量级，
+  为它加一个「带容量的第二入口」不划算。账本留数，下轮别再试。
+
+#### 评估后不改：`providerConfigUtils.ts` 按「通用 / Codex TOML」拆开
+
+- 动机：它在入口静态图里（`ProviderList` 引 `extractProviderBaseUrl`、`ProviderCard`
+  引一组函数），而 1785 行里有约 1500 行是表单专用的 Codex TOML 读写。
+- 卡点：**交叉依赖**。要留下来的 `extractProviderBaseUrl` 有一个分支要调
+  `extractCodexBaseUrl`（Codex 组的导出），要么把它也搬去 Codex 组（那
+  `ProviderList` 仍拖着整份 Codex 文件，收益归零），要么让通用模块反向依赖
+  Codex 组（循环依赖）。
+- 结论：不改。真正要做就得先解掉这个交叉（例如 `extractProviderBaseUrl` 的 TOML
+  分支改成调用方注入），那是另一个任务。
+
 #### 试过并回滚：用 manualChunks 把预设目录单独切块
 
 - 想法：预设目录是纯数据，`manualChunks` 把它切成独立块，授权中心这类只用界面逻辑的
