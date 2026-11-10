@@ -283,6 +283,29 @@
 
 ### 测量口径订正
 
+### 试过并拆除：给 `forward()` 分段插桩找热点
+
+- 想法：`full forward, pure passthrough` 约 0.9 ms，而 `body_stage_costs` 的各段
+  （深拷贝 0.091 / 私有扫描 0.001 / 序列化 0.385 / 解析 0.145 ms）加起来对不上，
+  想知道剩下的大半花在哪。于是在 `forward()` 里按「决策与 Cow 变换 / 构造有序头 /
+  序列化与 send / 响应整流」插了累计计时器。
+- 拿到两个可靠结论（其余数字被下面两个坑污染，不采信）：
+  - **构造有序头的循环不是热点**。把它按同样的比较顺序与 append 复刻成独立微基准
+    （`header_loop_micro`）：402 轮共 264 µs、**每轮 0.657 µs**。插桩一度显示它
+    占 79%，是计时错位造成的假象。
+  - **路由决策 + Cow + Copilot 优化器 + transform 决策整段只占 1.3%**（256 µs/次）。
+- 处置：**插桩全部拆除**，`forwarder.rs` 回到已提交状态（`cargo test --lib`
+  5007 passed 复核过）。没有产出可落地的改动，但下一轮不用再怀疑这两个地方。
+- 两个把这次测量毁掉的坑，记账防复发：
+  1. **`Instant` 在 async fn 里被同名 shadow 会让分段计时张冠李戴**：`let __t =
+     Instant::now()` 在循环前定义一次、循环后又 `let __t = Instant::now()`，
+     后面结算时用的是后者，第一段就被算成了整个循环 + 之后的一切。
+  2. **PowerShell 的 `Set-Content -Value <string[]>` 会把整个数组 join 成一行**，
+     文件直接报废。往 Rust 源码里插多行只能用 `apply_patch`，或
+     `Set-Content -Value ($arr -join "`r`n")`。
+- 另外确认：dev profile 即使 `opt-level = 2` 与 release 仍差一个量级，
+  「跨轮单测只当量级、同体对照才可信」这条对 debug 同样成立。
+
 - 上一版账本用 `1 230.7 kB` 当自动分块的基线，那是**被污染的数字**：
   Vite 的 `build.emptyOutDir` 不清 root 之外的 outDir（这里 root=`src`、outDir=`../dist`），
   上次实验的 chunk 文件会残留，前后比的是两份不同源码状态。清空 dist 重建后，
