@@ -138,6 +138,27 @@
 
 ### P2 结构项（影响面大，需单独排期）
 
+#### 试过并回滚：用 manualChunks 把预设目录单独切块
+
+- 想法：预设目录是纯数据，`manualChunks` 把它切成独立块，授权中心这类只用界面逻辑的
+  懒加载块就不会被它拖着。
+- 实测（`pnpm build:renderer`）：
+
+  | 指标 | 切之前 | 切之后 |
+  | --- | --- | --- |
+  | `main-*.js`（入口） | 643.22 kB | 599.84 kB |
+  | `AuthSettingsPanel-*.js` | 912.47 kB | 313.83 kB |
+  | 全量 JS 产物 | 6 761.8 kB | 6 763.4 kB |
+- 入口确实小了 43.38 kB、总量没涨，但**每一个懒加载块都变成了「静态 import
+  provider-presets」**：rollup 把 `cn` 这类被预设和界面共用的助手塞进了手动块，
+  于是 963 字节的 `alert-*.js` 也要 `import{r,j as s}from"./provider-presets-*.js"`
+  （780 kB）。打开任何懒加载界面都会为一份未必显示的目录付解析成本——
+  「授权中心不下载预设」这个初衷恰好被反过来了。
+- 处置：**回滚**，配置回到原始的自动分块。结论：这块的分块边界得由「界面自己按需
+  拉预设」来解决（表单里改成动态 import），不是 manualChunks 能一步到位的。
+- 顺带记下一个诊断事实：`alert-*.js` 这种小块的 import 语句是判断「某个大块被谁
+  拖着」的最快线索，`__vite__mapDeps` 里的名字只是懒加载依赖表、不代表启动会拉。
+
 - `src-tauri/src/proxy/forwarder.rs` 10 134 行，`forward()` 单函数约 1 700 行；
   `handlers.rs` 4 988 行。编译单元和 I-cache 压力大，LLVM 的跨函数优化空间受限。
 - 配置模块族：claude / codex / dsh / hermes / kimi / mcode / omp / openclaw / opencode /
