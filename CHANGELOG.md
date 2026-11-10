@@ -5,6 +5,12 @@ All notable changes to CC Switch will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.30] - 2026-11-10
+
+This release fixes sessions being cut short when an upstream gateway rejects requests based on the client's TLS/HTTP fingerprint. Some gateways (for example the Azure Application Gateway in front of AMD's developer site) answer with an HTML 400 that carries no useful information, while the exact same bytes go through a standard client, so the proxy used to hand the 400 to the client, which aborted the session. Both outbound paths now fall back to the standard client when they get a gateway-class rejection (4xx/5xx with a non-JSON body; real API errors are JSON and never trigger it), re-sending the same bytes once so the client sees a working response.
+
+**Stats**: 2 commits | 2 files changed | +301 insertions | -8 deletions
+
 ## [4.0.29] - 2026-11-10
 
 This release merges upstream GitHub Copilot CLI support and fixes the problem where a third-party model rejecting unsupported request parameters ruined the whole conversation: the proxy now strips the rejected parameters and retries once, and remembers per-model parameter capabilities (persisted across restarts), so later requests are stripped before being sent and the client never sees the 400. It also removes the outer RwLock around the Copilot/xAI auth managers, lazy-loads the settings sections, and memoizes provider form blocks, model list rows and MCP server rows.
