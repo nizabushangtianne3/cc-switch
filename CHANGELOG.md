@@ -5,6 +5,12 @@ All notable changes to CC Switch will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.31] - 2026-11-10
+
+This release covers the last remaining form of an upstream rejecting an unsupported parameter: Anthropic-style gateways answer with HTTP 200 plus a first `event: error` in the stream, which the 400 rectifier could not see, so streaming responses are now primed before reaching the client and error events return to the retry loop for strip-and-retry. It also moves parameter stripping to the outbound body after conversion, because injected parameters (`thinking` from `reasoning.effort`, default `max_tokens`) never existed in the request body the client sent, which made both the rectifier and the capability cache no-ops on converted paths.
+
+**Stats**: 1 commit | 2 files changed | +345 insertions | -47 deletions
+
 ## [4.0.30] - 2026-11-10
 
 This release fixes sessions being cut short when an upstream gateway rejects requests based on the client's TLS/HTTP fingerprint. Some gateways (for example the Azure Application Gateway in front of AMD's developer site) answer with an HTML 400 that carries no useful information, while the exact same bytes go through a standard client, so the proxy used to hand the 400 to the client, which aborted the session. Both outbound paths now fall back to the standard client when they get a gateway-class rejection (4xx/5xx with a non-JSON body; real API errors are JSON and never trigger it), re-sending the same bytes once so the client sees a working response.
