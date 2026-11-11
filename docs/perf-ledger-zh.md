@@ -1052,6 +1052,33 @@ parseDiff 22 / routingValidation 23 / sessionRowHeight 8）。剩余未覆盖文
   （不给 `get_home_dir()` 加缓存）不受影响，仍然成立。
 - 状态：**审计完成；27 文件迁移计划已否定；3 文件锁域统一已落地（`8d8eaf17`），`agy_smoke_tests.rs` 因 `#[ignore]` + async 上下文按设计排除**
 
+### 第十二轮：`services/provider/mod.rs` 测试外迁——8516 行减到 3046 行
+
+- 起因：全量扫描时发现 `services/provider/mod.rs` 8 516 行，一度误判成「8 490 行都是
+  测试、生产代码只有 25 行」。用括号深度精确扫描后订正：真实结构是 25 行杂项服务 +
+  **2 803 行 `impl ProviderService`**（5411-8214，生产）+ 211 行 Universal 服务
+  （8304-8515，生产）+ **5 227 行 `#[cfg(test)] mod tests`**（182-5409）。
+  生产代码没被误包进测试模块，release `cargo check --lib --release` 实测通过；
+  误判来源是 `rg` 看到缩进 4 空格的 `impl ProviderService` 就当成顶层。
+- 做法（与第三轮 `forwarder.rs` 完全一致）：把 182-5409 的 `mod tests` 整块搬去
+  `src-tauri/src/services/provider/tests.rs`，`mod.rs` 里用 `#[path = "tests.rs"]` +
+  `#[cfg(test)]` 挂载，测试文件以 `use super::*;` 承接原上下文。`mod.rs`
+  **8 516 → 3 046 行**，新增 `tests.rs` 4 853 行（格式化后）。
+- 踩坑一：`mode/current.rs` 的静态扫描测试按路径+行号断言「读当前供应商必须走
+  `provider_for`」，原白名单是 `settings.rs` / `database/dao/providers.rs` /
+  `mode/current.rs` 三个生产文件，测试搬家后 `services/provider/tests.rs` 被当成
+  生产代码扫到。修法是**让扫描器认识独立测试文件**：`*_tests.rs` 或文件 stem 为
+  `tests` 的一律跳过（测试里的造数据本来就直接读写），而不是往白名单里加一条。
+- 踩坑二：本机 C 盘 `target/debug` 已 43 GB，测试链接两次触发 `rustc-LLVM ERROR:
+  IO failure`；改 `CARGO_TARGET_DIR=D:\Codex\tools\cargo-targets\cc-switch`
+  （版本化长期复用）后恢复。期间还出现过 `页面文件太小 (os error 1455)` 与
+  `STATUS_STACK_BUFFER_OVERRUN`，是 Windows 页面文件配额的并发问题，`-j 2`
+  限制 rustc 并行度后稳定。
+- 验证：`cargo test --lib` 5 009 passed / 0 failed / 20 ignored；
+  `cargo test --tests -j 2` 汇总 **5 227 passed / 0 failed**（5009 lib + 218 集成，
+  与拆分前完全一致）；`cargo clippy --lib --all-targets` 0 warning；
+  `cargo fmt -- --check` 干净。
+
 ### 验证矩阵（本账本全部改动的收口）
 
 后续每个提交都在本地跑过下面这些，不依赖 CI：

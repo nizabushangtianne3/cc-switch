@@ -224,12 +224,15 @@ mod tests {
                 .unwrap()
                 .to_string_lossy()
                 .replace('\\', "/");
-            if ALLOWED.contains(&relative.as_str()) {
+            let text = fs::read_to_string(&path).unwrap();
+            let is_test_file = relative.ends_with("_tests.rs")
+                || path.file_stem().and_then(|s| s.to_str()) == Some("tests");
+            if ALLOWED.contains(&relative.as_str()) || is_test_file {
                 continue;
             }
-            let text = fs::read_to_string(&path).unwrap();
-            // 测试模块里造数据可以直接读写，只查生产代码：跳过顶层的
-            // `#[cfg(test)] mod xxx { … }`（到下一个顶格的 `}` 为止）。
+            // 测试模块里造数据可以直接读写，只查生产代码。两种形态都跳过：
+            // 顶格的 `#[cfg(test)] mod xxx { … }`（到下一个顶格的 `}` 为止），
+            // 以及整份都是测试的独立文件（`#[path]` 挂载的 `*_tests.rs`）。
             let mut in_tests = false;
             let mut previous = "";
             for (index, line) in text.lines().enumerate() {
