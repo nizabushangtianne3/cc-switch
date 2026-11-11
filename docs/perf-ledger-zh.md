@@ -988,7 +988,7 @@ parseDiff 22 / routingValidation 23 / sessionRowHeight 8）。剩余未覆盖文
   | ├ 其中是 `hermes_write_lock` / `opencode_config_lock` 这类 | — | **生产环境的配置文件写锁**，跟测试 HOME 无关 |
   | 直接 `set_var("CC_SWITCH_TEST_HOME", ...)` 的文件 | 34 | 真正在改测试主目录的 |
   | └ 其中同时调了共享 `test_home_lock()` 的 | **29** | 合规：走共享锁域 |
-  | └ 没走共享锁、只靠 `#[serial]` 的 | **4 + 1** | `agy_config.rs` / `agy_smoke_tests.rs` / `app_config.rs` / `codex_config.rs` + `tests/support/mod.rs` |
+  | └ 没走共享锁、只靠 `#[serial]` 的 | ~~**4 + 1**~~ → **1 + 1** | `agy_smoke_tests.rs` + `tests/support/mod.rs`（另 3 个源文件已在 `8d8eaf17` 补齐） |
 
 - **否定那条 27 文件迁移计划**：
   1. 31 个 `static LOCK` 里绝大多数是配置文件写锁（`hermes_write_lock`、
@@ -998,20 +998,27 @@ parseDiff 22 / routingValidation 23 / sessionRowHeight 8）。剩余未覆盖文
      二进制根本看不到它；而 `support/mod.rs` 还多做三件它做不到的事——按
      `NEXTEST_TEST_GLOBAL_SLOT` 分槽位、覆盖 `LOCALAPPDATA`（Windows 上 Claude
      Desktop 的真实配置目录）、清掉 `PI_CODING_AGENT_DIR`。二者不可合并。
-  3. 真正待处理的只剩 4 个源文件，不是 27 个。
-- **记录一处真实隐患（未改，因为改动本身无法用一次绿灯证明）**：
+  3. 真正待处理的只剩 4 个源文件，不是 27 个（其中 3 个已在 `8d8eaf17` 补齐）。
+- 修掉一处真实隐患（`8d8eaf17`，原先只记不修，因为当时手上没有证据）：
   `#[serial]`（serial_test 的全局锁）与 `test_home_lock()` 是**两把独立的锁**。
   实测 **28 个文件同时用两者**（锁序一致：harness 先拿 `#[serial]`，测试体内再拿
-  home_lock，所以不会死锁），但有 4 个文件只拿 `#[serial]` 就改 `CC_SWITCH_TEST_HOME`。
-  于是「只用 `#[serial]` 的 29 个文件」与「走 home_lock 的 29 个文件」这两组
-  **可以并行运行，却都在改同一个全局环境变量**——正是 `config.rs:49` 注释警告的
-  「并行跑时会互相换掉临时主目录」。修法明确且安全（那 4 个文件在改环境变量前
-  先 `test_home_lock().blocking_lock()` 持住，锁序与现有 28 个文件一致，不会死锁），
-  **但竞态是否真的触发无法用一次全绿证明**，所以只记设计与前提，不冒充已修复。
+  home_lock，所以不会死锁），但另有 4 个文件只拿 `#[serial]` 就改 `CC_SWITCH_TEST_HOME`。
+  于是「只用 `#[serial]` 的一组」与「走 home_lock 的一组」**可以并行运行，却都在改同一个
+  全局环境变量**——正是 `config.rs:49` 注释警告的「并行跑时会互相换掉临时主目录」。
+  **修法**：`app_config.rs` / `codex_config.rs` / `agy_config.rs` 三处测试 HOME guard
+  在 set 与还原两侧都由 `test_home_lock().blocking_lock()` 持住；`agy_config.rs` 的
+  `HomeGuard` 改成把锁放最后的 3 字段 tuple，使锁覆盖整个生命周期、并在所有字段 drop
+  之后才释放。`agy_smoke_tests.rs` 按设计排除：它唯一用例是 `#[tokio::test]`，
+  `blocking_lock()` 在 async 上下文里会 panic，且自带 `#[ignore]`（需
+  `CCS_AGY_SMOKE_CONFIG` / `CCS_AGY_SMOKE_BIN`），常规 `cargo test` 根本不跑它。
+  **本轮补上的证据**：改前改后 `cargo test --lib` 都是 5 009 passed / 0 failed /
+  20 ignored，`cargo test --tests` 5 227，`clippy --lib --all-targets` 0 warning，
+  `fmt --check` 干净——锁域统一没有引入回归，也没有死锁。竞态本身仍是概率性缺陷，
+  绿灯不等于「已证明它被触发过」；本条的结论是**把它从可能降级为不可能**。
 - 顺带订正一条旧数字：P1-1 里写的「全仓有 37 个文件会改它」，当前实测是
   **34 个**（`set_var("CC_SWITCH_TEST_HOME"` 的出现文件数）。P1-1 的结论
   （不给 `get_home_dir()` 加缓存）不受影响，仍然成立。
-- 状态：**审计完成；27 文件迁移计划已否定；4 文件锁域统一留待单独排期**
+- 状态：**审计完成；27 文件迁移计划已否定；3 文件锁域统一已落地（`8d8eaf17`），`agy_smoke_tests.rs` 因 `#[ignore]` + async 上下文按设计排除**
 
 ### 验证矩阵（本账本全部改动的收口）
 
