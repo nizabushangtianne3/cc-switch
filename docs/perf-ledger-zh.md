@@ -272,6 +272,32 @@
 提交上限（错误 1455「页面文件太小」）。加 `-j 2` 分段构建就正常，CI 上跑在 Linux
 不存在这个问题。
 
+### 第三轮：`forwarder.rs` 的 5,702 行测试搬去独立文件
+
+- 位置：[`src-tauri/src/proxy/forwarder.rs`](src-tauri/src/proxy/forwarder.rs)（5,401 行）、
+  新增 [`src-tauri/src/proxy/forwarder_tests.rs`](src-tauri/src/proxy/forwarder_tests.rs)（5,675 行）
+- 动机：`forwarder.rs` 11,101 行里 **5,702 行（51%）是 `#[cfg(test)] mod tests`**，
+  生产代码只有 5,401 行。仓库自己已经为这种体量的文件立了规矩——`database/dao/providers.rs`
+  用 `#[path = "providers_tests.rs"] mod tests;`、`commands/misc.rs` / `proxy/session.rs` /
+  `services/provider/mod.rs` 同样外挂测试文件；`forwarder.rs` 是唯一没跟上的大件。
+- 处理：把 `mod tests { ... }` 整块搬进 `forwarder_tests.rs`，原位置只留
+  `#[cfg(test)] #[path = "forwarder_tests.rs"] mod tests;`。模块名仍是 `tests`，
+  所以测试全名（`proxy::forwarder::tests::...`）与 `use super::*` 的可见性一概不变。
+  内含的 3 个嵌套 mod（`codex_stack` / `bookkeeping` / `perf_probe`）原样带走。
+- 状态：**已完成**
+- 验证：`cargo test --lib proxy::forwarder` 160 passed / 0 failed；
+  全量 `cargo test --lib` **5 007 passed / 0 failed / 19 ignored**（与拆分前逐项一致）；
+  `cargo test --tests` 5 225 = 5 007 lib + 218 集成，全过；
+  `cargo clippy --lib --all-targets` 0 warning；`cargo fmt --check` 干净。
+- 两个搬迁时踩到的坑（都只影响文件本身，未动测试逻辑）：
+  1. **PowerShell 的 `[Collections.ArrayList]::new(数组)` 之后 `RemoveRange` 越界**：
+     我按「总行数 - 起始下标 + 1」算长度，多算了一个，越界抛错但后续的 `InsertRange`
+     仍然执行，文件被写成「声明 + 原 tests 块」并存。恢复用
+     `git show HEAD:<path>` 重写文件，不要用 checkout。
+  2. **仓库在 git 里是 LF，PowerShell 写文件默认 CRLF**：`Set-Content`/`WriteAllText`
+     不指定就会写 CRLF，和 `.gitattributes` 的规范化冲突。搬完先把 `"`r`n"` 换成
+     `"`n"` 再 `cargo fmt`，否则 fmt 会把整份文件重排一遍、diff 暴涨。
+
 #### P2-2 图标表的 101 个内联 SVG 躺在「所有懒加载界面」的公共块里
 
 - 证据（`build.sourcemap` 临时开一次，读 `disableContextMenu-*.map` 的 `sources`
