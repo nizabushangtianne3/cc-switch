@@ -36,7 +36,14 @@ const SESSION_ROW_HEIGHT = 56;
 const EXTRA_SNIPPET_HEIGHT = 20;
 const EXTRA_SNIPPETS_PADDING = 6;
 
-const extraSnippetsOf = (
+/**
+ * 正文命中时列在行下方的附加摘录（第 2 条起）；选择模式下不显示摘录
+ *
+ * 导出只为单测：`slice(1)` 丢掉第一条（它已经显示在行内）这条规则，
+ * 以及 `getSessionRowHeight` 的高度算术，两者必须一致——虚拟列表按这个
+ * 高度排版，算错一行整段滚动就会漂。
+ */
+export const extraSnippetsOf = (
   contentHit: SessionContentHit | undefined,
   selectionMode: boolean,
 ) => (selectionMode ? [] : (contentHit?.snippets.slice(1) ?? []));

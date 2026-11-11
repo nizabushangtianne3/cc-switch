@@ -219,6 +219,36 @@
 
 #### P2-3-1 `useTemplateValues` 的四条核心路径此前零直接覆盖
 
+#### P2-3-6 会话行高与附加摘录的对应关系零覆盖
+
+- 位置：[`src/components/sessions/SessionItem.tsx`](src/components/sessions/SessionItem.tsx)
+  `extraSnippetsOf`（私有）/ `getSessionRowHeight`（已导出但没人测）
+- 现状：虚拟列表按 `getSessionRowHeight` 排版，而行内实际渲染几条附加摘录由
+  `extraSnippetsOf` 决定。两者只要差一条，整段滚动就会漂——而这个对应关系
+  此前一条测试都没有。
+- 处理：导出 `extraSnippetsOf`，新增
+  [tests/components/sessions/sessionRowHeight.test.ts](tests/components/sessions/sessionRowHeight.test.ts)
+  8 个用例，钉住：`slice(1)` 丢掉第一条（它已显示在行内）、无命中 / 只有一条 /
+  选择模式下都不列摘录、基础高度 56、每条附加摘录 +20 且整块 +6 内边距、
+  选择模式下高度收回基础值（与摘录为空保持一致）、以及「extras 计数与高度算术」
+  在 0/1/2/3/5/8 条上逐一对齐。
+- 状态：**已完成**
+- 测试：`pnpm vitest run tests/components/sessions/sessionRowHeight.test.ts`
+  8 passed；`pnpm typecheck`、prettier 通过；全量 `pnpm vitest run`
+  **4 137 passed / 0 failed**
+- 踩坑两处（都不改代码）：夹具要补 `messageIndex` 字段（`SessionContentSnippet`
+  的必填项，少一个就过不了 tsc）；`highlights` 用 `never[]` 会被推断成
+  `never[]` 而不是 `SessionTextRange[]`，补字段后自然消失。
+
+#### 覆盖缺口扫描的最终状态
+
+截至本轮，账本 P2-3 系列已按「逻辑重 + 纯函数」标准补掉 6 个文件、
+共 **96 个用例**（useTemplateValues 21 / 图标取色 21 / usePanelTheme 9 /
+parseDiff 22 / routingValidation 23 / sessionRowHeight 8）。剩余未覆盖文件
+的私有函数已全部核查过一遍：`SessionStepDetails.tsx` 的 `prettyJson` /
+`fullCommand` 是单行格式化包装，`UsageSettingsSheet.tsx` 没有私有顶层函数，
+其余是 UI 基元——按同一标准继续补的边际收益已经很低。
+
 #### P2-3-5 `RoutingSection` 的四个校验/格式化函数零覆盖
 
 - 位置：[`src/components/settings/sections/RoutingSection.tsx`](src/components/settings/sections/RoutingSection.tsx)
