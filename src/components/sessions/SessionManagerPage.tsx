@@ -59,7 +59,8 @@ import {
   sessionMenuItemClass,
 } from "./SessionItem";
 import { SessionReader } from "./reader/SessionReader";
-import { sessionKeys, useSessionTranscript } from "@/lib/query/sessions";
+import { useSessionTranscript } from "@/lib/query/sessions";
+import { sessionKeys } from "@/lib/query/sessionKeys";
 import { SessionDeleteDialog, SessionSourcesDialog } from "./SessionDialogs";
 import {
   canDeleteSession,

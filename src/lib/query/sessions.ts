@@ -12,38 +12,12 @@ import type {
   TranscriptChunk,
 } from "@/types";
 import { buildTurnIndex, buildTurns } from "@/components/sessions/reader/turns";
+import { sessionKeys, stableKey } from "./sessionKeys";
 
 /**
  * 会话阅读页的数据层：
  * 分块流式读取会话、按需取块全文、图片转 Blob URL。
  */
-
-export const sessionKeys = {
-  messages: (providerId?: string, sourcePath?: string) =>
-    ["sessionMessages", providerId, sourcePath] as const,
-  transcript: (providerId?: string, sourcePath?: string) =>
-    ["sessionTranscript", providerId, sourcePath] as const,
-  blockContent: (providerId?: string, sourcePath?: string, ref?: ContentRef) =>
-    [
-      "sessionBlockContent",
-      providerId,
-      sourcePath,
-      ref ? stableKey(ref) : null,
-    ] as const,
-};
-
-/** 键顺序无关的序列化：ContentRef / ImageRef 做 query key、缓存 key 用 */
-export const stableKey = (value: unknown): string => {
-  if (Array.isArray(value)) return `[${value.map(stableKey).join(",")}]`;
-  if (value && typeof value === "object") {
-    const entries = Object.entries(value as Record<string, unknown>)
-      .filter(([, item]) => item !== undefined)
-      .sort(([a], [b]) => (a < b ? -1 : 1))
-      .map(([key, item]) => `${JSON.stringify(key)}:${stableKey(item)}`);
-    return `{${entries.join(",")}}`;
-  }
-  return JSON.stringify(value);
-};
 
 // ─── 一次性读取（旧接口，复制整段等场景） ─────────────────────────────────
 

@@ -25,14 +25,13 @@ import {
   EMPTY_TRANSCRIPT,
   loadTranscript,
   SESSION_IMAGE_CACHE_SIZE,
-  sessionKeys,
-  stableKey,
   TRANSCRIPT_DONE_GRACE_MS,
   useBlockContent,
   useSessionImage,
   useSessionMessagesQuery,
   useSessionTranscript,
 } from "@/lib/query/sessions";
+import { sessionKeys, stableKey } from "@/lib/query/sessionKeys";
 import { useSessionMessagesQuery as legacyExport } from "@/lib/query";
 
 const message = (content: string, turnId = "t1"): SessionMessage => ({

@@ -843,6 +843,51 @@ parseDiff 22 / routingValidation 23 / sessionRowHeight 8）。剩余未覆盖文
   **1 813 个顶层导出符号**，用「除定义处外全仓零引用」判定，
   **死导出 0 个**。账本早前「TS 侧没有死导出」的结论在当前代码上依然成立。
 
+### 第八轮：切断桶文件 → mutations → sessions 这条边，会话阅读器代码离开主入口
+
+- 位置：新增 [`src/lib/query/sessionKeys.ts`](src/lib/query/sessionKeys.ts)、
+  [`sessions.ts`](src/lib/query/sessions.ts)、[`mutations.ts`](src/lib/query/mutations.ts)、
+  [`SessionManagerPage.tsx`](src/components/sessions/SessionManagerPage.tsx)、
+  `tests/lib/sessionsQuery.test.tsx`
+- 取证：第七轮算入口静态图时发现 `components/sessions/reader/turns.ts`（33 KB）
+  竟在主入口的静态图里。顺链查下去是一条三段边：
+  `App.tsx` 第 33 行 `from "@/lib/query"`（**桶文件** `export *` 了
+  queryClient / queries / **mutations** / proxy / subscription / pi 六个模块）
+  → `mutations.ts` 第 19 行 `import { sessionKeys } from "@/lib/query/sessions"`
+  → `sessions.ts` 第 14 行静态引 `buildTurnIndex, buildTurns` ← 来自
+  `reader/turns.ts`。`mutations.ts` 只为拼两个 query key 就要 `sessionKeys`，
+  却把整棵「会话阅读页数据层」拖进了主入口。
+- **静态图只是线索，不是证据**：Rollup 会摇树，所以我直接到 `dist/assets/*.js`
+  里搜能扛过压缩的字符串字面量。`turn_divider`、`slash_command`（`turns.ts`
+  特有）**确实出现在 `main-*.js` 里**——不是误报。
+- 处理：`sessionKeys` 与它依赖的 `stableKey` 搬到新的 `sessionKeys.ts`
+  （`stableKey` 只在本文件内自用，`sessions.ts` 的 `ContentRef` 类型导入
+  另有第 243 行在用、不动）。`mutations.ts` 与 `SessionManagerPage.tsx`
+  改从新模块导入；`sessions.ts` 改为导入而非定义。没有留任何兼容再导出。
+- 证据（`pnpm build:renderer`；字面量归属同样用搜索法核对）：
+
+  | 指标 | 改前 | 改后 | |
+  | --- | --- | --- | --- |
+  | `main-*.js` 原始 | 643.31 kB | **616.46 kB** | **-26.85 kB** |
+  | `main-*.js` gzip | 206.95 kB | **196.56 kB** | **-10.39 kB / -5.0%** |
+  | 主窗口初始载荷 | 1 294.3 KB | **1 268.1 KB** | **-26.2 KB** |
+  | `SessionManagerPage-*.js` | 172.19 kB | 193.55 kB | +21.4 kB（代码搬回它该在的懒加载块） |
+  | `turn_divider` / `slash_command` 所在块 | `main-*.js` + 懒加载块 | **只剩懒加载块** | 已验证 |
+
+  懒加载块变大是**对的**：那两段代码本来就只有会话阅读页用，搬过去才不浪费。
+  净效果是主入口少解析 26.85 kB，懒加载页多 21.4 kB，总量还略降。
+- 状态：**已完成**
+- 测试：`tests/lib/sessionsQuery.test.tsx` + `SessionManagerPage.test.tsx`
+  + `TrayPanel.test.tsx` + `TrayPanelUsageTab.test.tsx` = **86 个全过**；
+  全量 `pnpm vitest run` **4 137 passed / 0 failed**（336 个文件）；
+  `pnpm typecheck`、`pnpm prettier --check`、`pnpm build:renderer` 通过。
+- 遗留观察（记录，未改）：`src/lib/query/index.ts` 这个桶仍在，
+  `App.tsx` / 20 多个组件都从 `@/lib/query` 导入。它现在**没有**造成额外体积
+  （改后搜索字面量确认阅读器代码已不在主入口），但只要有任何一个模块从
+  `sessions.ts` 这类重模块导入轻量符号，就会重新把整棵树拖进入口。
+  下一轮该做的是**把桶拆掉、让每个导入方直接写具体模块路径**——
+  那是 40 多个文件的机械改动，单独排期。
+
 ### 验证矩阵（本账本全部改动的收口）
 
 后续每个提交都在本地跑过下面这些，不依赖 CI：
@@ -858,7 +903,7 @@ parseDiff 22 / routingValidation 23 / sessionRowHeight 8）。剩余未覆盖文
 | 前端类型 | `pnpm typecheck` | 通过 |
 | 前端格式 | `pnpm prettier --check` | 通过（`useClaudeAccountQuota.test.tsx` 是改动前就有的既有问题，未动） |
 | 前端测试 | `pnpm vitest run` | 4 137 passed / 0 failed（336 个文件） |
-| 前端构建 | `pnpm build:renderer` | 通过（`main-*.js` 643.31 kB / gzip 206.95 kB；托盘面板初始载荷 612.6 KB） |
+| 前端构建 | `pnpm build:renderer` | 通过（`main-*.js` 616.46 kB / gzip 196.56 kB；主窗口初始载荷 1268.1 KB；托盘面板初始载荷 612.6 KB） |
 
 **release 编译是这一轮才补的**：此前所有 Rust 改动只在 debug/test profile 验过，
 而打包走 release（fat LTO + `codegen-units = 1`），两者不是同一套代码生成路径。

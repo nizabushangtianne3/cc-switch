@@ -16,7 +16,7 @@ import { openclawKeys } from "@/hooks/useOpenClaw";
 import { invalidateHermesProviderCaches } from "@/hooks/useHermes";
 import { proxyKeys } from "@/lib/query/proxy";
 import { usageKeys } from "@/lib/query/usage";
-import { sessionKeys } from "@/lib/query/sessions";
+import { sessionKeys } from "@/lib/query/sessionKeys";
 import { invalidatePiProviderCaches } from "@/lib/query/pi";
 import { isPiFamilyApp } from "@/config/appConfig";
 import { GROKBUILD_OFFICIAL_PROVIDER_ID } from "@/utils/providerCapabilities";
