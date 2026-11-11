@@ -788,6 +788,61 @@ parseDiff 22 / routingValidation 23 / sessionRowHeight 8）。剩余未覆盖文
   `provider_router.rs` / `tests_issue_7271.rs` 那 45 个是回归测试复刻生产代码。
   两边都不该抽——抽了会让两个 provider 的测试失去独立性。
 
+### 第七轮：托盘面板不再为用量页签预加载 360 kB 图表块
+
+- 位置：[`src/tray-panel/TrayPanel.tsx`](src/tray-panel/TrayPanel.tsx)（`UsageTab`
+  由静态引入改为 `lazy`）
+- 取证：先把两个入口的静态依赖图算出来（排除 `import type`，`@/` 别名从仓库根解析），
+  再直接读 `dist/tray-panel.html` 数它到底预取了什么。结果：
+  `tray-panel.html` 用 `<link rel="modulepreload">` 拉了 **4 个 JS 块**——
+  `tray-panel-*.js` 25.19 kB、`disableContextMenu-*.js` 566.13 kB、
+  **`UsageTrendChart-*.js` 351.92 kB**、`chevron-left-*.js` 0.14 kB，
+  外加 102.44 kB 的 CSS，**初始载荷合计 1 045.8 KB**。
+  链条是：`TrayPanel.tsx` 第 44 行静态 `import { UsageTab }` → `UsageTab` 静态引
+  `recharts` + `@/components/usage/UsageTrendChart` → 那个 352 kB 的块
+  （内部还拖着 babel / estree）。而 `UsageTab` 只在 `tab === "usage"` 时才挂载
+  （第 1120 行在 `tab === "config" ? ... : (...)` 的 else 分支里），
+  托盘默认停在 config 页签——**绝大多数悬停显示一次都不碰用量页签**。
+- 处理：改成 `lazy(() => import("./UsageTab").then(m => ({ default: m.UsageTab })))`
+  （跟 `App.tsx` 里 LazyAddProviderDialog 等命名导出的写法一致），
+  渲染处包 `<Suspense>`，fallback 用面板里早已引入的 `Loader2` 转圈。
+- 证据（`pnpm build:renderer` 后直接量 `dist/tray-panel.html` 引用的文件）：
+
+  | 指标 | 改前 | 改后 | |
+  | --- | --- | --- | --- |
+  | 托盘初始载荷合计 | 1 045.8 KB | **612.6 KB** | **-433.2 KB / -41.4%** |
+  | `tray-panel-*.js` | 25.19 KB | 19.99 KB | -5.20 KB |
+  | 预加载的 JS 块数 | 4 | 3 | `UsageTrendChart` 不再预取 |
+  | `UsageTrendChart-*.js` | 351.92 KB（预取） | 360.41 KB（按需） | 转为惰性 |
+  | 主窗口初始载荷 | 1 294.4 KB | 1 294.3 KB | 不变 |
+
+  主窗口那个共享块从 566.13 KB 变成 502.26 KB，但同时多出一个
+  75.46 kB 的 `useMoneyFormat-*.js` 仍被 `index.html` 预取，两边抵消，
+  **主窗口一个字节都没占到便宜**——这一轮是纯粹的托盘面板收益。
+- 状态：**已完成**
+- 测试：`tests/components/TrayPanel.test.tsx` 37 + `TrayPanelUsageTab.test.tsx` 3
+  + `tests/tray-panel/menuAim.test.ts` 4 = **44 个全过**（`TrayPanelUsageTab`
+  正是压用量页签挂载的）；`pnpm typecheck`、`pnpm prettier --check`、
+  `pnpm vitest run` **4 137 passed / 0 failed**（336 个文件，连既有 flake
+  这次也通过）、`pnpm build:renderer` 通过。
+- 顺带记下的入口图审计（都判定不动）：
+  - 主入口静态图 **211 个模块 / 2.29 MB**，托盘 **113 个 / 1.67 MB**；
+    懒加载目标是 7 个 JSON 预设目录共 2.18 MB（切分正确）。
+  - 静态图里有 **44 张图片共 961.8 KB**（`src/icons/extracted/*.png|jpg`）。
+    查证后**不是 JS 体积问题**：Vite 的 `assetsInlineLimit` 默认 4 KB，
+    超过的图片落成 `dist/assets/*.png` 独立文件，JS 里只有一个 URL 字符串，
+    只在 `<img>` 真的渲染时才请求。小于 4 KB 被内联成 base64 的只有 7 张、
+    约 12 KB，可忽略。
+  - `src/icons/extracted/index.ts` 187.6 KB 里 **102 处内联 `<svg>` 字符串**
+    才是真正的 JS 重量——账本 P2-2 已量过（0.2~0.4 ms 解析）并判定不改，沿用。
+  - `deterministic_interaction_id(session_id)` 是 `session_id` 的纯函数，
+    同一会话每请求重算一遍 SHA-256 + UUID。**判定不加缓存**：收益约
+    0.5~1 µs/请求，低于自带 `Mutex<HashMap>` 加淘汰策略的开销，
+    还会引入一个无界增长的风险点。
+- TS 侧死导出复查（对应「不要写无效代码」）：扫 489 个非测试 TS/TSX 的
+  **1 813 个顶层导出符号**，用「除定义处外全仓零引用」判定，
+  **死导出 0 个**。账本早前「TS 侧没有死导出」的结论在当前代码上依然成立。
+
 ### 验证矩阵（本账本全部改动的收口）
 
 后续每个提交都在本地跑过下面这些，不依赖 CI：
@@ -802,8 +857,8 @@ parseDiff 22 / routingValidation 23 / sessionRowHeight 8）。剩余未覆盖文
 | Rust 全部 feature | `cargo clippy/test --all-features` | 0 warning / 5 007 passed |
 | 前端类型 | `pnpm typecheck` | 通过 |
 | 前端格式 | `pnpm prettier --check` | 通过（`useClaudeAccountQuota.test.tsx` 是改动前就有的既有问题，未动） |
-| 前端测试 | `pnpm vitest run` | 4 106 passed / 0 failed |
-| 前端构建 | `pnpm build:renderer` | 通过（入口块 643.22 kB） |
+| 前端测试 | `pnpm vitest run` | 4 137 passed / 0 failed（336 个文件） |
+| 前端构建 | `pnpm build:renderer` | 通过（`main-*.js` 643.31 kB / gzip 206.95 kB；托盘面板初始载荷 612.6 KB） |
 
 **release 编译是这一轮才补的**：此前所有 Rust 改动只在 debug/test profile 验过，
 而打包走 release（fat LTO + `codegen-units = 1`），两者不是同一套代码生成路径。

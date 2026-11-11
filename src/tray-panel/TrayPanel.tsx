@@ -5,6 +5,8 @@ import {
   useMemo,
   useRef,
   useState,
+  lazy,
+  Suspense,
   type CSSProperties,
 } from "react";
 import { listen } from "@tauri-apps/api/event";
@@ -41,7 +43,12 @@ import {
 } from "./api";
 import { aimingAt, type Point } from "./menuAim";
 import { usePanelTheme } from "./usePanelTheme";
-import { UsageTab } from "./UsageTab";
+// 用量页签不是托盘面板的首屏内容：整棵 recharts 加用量图表链路（构建产物里
+// 单独一个约 350 kB 的块）只在用户切到用量页签时才需要。原来静态引入会让
+// 每次悬停显示托盘都为它付一次 modulepreload + 解析代价。
+const UsageTab = lazy(() =>
+  import("./UsageTab").then((module) => ({ default: module.UsageTab })),
+);
 
 type Tab = "config" | "usage";
 const TAB_KEY = "cc-switch-tray-tab";
@@ -1117,7 +1124,15 @@ export function TrayPanel() {
               ))}
             </div>
           ) : (
-            <UsageTab refreshKey={shownCount} visible={tab === "usage"} />
+            <Suspense
+              fallback={
+                <div className="flex h-24 items-center justify-center text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                </div>
+              }
+            >
+              <UsageTab refreshKey={shownCount} visible={tab === "usage"} />
+            </Suspense>
           )}
         </div>
 
