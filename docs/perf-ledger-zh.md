@@ -219,6 +219,32 @@
 
 #### P2-3-1 `useTemplateValues` 的四条核心路径此前零直接覆盖
 
+#### P2-3-5 `RoutingSection` 的四个校验/格式化函数零覆盖
+
+- 位置：[`src/components/settings/sections/RoutingSection.tsx`](src/components/settings/sections/RoutingSection.tsx)
+  `isValidListenAddress` / `isValidClientHost` / `defaultClientHost` / `formatUptime`
+- 现状：路由设置页的输入校验与展示格式化全是私有函数，只能隔着设置页点出来。
+  其中「监听地址合法但客户端地址不合法」这个分歧（`0.0.0.0` / `::` 两侧结论相反）
+  是最容易点错的一处。
+- 处理：导出四个函数（注释写明「导出只为单测」），新增
+  [tests/components/settings/routingValidation.test.ts](tests/components/settings/routingValidation.test.ts)
+  23 个用例：IPv4 八位组上限（`256.1.1.1` / `999.999.999.999` 否掉）、四段必须是
+  完整四段、IPv6 必须能过 `[..]` 包装后的 URL 解析（`::gg` / `12345::` 否掉）、
+  主机名标签规则（不能以 `-` 开头或结尾、不能连续点、不能有下划线/空格）、
+  253 总长上限 vs 63 单标签上限的区别、uptime 一小时以上走「时+分」、
+  以下只报分且负数夹到 0。
+- 状态：**已完成**
+- 测试：`pnpm vitest run tests/components/settings/routingValidation.test.ts`
+  23 passed（初版 1 条断言失败，是我把「253 个字符的单标签」当成了触发总长上限——
+  实际它是被 63 字符单标签规则否掉的；改成 4×63+3 点 = 255 才真正触发前瞻，
+  代码未动）；`pnpm typecheck` 通过；全量 `pnpm vitest run` 4 128 passed / 1 failed
+  （失败的是已知的 `App.test.tsx` 执行时长 flake，单独跑 3.7s 通过）
+- ⚠️ **又发现一处注释与代码不一致（未改，只记录）**：
+  `isValidClientHost` 的注释说「`0.0.0.0` / `::` 客户端连不上」，
+  但 `::1` 是**合法**的客户端地址——它既不是 `::` 也不是 `0.0.0.0`，
+  会走 IPv6 字面量分支被判 true。测试按现实行为钉住（`isValidClientHost("::1")` 为
+  true），因为这是用户可感知的正确行为（`::1` 确实连得上本机）。
+
 #### P2-3-4 `parseDiff` 十二条分支零覆盖，另记两处非直观行为
 
 - 位置：[`src/components/sessions/reader/SessionDiff.tsx`](src/components/sessions/reader/SessionDiff.tsx)

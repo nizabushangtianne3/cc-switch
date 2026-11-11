@@ -43,7 +43,12 @@ interface RoutingSectionProps {
   onOpenApp: (app: AppId) => void;
 }
 
-const isValidListenAddress = (address: string): boolean => {
+/**
+ * 导出只为单测：IPv4 八位组上限、IPv6 必须能过 `[..]` 包装后的 URL 解析、
+ * 以及 `0.0.0.0` / `::` 在「监听」与「客户端」两侧判相反——这四条此前只能
+ * 隔着设置页点出来。
+ */
+export const isValidListenAddress = (address: string): boolean => {
   if (address === "localhost" || address === "0.0.0.0") return true;
   if (/^(\d{1,3}\.){3}\d{1,3}$/.test(address)) {
     return address.split(".").every((part) => Number(part) <= 255);
@@ -58,8 +63,13 @@ const isValidListenAddress = (address: string): boolean => {
   }
 };
 
-/** 客户端地址：空（按监听地址）、IP 或主机名；`0.0.0.0` / `::` 客户端连不上 */
-const isValidClientHost = (host: string): boolean => {
+/**
+ * 客户端地址：空（按监听地址）、IP 或主机名；`0.0.0.0` / `::` 客户端连不上
+ *
+ * 导出只为单测：与 `isValidListenAddress` 共用 IPv6 判定，但对 `0.0.0.0` /
+ * `::` 的结论相反（监听要通配、客户端连不上通配），这个分歧要单独钉住。
+ */
+export const isValidClientHost = (host: string): boolean => {
   if (host === "") return true;
   if (host === "0.0.0.0" || host === "::") return false;
   if (/^[\d.]+$/.test(host) || host.includes(":")) {
@@ -71,14 +81,16 @@ const isValidClientHost = (host: string): boolean => {
 };
 
 /** 没设客户端地址时写给客户端的主机，和后端 `proxy_origin` 一致 */
-const defaultClientHost = (listenAddress: string): string =>
+/** 导出只为单测：通配监听地址回环化的两条映射。 */
+export const defaultClientHost = (listenAddress: string): string =>
   listenAddress === "0.0.0.0"
     ? "127.0.0.1"
     : listenAddress === "::"
       ? "::1"
       : listenAddress;
 
-function formatUptime(seconds: number, t: TFunction) {
+/** 导出只为单测：1 小时以上走「时+分」、以下只报分（负数夹到 0）。 */
+export function formatUptime(seconds: number, t: TFunction) {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
   return hours > 0
