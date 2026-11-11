@@ -976,6 +976,43 @@ parseDiff 22 / routingValidation 23 / sessionRowHeight 8）。剩余未覆盖文
 - 方法学收获：**「某个导出只在懒加载方用」不等于「它的代码在主入口里」**。
   先搜一个该导出独有的字面量、确认它真的在 `main-*.js`，再决定要不要拆。
 
+### 第十轮：测试 HOME 隔离的锁域审计——否定一项改写计划，记录一处跨组隐患
+
+- 起因：接手材料里有一条「27 个文件还在用私有测试 HOME 轮子，应迁移到
+  `TestHomeScope`」的候选。先取证，结论是**那条统计口径错了**，不该照着动手。
+- 取证（按 `src-tauri` 全量 `.rs` 分三层数，不混在一起看）：
+
+  | 统计口径 | 数量 | 性质 |
+  | --- | --- | --- |
+  | 定义 `static LOCK: OnceLock<...>` 的文件 | 31 | **混入了两类无关东西**，不能直接当轮子数 |
+  | ├ 其中是 `hermes_write_lock` / `opencode_config_lock` 这类 | — | **生产环境的配置文件写锁**，跟测试 HOME 无关 |
+  | 直接 `set_var("CC_SWITCH_TEST_HOME", ...)` 的文件 | 34 | 真正在改测试主目录的 |
+  | └ 其中同时调了共享 `test_home_lock()` 的 | **29** | 合规：走共享锁域 |
+  | └ 没走共享锁、只靠 `#[serial]` 的 | **4 + 1** | `agy_config.rs` / `agy_smoke_tests.rs` / `app_config.rs` / `codex_config.rs` + `tests/support/mod.rs` |
+
+- **否定那条 27 文件迁移计划**：
+  1. 31 个 `static LOCK` 里绝大多数是配置文件写锁（`hermes_write_lock`、
+     `opencode_config_lock`…），迁移它们毫无意义；
+  2. `tests/support/mod.rs` 的 `test_mutex()` **不是 `test_home_lock()` 的重复**：
+     `test_home_lock()` 带 `#[cfg(test)]`，只存在于 lib 的单测二进制里，集成测试
+     二进制根本看不到它；而 `support/mod.rs` 还多做三件它做不到的事——按
+     `NEXTEST_TEST_GLOBAL_SLOT` 分槽位、覆盖 `LOCALAPPDATA`（Windows 上 Claude
+     Desktop 的真实配置目录）、清掉 `PI_CODING_AGENT_DIR`。二者不可合并。
+  3. 真正待处理的只剩 4 个源文件，不是 27 个。
+- **记录一处真实隐患（未改，因为改动本身无法用一次绿灯证明）**：
+  `#[serial]`（serial_test 的全局锁）与 `test_home_lock()` 是**两把独立的锁**。
+  实测 **28 个文件同时用两者**（锁序一致：harness 先拿 `#[serial]`，测试体内再拿
+  home_lock，所以不会死锁），但有 4 个文件只拿 `#[serial]` 就改 `CC_SWITCH_TEST_HOME`。
+  于是「只用 `#[serial]` 的 29 个文件」与「走 home_lock 的 29 个文件」这两组
+  **可以并行运行，却都在改同一个全局环境变量**——正是 `config.rs:49` 注释警告的
+  「并行跑时会互相换掉临时主目录」。修法明确且安全（那 4 个文件在改环境变量前
+  先 `test_home_lock().blocking_lock()` 持住，锁序与现有 28 个文件一致，不会死锁），
+  **但竞态是否真的触发无法用一次全绿证明**，所以只记设计与前提，不冒充已修复。
+- 顺带订正一条旧数字：P1-1 里写的「全仓有 37 个文件会改它」，当前实测是
+  **34 个**（`set_var("CC_SWITCH_TEST_HOME"` 的出现文件数）。P1-1 的结论
+  （不给 `get_home_dir()` 加缓存）不受影响，仍然成立。
+- 状态：**审计完成；27 文件迁移计划已否定；4 文件锁域统一留待单独排期**
+
 ### 验证矩阵（本账本全部改动的收口）
 
 后续每个提交都在本地跑过下面这些，不依赖 CI：
