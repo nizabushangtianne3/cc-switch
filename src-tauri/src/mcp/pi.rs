@@ -9,7 +9,6 @@
 //! 项目级 `.pi/mcp.json` 不在这里管。
 
 use crate::app_config::McpServer;
-use crate::config::atomic_write_private;
 use crate::database::Database;
 use crate::error::AppError;
 use crate::store::AppState;
@@ -198,47 +197,39 @@ pub(crate) fn sync_and_commit<T>(
 }
 
 fn sync_file(path: &Path, id: &str, change: PiChange<'_>) -> Result<(), AppError> {
-    let mut document = read(path)?;
-    if document.get("mcpServers").is_none() {
-        document["mcpServers"] = json!({});
-    }
-    let servers = document["mcpServers"].as_object_mut().unwrap();
-    match change {
-        PiChange::Enable(spec) => {
-            validate_entry(id, spec)?;
-            check_name_collision(id, servers.keys())?;
-            let transport = native_transport(spec)?;
-            // 条目还在就沿用它（用户在 Pi 里改过的设置优先）；不在就从保存的 Pi 字段重建
-            let mut merged = servers.get(id).cloned().unwrap_or_else(|| pi_fields(spec));
-            let object = merged
-                .as_object_mut()
-                .ok_or_else(|| AppError::Config("Invalid Pi MCP entry".into()))?;
-            for field in TRANSPORT_FIELDS {
-                object.remove(field);
+    super::native::edit_mcp_servers_document(path, "Pi", false, |servers| {
+        match change {
+            PiChange::Enable(spec) => {
+                validate_entry(id, spec)?;
+                check_name_collision(id, servers.keys())?;
+                let transport = native_transport(spec)?;
+                // 条目还在就沿用它（用户在 Pi 里改过的设置优先）；不在就从保存的 Pi 字段重建
+                let mut merged = servers.get(id).cloned().unwrap_or_else(|| pi_fields(spec));
+                let object = merged
+                    .as_object_mut()
+                    .ok_or_else(|| AppError::Config("Invalid Pi MCP entry".into()))?;
+                for field in TRANSPORT_FIELDS {
+                    object.remove(field);
+                }
+                object.extend(transport.as_object().unwrap().clone());
+                object.insert("enabled".into(), json!(true));
+                servers.insert(id.into(), merged);
             }
-            object.extend(transport.as_object().unwrap().clone());
-            object.insert("enabled".into(), json!(true));
-            servers.insert(id.into(), merged);
-        }
-        PiChange::Disable => match servers.get_mut(id) {
-            Some(Value::Object(entry)) => {
-                entry.insert("enabled".into(), json!(false));
-            }
-            // 没有条目就没什么可禁用的，不为此新建
-            _ => return Ok(()),
-        },
-        PiChange::Remove => {
-            if servers.remove(id).is_none() {
-                return Ok(());
+            PiChange::Disable => match servers.get_mut(id) {
+                Some(Value::Object(entry)) => {
+                    entry.insert("enabled".into(), json!(false));
+                }
+                // 没有条目就没什么可禁用的，不为此新建
+                _ => return Ok(false),
+            },
+            PiChange::Remove => {
+                if servers.remove(id).is_none() {
+                    return Ok(false);
+                }
             }
         }
-    }
-    atomic_write_private(
-        path,
-        serde_json::to_string_pretty(&document)
-            .map_err(|e| AppError::Config(e.to_string()))?
-            .as_bytes(),
-    )
+        Ok(true)
+    })
 }
 
 /// 从 Pi 的 `mcp.json` 导入。Pi 自己的字段（`timeout`、`exposure` 等）留在连接定义里原样保存；

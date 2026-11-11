@@ -8,6 +8,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use serde_json::Map;
 use serde_json::{json, Value};
 
 use crate::app_config::{McpApps, McpServer};
@@ -48,6 +49,42 @@ pub(crate) fn transport_fields_of(unified: &Value, fields: &[&str]) -> Value {
         object.retain(|key, _| fields.contains(&key.as_str()));
     }
     spec
+}
+
+/// 写原生 MCP 配置：`document` 必须是 [`read_native`] 认可的形状。
+pub(crate) fn write_mcp_servers_document(path: &Path, document: &Value) -> Result<(), AppError> {
+    crate::config::atomic_write_private(
+        path,
+        serde_json::to_string_pretty(document)
+            .map_err(|e| AppError::Config(e.to_string()))?
+            .as_bytes(),
+    )
+}
+
+/// 读原生 MCP 文档、确保顶层 `mcpServers` 是对象，交给 `edit` 改完再写回。
+///
+/// kimi / mcode / agy / pi 四家的 `sync_file` 都是这四步——与 [`NativeSource`]
+/// 覆盖的读取/导入侧对称，那侧早就抽成了结构体，写入侧一直是四份各写一遍。
+/// 差别只由 `edit` 表达：它拿到 `mcpServers` 映射，改完返回是否需要落盘。
+/// 返回 `false` 表示条目本来就不存在、写了也是白写（Pi 的停用/删除走这条）。
+pub(crate) fn edit_mcp_servers_document(
+    path: &Path,
+    label: &str,
+    tolerate_empty: bool,
+    edit: impl FnOnce(&mut Map<String, Value>) -> Result<bool, AppError>,
+) -> Result<(), AppError> {
+    let mut document = read_native(path, label, tolerate_empty)?;
+    if document.get("mcpServers").is_none() {
+        document["mcpServers"] = json!({});
+    }
+    let servers = document
+        .get_mut("mcpServers")
+        .and_then(Value::as_object_mut)
+        .expect("read_native 保证 mcpServers 缺失或是对象");
+    if !edit(servers)? {
+        return Ok(());
+    }
+    write_mcp_servers_document(path, &document)
 }
 
 /// 一家原生配置文件怎么读、怎么写进统一账号库。

@@ -1,4 +1,3 @@
-use crate::config::atomic_write_private;
 use crate::error::AppError;
 use crate::store::AppState;
 use serde_json::{json, Value};
@@ -6,11 +5,6 @@ use std::{path::Path, sync::Mutex};
 
 static WRITE_LOCK: Mutex<()> = Mutex::new(());
 const TRANSPORT_FIELDS: [&str; 6] = ["command", "args", "env", "url", "headers", "type"];
-
-fn read(path: &Path) -> Result<Value, AppError> {
-    // agy 首次启动会建一个 0 字节的 mcp_config.json，当成没有配置
-    super::native::read_native(path, "Antigravity", true)
-}
 
 #[derive(Clone, Copy)]
 pub(crate) enum AgyChange<'a> {
@@ -48,48 +42,40 @@ pub(crate) fn sync_and_commit<T>(
 }
 
 fn sync_file(path: &Path, id: &str, change: AgyChange<'_>) -> Result<(), AppError> {
-    let mut document = read(path)?;
-    if document.get("mcpServers").is_none() {
-        document["mcpServers"] = json!({});
-    }
-    let servers = document["mcpServers"].as_object_mut().unwrap();
-    if let AgyChange::Upsert(spec) = change {
-        super::validation::validate_server_spec(&unified_spec(spec))?;
-        if spec["type"] == "sse" {
-            return Err(AppError::Config(
-                "Antigravity supports stdio and streamable HTTP, not SSE".into(),
-            ));
-        }
-        let mut merged = servers.get(id).cloned().unwrap_or_else(|| json!({}));
-        let object = merged
-            .as_object_mut()
-            .ok_or_else(|| AppError::Config("Invalid Antigravity MCP entry".into()))?;
-        for field in TRANSPORT_FIELDS {
-            object.remove(field);
-        }
-        object.extend(unified_spec(spec).as_object().unwrap().clone());
-        object.remove("enabled");
-        object.remove("disabled");
-        object.remove("serverUrl");
-        object.remove("type");
-        object.insert("disabled".into(), json!(false));
-        servers.insert(id.into(), merged);
-    } else if matches!(change, AgyChange::Remove) {
-        servers.remove(id);
-    } else {
-        if let Some(server) = servers.get_mut(id) {
+    super::native::edit_mcp_servers_document(path, "Antigravity", true, |servers| {
+        if let AgyChange::Upsert(spec) = change {
+            super::validation::validate_server_spec(&unified_spec(spec))?;
+            if spec["type"] == "sse" {
+                return Err(AppError::Config(
+                    "Antigravity supports stdio and streamable HTTP, not SSE".into(),
+                ));
+            }
+            let mut merged = servers.get(id).cloned().unwrap_or_else(|| json!({}));
+            let object = merged
+                .as_object_mut()
+                .ok_or_else(|| AppError::Config("Invalid Antigravity MCP entry".into()))?;
+            for field in TRANSPORT_FIELDS {
+                object.remove(field);
+            }
+            object.extend(unified_spec(spec).as_object().unwrap().clone());
+            object.remove("enabled");
+            object.remove("disabled");
+            object.remove("serverUrl");
+            object.remove("type");
+            object.insert("disabled".into(), json!(false));
+            servers.insert(id.into(), merged);
+        } else if matches!(change, AgyChange::Remove) {
+            servers.remove(id);
+        } else if let Some(server) = servers.get_mut(id) {
             let object = server
                 .as_object_mut()
                 .ok_or_else(|| AppError::Config("Invalid Antigravity MCP entry".into()))?;
             object.insert("disabled".into(), json!(true));
         }
-    }
-    atomic_write_private(
-        path,
-        serde_json::to_string_pretty(&document)
-            .map_err(|e| AppError::Config(e.to_string()))?
-            .as_bytes(),
-    )
+        // 停用一个不存在的条目也照样落盘，与改造前逐字节一致：文件内容不变，
+        // 但 AGy 原有的「每次都重写」行为保留。
+        Ok(true)
+    })
 }
 
 pub fn import(state: &AppState) -> Result<usize, AppError> {
@@ -137,7 +123,7 @@ mod tests {
         let path = dir.path().join("mcp_config.json");
         fs::write(&path, r#"{"extra":1,"mcpServers":{"unmanaged":{"command":"keep"},"managed":{"command":"old","args":["old"],"timeout":3000}}}"#).unwrap();
         sync_file(&path,"managed",AgyChange::Upsert(&json!({"type":"http","url":"https://example.test/mcp","headers":{"X-Test":"test"}}))).unwrap();
-        let doc = read(&path).unwrap();
+        let doc = crate::mcp::native::read_native(&path, "Antigravity", true).unwrap();
         assert_eq!(doc["extra"], 1);
         assert_eq!(doc["mcpServers"]["unmanaged"]["command"], "keep");
         let server = &doc["mcpServers"]["managed"];
@@ -149,11 +135,16 @@ mod tests {
         assert!(server.get("type").is_none());
         sync_file(&path, "managed", AgyChange::Disable).unwrap();
         assert_eq!(
-            read(&path).unwrap()["mcpServers"]["managed"]["disabled"],
+            crate::mcp::native::read_native(&path, "Antigravity", true).unwrap()["mcpServers"]
+                ["managed"]["disabled"],
             true
         );
         sync_file(&path, "managed", AgyChange::Remove).unwrap();
-        assert!(read(&path).unwrap()["mcpServers"].get("managed").is_none());
+        assert!(
+            crate::mcp::native::read_native(&path, "Antigravity", true).unwrap()["mcpServers"]
+                .get("managed")
+                .is_none()
+        );
     }
     #[test]
     fn agy_rejects_broken_config_and_sse_without_writing() {
@@ -183,7 +174,11 @@ mod tests {
         let path = dir.path().join("mcp_config.json");
         fs::write(&path, "").unwrap();
         sync_file(&path, "m", AgyChange::Upsert(&json!({"command":"new"}))).unwrap();
-        assert_eq!(read(&path).unwrap()["mcpServers"]["m"]["command"], "new");
+        assert_eq!(
+            crate::mcp::native::read_native(&path, "Antigravity", true).unwrap()["mcpServers"]["m"]
+                ["command"],
+            "new"
+        );
     }
     #[test]
     fn agy_mcp_restores_native_file_when_database_commit_fails() {

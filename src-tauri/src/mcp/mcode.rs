@@ -1,4 +1,3 @@
-use crate::config::atomic_write_private;
 use crate::error::AppError;
 use crate::store::AppState;
 use serde_json::{json, Value};
@@ -6,10 +5,6 @@ use std::{path::Path, sync::Mutex};
 
 static WRITE_LOCK: Mutex<()> = Mutex::new(());
 const TRANSPORT_FIELDS: [&str; 6] = ["command", "args", "env", "url", "headers", "type"];
-
-fn read(path: &Path) -> Result<Value, AppError> {
-    super::native::read_native(path, "MiniMax Code", false)
-}
 
 pub fn sync(id: &str, spec: Option<&Value>) -> Result<(), AppError> {
     let _guard = WRITE_LOCK
@@ -31,32 +26,24 @@ pub(crate) fn sync_and_commit<T>(
 }
 
 fn sync_file(path: &Path, id: &str, spec: Option<&Value>) -> Result<(), AppError> {
-    let mut document = read(path)?;
-    if document.get("mcpServers").is_none() {
-        document["mcpServers"] = json!({});
-    }
-    let servers = document["mcpServers"].as_object_mut().unwrap();
-    if let Some(spec) = spec {
-        super::validation::validate_server_spec(&unified_spec(spec))?;
-        let mut merged = servers.get(id).cloned().unwrap_or_else(|| json!({}));
-        let object = merged
-            .as_object_mut()
-            .ok_or_else(|| AppError::Config("Invalid MCode MCP entry".into()))?;
-        for field in TRANSPORT_FIELDS {
-            object.remove(field);
+    super::native::edit_mcp_servers_document(path, "MiniMax Code", false, |servers| {
+        if let Some(spec) = spec {
+            super::validation::validate_server_spec(&unified_spec(spec))?;
+            let mut merged = servers.get(id).cloned().unwrap_or_else(|| json!({}));
+            let object = merged
+                .as_object_mut()
+                .ok_or_else(|| AppError::Config("Invalid MCode MCP entry".into()))?;
+            for field in TRANSPORT_FIELDS {
+                object.remove(field);
+            }
+            object.extend(spec.as_object().unwrap().clone());
+            object.insert("enabled".into(), json!(true));
+            servers.insert(id.into(), merged);
+        } else {
+            servers.remove(id);
         }
-        object.extend(spec.as_object().unwrap().clone());
-        object.insert("enabled".into(), json!(true));
-        servers.insert(id.into(), merged);
-    } else {
-        servers.remove(id);
-    }
-    atomic_write_private(
-        path,
-        serde_json::to_string_pretty(&document)
-            .map_err(|e| AppError::Config(e.to_string()))?
-            .as_bytes(),
-    )
+        Ok(true)
+    })
 }
 
 pub fn import(state: &AppState) -> Result<usize, AppError> {
@@ -151,7 +138,11 @@ mod tests {
         )
         .unwrap();
         assert!(db.get_all_mcp_servers().unwrap().is_empty());
-        assert!(read(&path).unwrap()["mcpServers"].get("managed").is_none());
+        assert!(
+            crate::mcp::native::read_native(&path, "MiniMax Code", false).unwrap()["mcpServers"]
+                .get("managed")
+                .is_none()
+        );
     }
 
     #[test]
@@ -166,7 +157,7 @@ mod tests {
             Some(&json!({"type":"http","url":"https://example.com/mcp"})),
         )
         .unwrap();
-        let written = read(&path).unwrap();
+        let written = crate::mcp::native::read_native(&path, "MiniMax Code", false).unwrap();
         assert_eq!(written["version"], 7);
         assert_eq!(
             written["mcpServers"]["other"],
@@ -177,7 +168,11 @@ mod tests {
         assert_eq!(written["mcpServers"]["edit"]["enabled"], true);
         assert!(written["mcpServers"]["edit"].get("command").is_none());
         sync_file(&path, "edit", None).unwrap();
-        assert!(read(&path).unwrap()["mcpServers"].get("edit").is_none());
+        assert!(
+            crate::mcp::native::read_native(&path, "MiniMax Code", false).unwrap()["mcpServers"]
+                .get("edit")
+                .is_none()
+        );
         fs::write(&path, "broken json").unwrap();
         assert!(sync_file(&path, "new", Some(&json!({"command":"node"}))).is_err());
         assert_eq!(fs::read_to_string(path).unwrap(), "broken json");

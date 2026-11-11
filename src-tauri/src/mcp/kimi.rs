@@ -1,4 +1,3 @@
-use crate::config::atomic_write_private;
 use crate::error::AppError;
 use crate::store::AppState;
 use serde_json::{json, Value};
@@ -14,10 +13,6 @@ const TRANSPORT_FIELDS: [&str; 7] = [
     "type",
     "transport",
 ];
-
-fn read(path: &Path) -> Result<Value, AppError> {
-    super::native::read_native(path, "Kimi Code", false)
-}
 
 pub fn sync(id: &str, spec: Option<&Value>) -> Result<(), AppError> {
     let _guard = WRITE_LOCK
@@ -39,37 +34,29 @@ pub(crate) fn sync_and_commit<T>(
 }
 
 fn sync_file(path: &Path, id: &str, spec: Option<&Value>) -> Result<(), AppError> {
-    let mut document = read(path)?;
-    if document.get("mcpServers").is_none() {
-        document["mcpServers"] = json!({});
-    }
-    let servers = document["mcpServers"].as_object_mut().unwrap();
-    if let Some(spec) = spec {
-        super::validation::validate_server_spec(&unified_spec(spec))?;
-        let mut merged = servers.get(id).cloned().unwrap_or_else(|| json!({}));
-        let object = merged
-            .as_object_mut()
-            .ok_or_else(|| AppError::Config("Invalid Kimi Code MCP entry".into()))?;
-        for field in TRANSPORT_FIELDS {
-            object.remove(field);
+    super::native::edit_mcp_servers_document(path, "Kimi Code", false, |servers| {
+        if let Some(spec) = spec {
+            super::validation::validate_server_spec(&unified_spec(spec))?;
+            let mut merged = servers.get(id).cloned().unwrap_or_else(|| json!({}));
+            let object = merged
+                .as_object_mut()
+                .ok_or_else(|| AppError::Config("Invalid Kimi Code MCP entry".into()))?;
+            for field in TRANSPORT_FIELDS {
+                object.remove(field);
+            }
+            let mut native = unified_spec(spec);
+            let kind = native.as_object_mut().unwrap().remove("type");
+            if kind.as_ref().and_then(Value::as_str) == Some("sse") {
+                native["transport"] = json!("sse");
+            }
+            object.extend(native.as_object().unwrap().clone());
+            object.insert("enabled".into(), json!(true));
+            servers.insert(id.into(), merged);
+        } else {
+            servers.remove(id);
         }
-        let mut native = unified_spec(spec);
-        let kind = native.as_object_mut().unwrap().remove("type");
-        if kind.as_ref().and_then(Value::as_str) == Some("sse") {
-            native["transport"] = json!("sse");
-        }
-        object.extend(native.as_object().unwrap().clone());
-        object.insert("enabled".into(), json!(true));
-        servers.insert(id.into(), merged);
-    } else {
-        servers.remove(id);
-    }
-    atomic_write_private(
-        path,
-        serde_json::to_string_pretty(&document)
-            .map_err(|e| AppError::Config(e.to_string()))?
-            .as_bytes(),
-    )
+        Ok(true)
+    })
 }
 
 pub fn import(state: &AppState) -> Result<usize, AppError> {
@@ -124,7 +111,7 @@ mod tests {
             ),
         )
         .unwrap();
-        let value = read(&path).unwrap();
+        let value = crate::mcp::native::read_native(&path, "Kimi Code", false).unwrap();
         assert_eq!(value["mcpServers"]["server"]["transport"], "sse");
         assert_eq!(value["mcpServers"]["server"]["enabled"], true);
         assert_eq!(value["mcpServers"]["server"]["deferred"], true);
@@ -136,7 +123,7 @@ mod tests {
             Some(&json!({"type":"stdio","command":"node","args":["new.js"]})),
         )
         .unwrap();
-        let value = read(&path).unwrap();
+        let value = crate::mcp::native::read_native(&path, "Kimi Code", false).unwrap();
         assert!(value["mcpServers"]["server"].get("url").is_none());
         assert!(value["mcpServers"]["server"].get("transport").is_none());
         assert_eq!(value["mcpServers"]["other"]["command"], "node");

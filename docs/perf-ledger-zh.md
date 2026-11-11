@@ -735,6 +735,59 @@ parseDiff 22 / routingValidation 23 / sessionRowHeight 8）。剩余未覆盖文
   少量像 `circuit_breaker.rs::transition_to_half_open` 那样能省三行原子操作的，
   收紧会改变「状态置位与计数器清零」的可见顺序、引入竞态，**判定不动**。
 
+### 第六轮：`mcp/native.rs` 补上写入侧的对称抽取，四家同步逻辑不再各写一遍
+
+- 位置：[`src-tauri/src/mcp/native.rs`](src-tauri/src/mcp/native.rs)（新增
+  `write_mcp_servers_document` / `edit_mcp_servers_document`）、
+  [`kimi.rs`](src-tauri/src/mcp/kimi.rs)、[`mcode.rs`](src-tauri/src/mcp/mcode.rs)、
+  [`agy.rs`](src-tauri/src/mcp/agy.rs)、[`pi.rs`](src-tauri/src/mcp/pi.rs)
+- 动机：`native.rs` 的模块文档自己写着「Pi / Kimi / MCode / AGy 四家的原生配置文件
+  形状相同……读取校验与导入逻辑因此完全同构。差异只由 `NativeSource` 表达」——
+  读/导入侧确实抽成了结构体，**写入侧却一直是四份 `sync_file` 各写一遍**。
+- 取证（规范化行比对，只数 `#[cfg(test)]` 之前的生产代码）：56 行生产代码在
+  kimi / mcode / agy / pi 中至少三个文件里逐行相同；占各自生产段的比例是
+  kimi 72%、mcode 84%、agy 63%、pi 42%。四份复制的是同一套四步：
+  `read_native` → 缺 `mcpServers` 就补空对象 → `as_object_mut().unwrap()` 取 servers
+  → `to_string_pretty` + `atomic_write_private` 落盘。
+- 处理：`edit_mcp_servers_document(path, label, tolerate_empty, edit)` 收掉这四步，
+  `edit` 闭包只表达各家自己的合并策略，返回 `bool` 表示是否需要落盘——
+  Pi 的「停用/删除一个不存在的条目就什么都不做」正好用 `false` 表达。
+  AGy 原有「停用不存在的条目也照样重写文件」的行为**原样保留**（返回 `true`），
+  不借机改语义。四家的 `sync_file` 因此各少一层缩进。
+  顺带删掉 kimi / mcode / agy 三个只剩测试在用的 `fn read`（死生产代码），
+  测试改调 `crate::mcp::native::read_native`；pi 的 `read` 仍被
+  `remove_disabled_if_managed` 使用，保留。
+- 证据（生产段行数，`git show HEAD:<path>` 与工作区对比）：
+
+  | 文件 | 改前 | 改后 | |
+  | --- | --- | --- | --- |
+  | `mcp/kimi.rs` | 108 | 95 | -13 |
+  | `mcp/mcode.rs` | 90 | 77 | -13 |
+  | `mcp/agy.rs` | 129 | 115 | -14 |
+  | `mcp/pi.rs` | 329 | 320 | -9 |
+  | `mcp/native.rs` | 159 | 196 | +37 |
+  | 合计 | 815 | 803 | **-12** |
+
+  **行数上几乎是平的（-12）**，这一轮买的不是行数，是三件事：
+  1. 四份 `document["mcpServers"].as_object_mut().unwrap()` 这个潜在 panic 点
+     收敛成一处带不变式说明的 `expect`（`read_native` 已保证缺失或是对象）；
+  2. 「确保 `mcpServers` 是对象 + 怎么落盘」从此只有一处可改，四家同步生效；
+  3. `native.rs` 读/导入侧的 `NativeSource` 与写入侧的
+     `edit_mcp_servers_document` 终于对称，和模块文档的说法一致。
+- 状态：**已完成**
+- 测试：`cargo test --lib mcp::` **123 passed / 0 failed**；无新增用例——
+  这轮改的是代码组织，四家 `sync_file` 的可观测行为逐条未变（写库结果、
+  失败路径、是否需要落盘全同），现有 kimi 2 / mcode 2 / agy 5 / pi 4 加
+  `native` 的用例即覆盖。全量 `cargo test --lib` 5 009 passed / 0 failed /
+  20 ignored、`cargo test --tests` 5 227 = 5 009 + 218 集成、
+  `cargo clippy --lib --all-targets` 0 warning、`cargo fmt --check` 干净，
+  与改前逐项一致。
+- 审计后否定（同类扫描）：按固定行窗口做重复检测，全仓 379 个 `.rs` 扫完，
+  只剩 109 个重复窗口，其中 `streaming.rs` / `streaming_codex_chat.rs` 那 22 个
+  **全在 `#[cfg(test)]` 里**（同一个 `terminal_boundary_output` 测试抄了两家）、
+  `provider_router.rs` / `tests_issue_7271.rs` 那 45 个是回归测试复刻生产代码。
+  两边都不该抽——抽了会让两个 provider 的测试失去独立性。
+
 ### 验证矩阵（本账本全部改动的收口）
 
 后续每个提交都在本地跑过下面这些，不依赖 CI：
@@ -773,6 +826,12 @@ parseDiff 22 / routingValidation 23 / sessionRowHeight 8）。剩余未覆盖文
   `release`，再跑 release 探针，最后跑集成测试；或者跑完 release 立刻把
   `target/release` 删掉。删盘要盯住 `debug/incremental` 和 `release` 这两个
   可再生目录，`debug/deps` 不要碰。
+  同轮再踩一次（11-12 晚）：清到 17.15 GB 后连跑 `cargo check --lib` +
+  `cargo test --lib mcp::`，`debug/incremental` 重新长到 3.86 GB，
+  接着 `cargo test --lib` 直接
+  `rustc-LLVM ERROR: IO failure on output stream: no space on device`——
+  **失败本身不留空间**，报错时空闲已经见底。再清一次 incremental（回收 3.78 GB）
+  才全绿。所以每轮验证前都先 `Get-PSDrive C` 看一眼，别等报了错再清。
 - 删除做法：`Get-ChildItem -Recurse -File` 之后逐个
   `[System.IO.File]::Delete($f.FullName)`，不用 `Remove-Item -Recurse`
   （AGENTS.md 的 Windows 安全规则），删完再滚掉空目录。删前用
@@ -794,6 +853,13 @@ parseDiff 22 / routingValidation 23 / sessionRowHeight 8）。剩余未覆盖文
 `down.nigx.cn` 14.3s，次日 `down.nigx.cn` 一度 355s、`seep.eu.org` 342s，
 再晚些 `down.nigx.cn` 回到 19s。所以别把这些数字当恒定值：推不动就按
 「down.nigx.cn → seep.eu.org → jsnzkpg4」换，并给每次尝试记实际耗时。
+再补充（2026-11-12 晚）：**「jsnzkpg4 会卡死」这条结论已被推翻**。同一天先后
+试了三个地址推同一个提交：`down.nigx.cn` 返回 HTTP 429（限流，约 8s 就失败）、
+`seep.eu.org` 挂 6 分多钟后 `OpenSSL SSL_read: Connection was reset (errno 10054)`、
+`jsnzkpg4.pages.dev` **4.2s 推完**。顺序应该按当天实际情况动态选，别固定迷信
+某一个；`down.nigx.cn` 的 429 是短时限流，等一会儿往往就恢复。
+推完用 `git ls-remote <地址> refs/heads/main` 核对远端 SHA，再
+`git update-ref refs/remotes/origin/main <sha>` 同步跟踪引用。
 
 - **跨轮测量的噪声会骗人**：分别跑两轮 release probe 读 before/after，`full forward`
   涨了 11% 而没被改动的 `deep clone` 跌了 16%——加了一项交替测量才发现是负载噪声。
