@@ -261,7 +261,8 @@
 落地后复验（全部本地跑过，不依赖 CI）：
 
 - `cargo test --lib`：5007 passed / 0 failed / 18 ignored（比基线多 2 个测试、1 个 ignored 探针）
-- `cargo test --tests`：218 passed / 0 failed
+- cargo test --tests（含 lib 单测目标，-j 2）：5 225 = 5 007 lib + 218 集成，全过
+  （集成测试单独算是 218 个：16 个 tests/*.rs 文件，不重复数 lib 那 5 007 个）
 - `cargo clippy --lib --all-targets`：0 warning
 - `cargo fmt --check`：干净
 - `pnpm typecheck`、`pnpm format:check`、`pnpm build:renderer`：通过
@@ -687,6 +688,10 @@ parseDiff 22 / routingValidation 23 / sessionRowHeight 8）。剩余未覆盖文
   （实测 3.8s 推完），推完补一句
   `git update-ref refs/remotes/origin/main <new-sha>` 把跟踪引用修正过来，
   不用改用户的 remote 配置。
+补充（2026-11-12 复测）：三个地址的延迟会随时间波动——当天 `jsnzkpg4` 挂死、
+`down.nigx.cn` 14.3s，次日 `down.nigx.cn` 一度 355s、`seep.eu.org` 342s，
+再晚些 `down.nigx.cn` 回到 19s。所以别把这些数字当恒定值：推不动就按
+「down.nigx.cn → seep.eu.org → jsnzkpg4」换，并给每次尝试记实际耗时。
 
 - **跨轮测量的噪声会骗人**：分别跑两轮 release probe 读 before/after，`full forward`
   涨了 11% 而没被改动的 `deep clone` 跌了 16%——加了一项交替测量才发现是负载噪声。
