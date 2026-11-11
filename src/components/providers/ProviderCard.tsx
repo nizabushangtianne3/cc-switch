@@ -24,7 +24,7 @@ import CopilotQuotaFooter from "@/components/CopilotQuotaFooter";
 import CodexOauthQuotaFooter from "@/components/CodexOauthQuotaFooter";
 import XaiOauthQuotaFooter from "@/components/XaiOauthQuotaFooter";
 import AgyAccountQuotaFooter from "@/components/AgyAccountQuotaFooter";
-import { ClaudeBoundAccountLine } from "@/components/providers/forms/ClaudeOfficialSection";
+import { ClaudeBoundAccountLine } from "@/components/providers/forms/ClaudeBoundAccountLine";
 import ClaudeAccountQuotaFooter from "@/components/ClaudeAccountQuotaFooter";
 import { claudePlanLabel } from "@/lib/claudePlan";
 import {

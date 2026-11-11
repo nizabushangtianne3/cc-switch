@@ -15,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useClaudeLoginBlocked } from "./ClaudeBoundAccountLine";
 import { useManagedAuth } from "./hooks/useManagedAuth";
 import { useManagedAccountUsers } from "./hooks/useManagedAccountUsers";
 import {
@@ -33,27 +34,6 @@ import { claudePlanLabel } from "@/lib/claudePlan";
 const EXPIRY_NOTICE_MS = 7 * 24 * 60 * 60 * 1000;
 
 const SERVICE_NAME = "Claude";
-
-const LOGIN_SWITCH_KEY = ["claude-login-switch"] as const;
-
-function useClaudeLoginSwitch() {
-  return useQuery({
-    queryKey: LOGIN_SWITCH_KEY,
-    queryFn: () => authApi.getClaudeLoginSwitch(),
-    staleTime: 30000,
-  });
-}
-
-/**
- * 切卡为什么不会换 Claude Code 的登录：
- * - `"wsl"`：配置目录在 WSL 里，账号功能整体不可用（登录、终端都跑在 Windows 上）；
- * - `"overrideDir"`：设了别的配置目录覆盖，只能从卡片「打开终端」用选中账号。
- */
-function useClaudeLoginBlocked(): "wsl" | "overrideDir" | null {
-  const { data } = useClaudeLoginSwitch();
-  if (data?.active !== false) return null;
-  return data.blocked === "wsl" ? "wsl" : "overrideDir";
-}
 
 /**
  * 浏览器授权后回不到本机（远程桌面、浏览器拦了本机地址）时的退路：把浏览器地址栏里的
@@ -498,96 +478,6 @@ export function ClaudeAccountSelect({
                   "切到这张卡后，Claude Code 的登录会实时换成选中的账号，正在运行的会话也一样。想同时用几个号，从卡片「打开终端」。",
               })}
       </p>
-    </div>
-  );
-}
-
-function useClaudeAccount(accountId: string) {
-  const { data, isSuccess } = useQuery({
-    queryKey: ["managed-auth-status", "claude_official"],
-    queryFn: () => authApi.authGetStatus("claude_official"),
-    staleTime: 30000,
-  });
-  return {
-    isSuccess,
-    account: data?.accounts.find((a) => a.id === accountId),
-  };
-}
-
-/**
- * 绑了账号的 Claude 官方卡副标题（官网地址的位置），和 Codex 官方卡同一套写法：写账号，
- * 有备注写备注，卡名里已经有账号就写「Claude 账号」；登录失效、或切卡不会换号（设了配置
- * 目录覆盖）时跟一句提示。
- */
-export function ClaudeBoundAccountLine({
-  accountId,
-  providerName,
-  note,
-  showPlan = false,
-}: {
-  accountId: string;
-  providerName: string;
-  note?: string;
-  /** 卡片开了额度查询时才写套餐 */
-  showPlan?: boolean;
-}) {
-  const { t } = useTranslation();
-  const blocked = useClaudeLoginBlocked();
-  const { isSuccess, account } = useClaudeAccount(accountId);
-  if (!isSuccess) return null;
-  if (!account) {
-    return (
-      <div className="mt-0.5 flex min-w-0 items-center gap-1 text-caption text-warning-text">
-        <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-        <span className="min-w-0 truncate">
-          {t("provider.form.claudeAccount.missing", {
-            defaultValue: "不在这台电脑上的账号",
-          })}
-        </span>
-      </div>
-    );
-  }
-  const expiresAt = account.login_expires_at ?? null;
-  const needsReauth =
-    account.requires_reauth || (expiresAt !== null && expiresAt <= Date.now());
-  const plan = showPlan
-    ? claudePlanLabel(t, account.plan, account.rate_limit_tier)
-    : null;
-  const name = providerName.trim();
-  const label =
-    note ??
-    (name === account.login || name.includes(account.login)
-      ? t("provider.form.claudeAccount.claudeAccount", {
-          defaultValue: "Claude 账号",
-        })
-      : account.login);
-  return (
-    <div className="mt-0.5 flex min-w-0 items-center gap-2 text-caption text-fg-2">
-      <span className="min-w-0 truncate" title={note ?? account.login}>
-        {label}
-      </span>
-      {/* 跟在账号后面：「me@example.com · Max 20x」（抵掉一半间距，和「 · 」一样宽） */}
-      {plan && <span className="-ms-1 shrink-0">· {plan}</span>}
-      {needsReauth ? (
-        <span className="inline-flex shrink-0 items-center gap-1 text-warning-text">
-          <AlertTriangle className="h-3.5 w-3.5" />
-          {t("provider.form.claudeAccount.reauthBadge", {
-            defaultValue: "需要重新登录",
-          })}
-        </span>
-      ) : blocked === "wsl" ? (
-        <span className="shrink-0">
-          {t("provider.form.claudeAccount.wslHint", {
-            defaultValue: "WSL 暂不支持",
-          })}
-        </span>
-      ) : blocked === "overrideDir" ? (
-        <span className="shrink-0">
-          {t("provider.form.claudeAccount.terminalHint", {
-            defaultValue: "从卡片打开终端使用",
-          })}
-        </span>
-      ) : null}
     </div>
   );
 }

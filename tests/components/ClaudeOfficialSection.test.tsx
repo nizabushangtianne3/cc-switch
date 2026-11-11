@@ -4,9 +4,9 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ClaudeAccountSelect,
-  ClaudeBoundAccountLine,
   ClaudeOfficialSection,
 } from "@/components/providers/forms/ClaudeOfficialSection";
+import { ClaudeBoundAccountLine } from "@/components/providers/forms/ClaudeBoundAccountLine";
 
 const mocks = vi.hoisted(() => ({
   useManagedAuth: vi.fn(),

@@ -31,7 +31,7 @@ vi.mock("@/components/ClaudeAccountQuotaFooter", () => ({
     return <div>claude-account-quota</div>;
   },
 }));
-vi.mock("@/components/providers/forms/ClaudeOfficialSection", () => ({
+vi.mock("@/components/providers/forms/ClaudeBoundAccountLine", () => ({
   ClaudeBoundAccountLine: (props: { showPlan?: boolean }) => {
     claudeLineProps(props);
     return <div>account-line</div>;

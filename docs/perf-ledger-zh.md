@@ -892,6 +892,49 @@ parseDiff 22 / routingValidation 23 / sessionRowHeight 8）。剩余未覆盖文
   `ManagedAccountsGroup.tsx`。`ProviderList` 是为「DSH 登录了 DeepSeek 账号时
   在已添加最前面画一张官方账号卡」才用它的，是首屏的真实需要，不是桶文件那种误连。
 
+### 第九轮：`ClaudeBoundAccountLine` 拆出去，首屏卡片不再拖 467 行的表单认证钩子
+
+- 位置：新增 [`ClaudeBoundAccountLine.tsx`](src/components/providers/forms/ClaudeBoundAccountLine.tsx)、
+  [`ClaudeOfficialSection.tsx`](src/components/providers/forms/ClaudeOfficialSection.tsx)、
+  [`ProviderCard.tsx`](src/components/providers/ProviderCard.tsx)
+- 取证：继续查主入口静态图里的可疑模块，链路是
+  `App.tsx` → `ProviderList.tsx` → `ProviderCard.tsx:27` →
+  `ClaudeOfficialSection.tsx` → `hooks/useManagedAuth.ts`。
+  `ProviderCard` 只从那个 593 行的表单区块里拿一个小组件
+  `ClaudeBoundAccountLine`（画「绑了哪个 Claude 账号」那行副标题），
+  却把整棵表单区块拖进首屏——其中 `useManagedAuth.ts` 467 行 / 15.4 KB。
+  用字面量搜索确认 `managedAuth.accountRemoved`、`codexOauth.loginExpired`
+  这些 `useManagedAuth.ts` 独有的字符串**确实在 `main-*.js` 里**。
+- 处理：`ClaudeBoundAccountLine` 连它自用的三个本地钩子
+  （`useClaudeLoginSwitch` / `useClaudeLoginBlocked` / `useClaudeAccount`）
+  一起搬进独立模块；`useClaudeLoginBlocked` 因为 `ClaudeOfficialSection`
+  自己的账号选择也要用，从新模块导出、原文件改为导入，保持单一定义。
+- 证据（`pnpm build:renderer`，字面量归属用搜索法核对）：
+
+  | 指标 | 改前 | 改后 | |
+  | --- | --- | --- | --- |
+  | `main-*.js` 原始 | 616.46 kB | **581.02 kB** | **-35.44 kB** |
+  | `main-*.js` gzip | 196.56 kB | **185.93 kB** | **-10.63 kB / -5.4%** |
+  | 主窗口初始载荷 | 1 268.1 KB | **1 233.5 KB** | **-34.6 KB** |
+  | `useManagedAuth` 独有字面量所在块 | `main-*.js` | 只剩 `ClaudeOfficialSection-*.js`（41.4 kB 懒加载块） | 已验证 |
+
+  `ClaudeOfficialSection-*.js` 是这一轮新独立出来的懒加载块（42.35 kB），
+  只在打开供应商表单时才加载。
+- 状态：**已完成**
+- 测试：`ProviderCard.claudeAccount.test.tsx` 5 + `ClaudeOfficialSection.test.tsx` 14
+  + `ProviderList.test.tsx` 38 + `AddProviderDialog.test.tsx` 16 = **68 个全过**；
+  全量 `pnpm vitest run` **4 137 passed / 0 failed**（336 个文件）；
+  `pnpm typecheck`、`pnpm prettier --check`、`pnpm build:renderer` 通过。
+- 踩坑（记下来，下次别重复）：**字面量必须选目标模块独有的**。我第一轮选
+  `managed-auth-status` 判断 `useManagedAuth.ts` 在不在主入口，看着像命中，
+  其实那个字符串同时是 `ClaudeOfficialSection.tsx` 里 `useClaudeAccount`
+  的 queryKey——差点追错方向。改选 `managedAuth.accountRemoved`、
+  `codexOauth.loginExpired` 这些只在该文件出现的才作准。
+- 本轮会话累计（都本地验证后推送，未跑 Actions）：`main-*.js`
+  643.31 kB → **581.02 kB（-62.29 kB）**，gzip 206.95 → **185.93 kB（-21.02 kB）**；
+  托盘面板初始载荷 1 045.8 KB → **612.6 KB（-41.4%）**；
+  `log_request` 每行省 7.46 µs；`mcp` 生产段 815 → 803 行。
+
 ### 下一轮候选（按证据排序，都未动手）
 
 1. **拆掉 `src/lib/query/index.ts` 这个桶**：`App.tsx` 加 40 多处导入方直接写
@@ -922,7 +965,7 @@ parseDiff 22 / routingValidation 23 / sessionRowHeight 8）。剩余未覆盖文
 | 前端类型 | `pnpm typecheck` | 通过 |
 | 前端格式 | `pnpm prettier --check` | 通过（`useClaudeAccountQuota.test.tsx` 是改动前就有的既有问题，未动） |
 | 前端测试 | `pnpm vitest run` | 4 137 passed / 0 failed（336 个文件） |
-| 前端构建 | `pnpm build:renderer` | 通过（`main-*.js` 616.46 kB / gzip 196.56 kB；主窗口初始载荷 1268.1 KB；托盘面板初始载荷 612.6 KB） |
+| 前端构建 | `pnpm build:renderer` | 通过（`main-*.js` 581.02 kB / gzip 185.93 kB；主窗口初始载荷 1233.5 KB；托盘面板初始载荷 612.6 KB） |
 
 **release 编译是这一轮才补的**：此前所有 Rust 改动只在 debug/test profile 验过，
 而打包走 release（fat LTO + `codegen-units = 1`），两者不是同一套代码生成路径。
