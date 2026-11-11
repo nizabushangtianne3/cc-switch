@@ -935,12 +935,9 @@ parseDiff 22 / routingValidation 23 / sessionRowHeight 8）。剩余未覆盖文
   托盘面板初始载荷 1 045.8 KB → **612.6 KB（-41.4%）**；
   `log_request` 每行省 7.46 µs；`mcp` 生产段 815 → 803 行。
 
-### 下一轮候选（按证据排序，都未动手）
+### 下一轮候选
 
-1. **拆掉 `src/lib/query/index.ts` 这个桶**：`App.tsx` 加 40 多处导入方直接写
-   具体模块路径。当前它不造成额外体积（第八轮后已用字面量搜索确认），
-   收益是**预防性**的——只要有模块再从 `sessions.ts` 这类重模块导轻量符号，
-   就会重新把整棵树拖进入口。机械改动、无行为风险，但收益不可测量。
+1. ~~**拆掉 `src/lib/query/index.ts` 这个桶**~~ → **第十一轮已落地（`3f3130aa`）**。
 2. **`ManagedAccountsGroup`（25 KB）是否该留在主入口**：要先判断首屏那张 DSH
    账号卡是否用得上它的完整实现。若是，可把卡片要的那部分拆成更小的模块；
    若不是，链条本身就该断。**这是产品判断，等用户拍板。**
@@ -975,6 +972,41 @@ parseDiff 22 / routingValidation 23 / sessionRowHeight 8）。剩余未覆盖文
   抽 TOML 原语模块；而抽之前先量一下就会发现摇树已经代劳了。
 - 方法学收获：**「某个导出只在懒加载方用」不等于「它的代码在主入口里」**。
   先搜一个该导出独有的字面量、确认它真的在 `main-*.js`，再决定要不要拆。
+
+### 第十一轮：拆掉 `lib/query/index.ts` 桶文件——体积持平，换来的是少一层虚转
+
+- 动机：账本第八轮就记下桶文件是个隐患（「只要有模块再从 `sessions.ts` 这类重模块
+  导轻量符号，就会重新把整棵树拖进入口」）。当时判定不改是因为「收益不可测量」。
+  这一轮把它当**代码质量项**做掉：它本来就是一层虚转，按用户要求「精简代码逻辑，
+  不要写无效代码」，这层转发没有存在理由。
+- 事实盘点（`rg` 全仓）：桶文件 `export *` 了 6 个模块
+  （`queryClient`/`queries`/`mutations`/`proxy`/`subscription`/`pi`），
+  21 个源文件 + 2 个测试通过它导入；`queries.ts` 末尾另挂一条
+  `export { useSessionMessagesQuery } from "./sessions"` 转发垫片。
+- 做法：23 个导入方按符号真实来源改写为具体路径
+  （`@/lib/query/queries` / `mutations` / `pi` / `proxy` / `queryClient`），
+  桶文件与转发垫片一并删除；8 个 `vi.mock("@/lib/query")` 换成对应具体模块；
+  `tests/lib/sessionsQuery.test.tsx` 里那条「旧入口 `@/lib/query` 仍可用」的
+  转发断言随之删除——入口都没了，兼容测试没有意义。
+- **体积实测（这才是要记的重点）**：`pnpm build:renderer` 前后对比，gzip 前——
+
+  | 维度 | 前 | 后 | 差 |
+  | --- | --- | --- | --- |
+  | dist 全部 js 总量 | 6 929 814 | 6 929 865 | +51 |
+  | 首屏三块（`main`+`useMoneyFormat`+`disableContextMenu`） | 1 160 551 | 1 160 573 | +22 |
+  | `main-*.js` | 581 020 | 615 182 | +34 162 |
+  | `useMoneyFormat-*.js` | 77 270 | 43 130 | -34 140 |
+  | 其余懒加载块 | — | — | **全部逐字节不变** |
+
+  `main` 涨、`useMoneyFormat` 跌，两者几乎完全对冲（34 162 vs 34 140），
+  **总量与首屏字节量都没变**——rollup 只是把同一批模块在两块之间换了归属。
+  拆桶前的猜测（「桶会拖整棵树进入口」）在当前代码状态下不成立，
+  已被实测否定；真正站得住的收益是去掉了一层虚转和一条垫片。
+- 验证：`pnpm typecheck` 通过；`pnpm vitest run` 4 137 passed / 0 failed
+  （两次全量跑里各有 1 例 `tests/integration/App.test.tsx` 超时，
+  单独重跑该文件 26/26 通过，第三轮全量即全绿，判并发噪声）；
+  `pnpm prettier --check` 干净（`SessionManagerPage.tsx` 改后先被 prettier 报格式，
+  `--write` 后复检通过）。
 
 ### 第十轮：测试 HOME 隔离的锁域审计——否定一项改写计划，记录一处跨组隐患
 

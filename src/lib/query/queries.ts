@@ -303,4 +303,3 @@ export const useSessionsQuery = () => {
     staleTime: 30 * 1000,
   });
 };
-

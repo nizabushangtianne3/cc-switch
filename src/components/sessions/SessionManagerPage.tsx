@@ -26,10 +26,7 @@ import {
   useSessionContentSearch,
 } from "@/hooks/useSessionContentSearch";
 import { useSettings } from "@/hooks/useSettings";
-import {
-  useSessionsQuery,
-  useSettingsQuery,
-} from "@/lib/query/queries";
+import { useSessionsQuery, useSettingsQuery } from "@/lib/query/queries";
 import { useDeleteSessionMutation } from "@/lib/query/mutations";
 import { piKeys } from "@/lib/query/pi";
 import { piApi, sessionsApi, type AppId } from "@/lib/api";
