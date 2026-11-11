@@ -1079,6 +1079,21 @@ parseDiff 22 / routingValidation 23 / sessionRowHeight 8）。剩余未覆盖文
   与拆分前完全一致）；`cargo clippy --lib --all-targets` 0 warning；
   `cargo fmt -- --check` 干净。
 
+### 第十三轮：`mode/controller.rs` 双测试模块外迁——9167 行减到 1915 行
+
+- 扫描结构：`#[cfg(test)] mod tests`（2007-2620，614 行，凭据与模型别名契约）与
+  `#[cfg(test)] mod mode_tests`（2622-9166，**6 545 行**，双模式验收）嵌在
+  `controller.rs` 里，生产代码只有 1 915 行。
+- 做法：两个 mod 分别搬到 `contract_tests.rs` / `mode_tests.rs`，
+  `controller.rs` 用 `#[path]` 挂载，与第十一/十二轮同一套先例。
+  踩坑：内层 `//!` doc comment 外迁后变成非法 outer doc comment（前面有我们自己的
+  `//!` 头），统一降级成 `//`；两份文件里残留的重复 `use super::*;` 一并清理。
+- 验证：`cargo test --lib` 5 009 passed / 0 failed / 20 ignored；
+  `cargo test --tests -j 2` 汇总 5 227 passed / 0 failed（与拆分前完全一致）；
+  `clippy --lib --all-targets` 0 warning；`fmt --check` 干净。
+  `controller.rs` **9 167 → 1 915 行**；`contract_tests.rs` 566 行；
+  `mode_tests.rs` 6 032 行。
+
 ### 验证矩阵（本账本全部改动的收口）
 
 后续每个提交都在本地跑过下面这些，不依赖 CI：
