@@ -154,6 +154,32 @@
 
 #### 审计结论：Rust 侧死代码已清零，另删掉一个空转的 `allow(dead_code)`
 
+### 验证矩阵（本账本全部改动的收口）
+
+后续每个提交都在本地跑过下面这些，不依赖 CI：
+
+| 维度 | 命令 | 结果 |
+| --- | --- | --- |
+| Rust 单元 + 集成测试 | `cargo test --lib -j 2` | 5 007 passed / 0 failed / 19 ignored |
+| Rust 集成测试 | `cargo test --tests -j 2` | 218 passed / 0 failed |
+| Rust lint | `cargo clippy --lib --all-targets` | 0 warning |
+| Rust 格式 | `cargo fmt --check` | 干净 |
+| Rust release 编译 | `cargo build --lib --release` | 9m18s 通过（fat LTO、codegen-units=1） |
+| Rust 全部 feature | `cargo clippy/test --all-features` | 0 warning / 5 007 passed |
+| 前端类型 | `pnpm typecheck` | 通过 |
+| 前端格式 | `pnpm prettier --check` | 通过（`useClaudeAccountQuota.test.tsx` 是改动前就有的既有问题，未动） |
+| 前端测试 | `pnpm vitest run` | 4 106 passed / 0 failed |
+| 前端构建 | `pnpm build:renderer` | 通过（入口块 643.22 kB） |
+
+**release 编译是这一轮才补的**：此前所有 Rust 改动只在 debug/test profile 验过，
+而打包走 release（fat LTO + `codegen-units = 1`），两者不是同一套代码生成路径。
+`cargo build --lib --release` 实测 9m18s 通过。
+
+**构建缓存要定期清**：`src-tauri/target` 一路涨到 42 GB（`debug` 39.4 GB，其中
+`debug/incremental` 12.69 GB；`release` 2.61 GB），把 C 盘从 25 GB 空闲吃到 11 GB。
+按 AGENTS.md 第 5 条清掉这两个可再生目录后回到 24.3 GB。`debug/incremental` 是
+纯编译器缓存、`release` 是可再生产物，删了只让下一次构建变慢，不影响任何源数据。
+
 - 同法扫 Rust：正则提 `src/**` 下 3 063 个 `pub` / `pub(crate)` 顶层项，
   `rg -w -c` 数在 `src/` 内的出现次数，`<= 1` 即无人引用。
   得 7 个候选，逐个查清后**没有一个是真死的**：4 个名字带 `test_hook`
