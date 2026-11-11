@@ -882,11 +882,30 @@ parseDiff 22 / routingValidation 23 / sessionRowHeight 8）。剩余未覆盖文
   全量 `pnpm vitest run` **4 137 passed / 0 failed**（336 个文件）；
   `pnpm typecheck`、`pnpm prettier --check`、`pnpm build:renderer` 通过。
 - 遗留观察（记录，未改）：`src/lib/query/index.ts` 这个桶仍在，
-  `App.tsx` / 20 多个组件都从 `@/lib/query` 导入。它现在**没有**造成额外体积
+  `App.tsx` / 40 多处都从 `@/lib/query` 导入。它现在**没有**造成额外体积
   （改后搜索字面量确认阅读器代码已不在主入口），但只要有任何一个模块从
   `sessions.ts` 这类重模块导入轻量符号，就会重新把整棵树拖进入口。
-  下一轮该做的是**把桶拆掉、让每个导入方直接写具体模块路径**——
-  那是 40 多个文件的机械改动，单独排期。
+- 又查了一处同类嫌疑，结论是**合法依赖、不动**：`components/settings/auth/
+  ManagedAccountsGroup.tsx`（25 KB）也在 `main-*.js` 里（搜
+  `authCenter.pending.reauth` / `authCenter.toast.reauthed` 两个特有字面量确认）。
+  链条是 `ProviderList.tsx:57`（首屏组件）→ `DshAccount.tsx:7` →
+  `ManagedAccountsGroup.tsx`。`ProviderList` 是为「DSH 登录了 DeepSeek 账号时
+  在已添加最前面画一张官方账号卡」才用它的，是首屏的真实需要，不是桶文件那种误连。
+
+### 下一轮候选（按证据排序，都未动手）
+
+1. **拆掉 `src/lib/query/index.ts` 这个桶**：`App.tsx` 加 40 多处导入方直接写
+   具体模块路径。当前它不造成额外体积（第八轮后已用字面量搜索确认），
+   收益是**预防性**的——只要有模块再从 `sessions.ts` 这类重模块导轻量符号，
+   就会重新把整棵树拖进入口。机械改动、无行为风险，但收益不可测量。
+2. **`ManagedAccountsGroup`（25 KB）是否该留在主入口**：要先判断首屏那张 DSH
+   账号卡是否用得上它的完整实现。若是，可把卡片要的那部分拆成更小的模块；
+   若不是，链条本身就该断。**这是产品判断，等用户拍板。**
+3. **P2-2 图标表**（`src/icons/extracted/index.ts` 187.6 KB / 102 处内联
+   `<svg>` 共 178.8 KB）：仍在所有懒加载块的公共 chunk 里。账本已量过
+   0.2~0.4 ms 解析、判定不改。要动就得整套方案（SVG 落独立文件 +
+   `import.meta.glob(eager:false)` + `ProviderIcon` 异步化 + 核对
+   currentColor 不退化），是独立排期的大件。
 
 ### 验证矩阵（本账本全部改动的收口）
 
