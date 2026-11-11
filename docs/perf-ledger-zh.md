@@ -551,6 +551,15 @@
 
 ## 踩坑记录
 
+- **推送走 `jsnzkpg4.pages.dev` 加速地址会卡死**（2026-11-11 实测）：`git push` 挂住
+  20 分钟后被 `OpenSSL SSL_read: Connection was reset` 打断；`git ls-remote` 同一地址
+  要 649.7s。同批实测另两个加速地址：`seep.eu.org` 342.5s、
+  **`down.nigx.cn` 14.3s**。所以推不动时直接换
+  `git push https://down.nigx.cn/github.com/nizabushangtianne3/cc-switch.git main`
+  （实测 3.8s 推完），推完补一句
+  `git update-ref refs/remotes/origin/main <new-sha>` 把跟踪引用修正过来，
+  不用改用户的 remote 配置。
+
 - **跨轮测量的噪声会骗人**：分别跑两轮 release probe 读 before/after，`full forward`
   涨了 11% 而没被改动的 `deep clone` 跌了 16%——加了一项交替测量才发现是负载噪声。
   现在 `perf_probe` 的同体对照是唯一可信口径。
