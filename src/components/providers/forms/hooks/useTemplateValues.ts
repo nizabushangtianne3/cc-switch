@@ -7,8 +7,9 @@ import type { CodexProviderPreset } from "@/config/codexProviderPresets";
 import { applyTemplateValues } from "@/utils/providerConfigUtils";
 import { deepClone } from "@/utils/deepClone";
 
-type TemplatePath = Array<string | number>;
-type TemplateValueMap = Record<string, TemplateValueConfig>;
+/** 导出只为单测：路径与模板值表的字面类型。 */
+export type TemplatePath = Array<string | number>;
+export type TemplateValueMap = Record<string, TemplateValueConfig>;
 
 interface PresetEntry {
   id: string;
@@ -29,8 +30,11 @@ interface UseTemplateValuesProps {
 
 /**
  * 收集配置中包含模板占位符的路径
+ *
+ * 导出只为单测：这条递归是「哪些字段会被模板值改动」的唯一判据，
+ * 之前只能隔着 hook 间接覆盖。
  */
-const collectTemplatePaths = (
+export const collectTemplatePaths = (
   source: unknown,
   templateKeys: string[],
   currentPath: TemplatePath = [],
@@ -64,8 +68,10 @@ const collectTemplatePaths = (
 
 /**
  * 根据路径获取值
+ *
+ * 导出只为单测：中间节点为 null / undefined 时的短路行为要单独盯。
  */
-const getValueAtPath = (source: any, path: TemplatePath) => {
+export const getValueAtPath = (source: any, path: TemplatePath) => {
   return path.reduce<any>((acc, key) => {
     if (acc === undefined || acc === null) {
       return undefined;
@@ -76,8 +82,11 @@ const getValueAtPath = (source: any, path: TemplatePath) => {
 
 /**
  * 根据路径设置值
+ *
+ * 导出只为单测：深层路径上按需补建对象 / 数组、以及目标处类型不匹配时
+ * 重置容器，是这份文件里最容易错也最难隔着 UI 观察的一段。
  */
-const setValueAtPath = (
+export const setValueAtPath = (
   target: any,
   path: TemplatePath,
   value: unknown,
@@ -117,8 +126,11 @@ const setValueAtPath = (
 
 /**
  * 应用模板值到配置字符串（只更新模板占位符所在的字段）
+ *
+ * 导出只为单测：六个分支（无模板键 / 当前配置为空、数组、对象、其他 /
+ * 无占位符 / 顶层替换 / 解析失败兜底）此前一条都没被直接覆盖。
  */
-const applyTemplateValuesToConfigString = (
+export const applyTemplateValuesToConfigString = (
   presetConfig: any,
   currentConfigString: string,
   values: TemplateValueMap,

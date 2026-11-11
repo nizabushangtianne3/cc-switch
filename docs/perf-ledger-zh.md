@@ -152,6 +152,51 @@
 
 #### 审计结论：TS 侧没有死导出
 
+### P2-3 测试覆盖缺口：33.7% 的源文件没有任何测试引用
+
+- 扫法（无需新依赖，`@vitest/coverage-v8` 没装、装它要改锁文件）：
+  把 `tests/**` 与 `src/**/*.test.*` 共 339 个测试文件拼成一份文本，
+  对 `src/**` 下 489 个非测试源文件逐一找它的引用路径
+  （`@/…` 全路径 + `./name` / `../name` 相对路径，四种都试）。
+- 结果：**165 / 489 = 33.7% 无人引用**。最大几个：
+
+  | 行数 | 文件 |
+  | --- | --- |
+  | 830 | `src/components/sessions/reader/SessionReaderHeader.tsx` |
+  | 736 | `src/components/settings/auth/ManagedAccountsGroup.tsx` |
+  | 583 | `src/components/prompts/PiPromptPanel.tsx` |
+  | 529 | `src/components/proxy/AutoFailoverConfigPanel.tsx` |
+  | 511 | `src/components/settings/sections/RoutingSection.tsx` |
+  | 341 | `src/components/providers/forms/CodexConfigSections.tsx` |
+
+- 这只是上界：这些多数是被父组件渲染、由 `App.test.tsx` 这类集成测试间接碰到的。
+  筛法是「找没有测试直接 import 的」，漏不掉间接覆盖，所以不能当真实覆盖率用。
+- 状态：**待办**（按「逻辑重 + 纯函数」排序逐个补；下面第一个已经补完）
+
+#### P2-3-1 `useTemplateValues` 的四条核心路径此前零直接覆盖
+
+- 位置：[`src/components/providers/forms/hooks/useTemplateValues.ts`](src/components/providers/forms/hooks/useTemplateValues.ts)
+- 现状：`collectTemplatePaths` / `getValueAtPath` / `setValueAtPath` /
+  `applyTemplateValuesToConfigString` 四条**模块私有**，只能隔着 hook 间接覆盖，
+  而 hook 的情形又大多走不到那些分支。`applyTemplateValuesToConfigString` 一家就有
+  六个分支（无模板键 / 当前配置为空、数组、对象、其他 / 无占位符 / 顶层替换 /
+  解析失败兜底），一条都没被直接跑过。
+- 处理：把这四个函数与两个路径类型导出（注释写明「导出只为单测」），
+  新增 [tests/hooks/useTemplateValues.test.tsx](tests/hooks/useTemplateValues.test.tsx)
+  21 个用例，每个分支至少一条：占位符收集（含 `$key` / `${key` 这种不完整写法、
+  根节点自身是占位符、数组下标）、取值的 null/undefined 短路、
+  setValue 沿途补建对象/数组与类型不匹配时重置容器、
+  以及应用时的「只改占位字段、保留用户其他字段」「数组当前配置不被冻住」
+  「空配置当空对象」「非 JSON 兜底回填预配置」。
+- 状态：**已完成**
+- 测试：`pnpm vitest run tests/hooks/useTemplateValues.test.tsx` 21 passed；
+  `pnpm typecheck` 通过；全量 `pnpm vitest run` 4 053 passed / 1 failed
+  （失败的是改动前就存在的 `App.test.tsx` 执行时长 flake，单独跑 3.7s 通过）
+- 踩坑：夹具里 `editorValue` 必须填上。`applyTemplateValues` 优先读
+  `editorValue`、只在它为 `undefined` 时才回落 `defaultValue`，而 hook 初始化时
+  本来就把它写成 `editorValue = defaultValue`——夹具照真实形状给才对，
+  否则六条断言会全挂在「模板值没生效」上。
+
 #### 审计后不改：聚焦重拉与 IPC 批量查询
 
 - 主 `queryClient` 用默认 `staleTime: 0` + `refetchOnWindowFocus: true`，即每次窗口
