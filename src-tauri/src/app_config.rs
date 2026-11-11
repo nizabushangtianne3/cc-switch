@@ -1097,6 +1097,12 @@ mod tests {
     struct TempHome {
         #[allow(dead_code)] // 字段通过 Drop trait 管理临时目录生命周期
         dir: TempDir,
+        /// 持住共享的测试 HOME 锁。`HOME` / `USERPROFILE` / `CC_SWITCH_TEST_HOME`
+        /// 都是进程级全局状态，本模块以前只靠 `#[serial]`（serial_test 自己的全局锁）
+        /// 互斥，而那把锁与 `config::test_home_lock()` 是两把独立的锁——两组测试
+        /// 会并行跑、互相换掉对方的主目录。持锁周期覆盖 set 与还原两侧。
+        #[allow(dead_code)] // 字段通过 Drop trait 持锁
+        home_lock: tokio::sync::MutexGuard<'static, ()>,
         original_home: Option<String>,
         original_userprofile: Option<String>,
         original_test_home: Option<String>,
@@ -1104,6 +1110,8 @@ mod tests {
 
     impl TempHome {
         fn new() -> Self {
+            // 先拿共享锁再动任何全局环境变量，还原时同理（guard 活到字段 drop）。
+            let home_lock = crate::config::test_home_lock().blocking_lock();
             let dir = TempDir::new().expect("failed to create temp home");
             let original_home = env::var("HOME").ok();
             let original_userprofile = env::var("USERPROFILE").ok();
@@ -1115,6 +1123,7 @@ mod tests {
 
             Self {
                 dir,
+                home_lock,
                 original_home,
                 original_userprofile,
                 original_test_home,

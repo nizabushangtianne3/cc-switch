@@ -3337,11 +3337,17 @@ mod tests {
 
     struct CodexLiveTestHome {
         _dir: tempfile::TempDir,
+        /// 持住共享的测试 HOME 锁：`CC_SWITCH_TEST_HOME` 与全局设置都是进程级状态，
+        /// 只靠 `#[serial]` 与其余走 `config::test_home_lock()` 的测试不互斥。
+        #[allow(dead_code)] // 字段通过 Drop trait 持锁
+        home_lock: tokio::sync::MutexGuard<'static, ()>,
         original_test_home: Option<OsString>,
     }
 
     impl CodexLiveTestHome {
         fn new() -> Self {
+            // 先拿共享锁再动任何全局状态，还原时同理（guard 活到字段 drop）。
+            let home_lock = crate::config::test_home_lock().blocking_lock();
             let dir = tempfile::tempdir().expect("create isolated Codex live test home");
             let original_test_home = std::env::var_os("CC_SWITCH_TEST_HOME");
             std::env::set_var("CC_SWITCH_TEST_HOME", dir.path());
@@ -3349,6 +3355,7 @@ mod tests {
 
             Self {
                 _dir: dir,
+                home_lock,
                 original_test_home,
             }
         }

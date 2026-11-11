@@ -607,14 +607,23 @@ mod integration_tests {
     use std::os::unix::fs::PermissionsExt;
     use std::sync::Arc;
 
-    struct HomeGuard(tempfile::TempDir, Option<std::ffi::OsString>);
+    /// 第三个字段持住共享的测试 HOME 锁：`CC_SWITCH_TEST_HOME` 与全局设置都是
+    /// 进程级状态，只靠 `#[serial]` 与其余走 `config::test_home_lock()` 的测试
+    /// 不互斥。放在最后是为了让它最后释放，锁覆盖整个 guard 生命周期。
+    struct HomeGuard(
+        tempfile::TempDir,
+        Option<std::ffi::OsString>,
+        #[allow(dead_code)] tokio::sync::MutexGuard<'static, ()>,
+    );
     impl HomeGuard {
         fn new() -> Self {
+            // 先拿共享锁再动任何全局状态，还原时同理（guard 活到字段 drop）。
+            let home_lock = crate::config::test_home_lock().blocking_lock();
             let dir = tempfile::tempdir().unwrap();
             let previous = std::env::var_os("CC_SWITCH_TEST_HOME");
             std::env::set_var("CC_SWITCH_TEST_HOME", dir.path());
             crate::settings::reload_settings().unwrap();
-            Self(dir, previous)
+            Self(dir, previous, home_lock)
         }
         fn path(&self) -> &Path {
             self.0.path()
