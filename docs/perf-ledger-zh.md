@@ -1112,6 +1112,17 @@ parseDiff 22 / routingValidation 23 / sessionRowHeight 8）。剩余未覆盖文
   `skill.rs` 1 963 / `transform.rs` 1 683 / `session_usage_pi.rs` 1 601 /
   `coding_plan.rs` 1 540，同套路可继续。
 
+### 第十五轮：`transform_codex_chat.rs` 测试外迁——6841 行减到 2363 行
+
+- 扫描：内嵌 `#[cfg(test)] mod tests` 占 2 535-6 840（4 306 行），生产代码 2 534 行
+  （Codex Chat → 内部格式转换的热路径）。
+- 做法：测试搬到 `transform_codex_chat_tests.rs`（3 954 行），源文件 `#[path]` 挂载。
+  外迁残留的重复 `use super::*;` 清理掉。
+- 验证：`cargo test --lib` 5 009 passed / 0 failed / 20 ignored；
+  `cargo test --tests -j 2` 汇总 5 227 passed / 0 failed；
+  `clippy --lib --all-targets` 0 warning；`fmt --check` 干净。
+  `transform_codex_chat.rs` **6 841 → 2 363 行**。
+
 ### 验证矩阵（本账本全部改动的收口）
 
 后续每个提交都在本地跑过下面这些，不依赖 CI：
