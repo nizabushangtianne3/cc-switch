@@ -138,6 +138,26 @@
 
 ### P2 结构项（影响面大，需单独排期）
 
+#### 审计后否定：配置模块族不是同构重复
+
+- 账本原先把「claude / codex / dsh / hermes / kimi / mcode / omp / openclaw / opencode /
+  pi / agy / copilot / gemini / grok / claude_desktop 十几份近同构读写处理器」
+  列为待办。先取证再决定：15 个 `*_config.rs` 合计 23,457 行
+  （codex 6 599、claude_desktop 3 192、dsh 2 846、hermes 2 611…），
+  12 个有 `fn` 的文件共 695 个函数名，**只有 3 个名字出现在 ≥6 个文件里，
+  没有任何名字出现在 ≥8 个文件里**。
+- 结论：**否定这条待办**。每个 app 的配置载体不同（TOML / JSON / JSONC /
+  settings.json / 进程环境 / 多段嵌套表），函数名不重叠说明逻辑并不重复，
+  强行抽公共层是在为 20% 的共性背 80% 的特例复杂度。这条从账本划掉。
+
+#### 审计结论：TS 侧没有死导出
+
+- 扫法：正则提 `src/**` 下全部 1,794 个导出符号名，
+  `rg -w -c -- <name> <repo root>` 数全仓出现次数，`<= 1` 即「除定义处无人引用」。
+- 结果：**0 个**。`AddProviderDialog`、`applyCopilotApiFormat`、`buildSwitchSections`
+  这些看着像只在定义处出现的名字，实际上都被别处 import 了。
+- 结论：TS 侧不需要做「删死代码」这一轮。扫法记在这里，下轮加新模块后可以重跑。
+
 #### 试过并撤销：给规范化输出缓冲按原始长度预分配
 
 - 想法：`canonicalize_json_string_if_parseable` 的 `canonical_json_string` 用
