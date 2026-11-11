@@ -152,6 +152,24 @@
 
 #### 审计结论：TS 侧没有死导出
 
+#### 审计结论：Rust 侧死代码已清零，另删掉一个空转的 `allow(dead_code)`
+
+- 同法扫 Rust：正则提 `src/**` 下 3 063 个 `pub` / `pub(crate)` 顶层项，
+  `rg -w -c` 数在 `src/` 内的出现次数，`<= 1` 即无人引用。
+  得 7 个候选，逐个查清后**没有一个是真死的**：4 个名字带 `test_hook`
+  （`set_pricing_model_source_test_hook` / `switch_provider_test_hook` /
+  `get_pricing_model_source_test_hook` / `import_default_config_test_hook`），
+  3 个是 `app_config.rs` 的 `get_manager` / `get_manager_mut` / `ensure_app`——
+  后者只被 `src-tauri/tests/` 下的集成测试使用，所以 `src/` 内扫不到。
+- 另外核了一遍 7 个**无条件** `#[allow(dead_code)]`（`rg '^\s*#\[allow\(dead_code\)\]'`）：
+  6 个合理——`app_config.rs` 的 TempHome 字段靠 Drop 管临时目录生命周期、
+  `omp_config.rs` 那个是测试专用 helper、其余是 TempHome 的 `dir` 字段；
+  **1 个是空转的**：`proxy/error.rs` 的 `Internal(String)`，全仓 26 处构造，
+   Variant 根本不 dead，`allow` 是 no-op。已删除。
+- 结论：**Rust 与 TS 两侧的死代码都清零**，本条连同上面的 TS 扫描一起作为
+  「无效代码」维度的收口记录。`cargo clippy --lib --all-targets` 0 warning、
+  `cargo test --lib` 5 007 passed / 0 failed、`cargo fmt --check` 干净。
+
 ### P2-3 测试覆盖缺口：33.7% 的源文件没有任何测试引用
 
 - 扫法（无需新依赖，`@vitest/coverage-v8` 没装、装它要改锁文件）：
