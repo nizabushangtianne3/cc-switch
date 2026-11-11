@@ -117,6 +117,8 @@ impl Database {
             params![key, value],
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
+        // 缓存失效要另取一把锁：先放掉全进程唯一的 conn，别让每个设置写入都拖着它。
+        drop(conn);
         self.invalidate_proxy_request_config_cache();
         Ok(())
     }

@@ -122,6 +122,9 @@ impl Database {
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
 
+        // 缓存失效要另取一把锁：别在全进程唯一的 conn 临界区里做，否则每一次
+        // 配置写入都让所有 DAO 多等一次。
+        drop(conn);
         self.invalidate_proxy_request_config_cache();
         Ok(())
     }
@@ -392,6 +395,8 @@ impl Database {
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
 
+        // 同 update_global_proxy_config：先放 conn 再失效缓存。
+        drop(conn);
         self.invalidate_proxy_request_config_cache();
         Ok(())
     }
@@ -777,6 +782,8 @@ impl Database {
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
 
+        // 同 update_global_proxy_config：先放 conn 再失效缓存。
+        drop(conn);
         self.invalidate_proxy_request_config_cache();
         Ok(())
     }
@@ -906,6 +913,8 @@ impl Database {
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
 
+        // 同 update_global_proxy_config：先放 conn 再失效缓存。
+        drop(conn);
         self.invalidate_proxy_request_config_cache();
         Ok(())
     }

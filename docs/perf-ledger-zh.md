@@ -702,6 +702,39 @@ parseDiff 22 / routingValidation 23 / sessionRowHeight 8）。剩余未覆盖文
   - `both_log_sql_statements_declare_the_same_columns`：两条语句的列清单与 26 个
     占位符必须共用同一份，且各自 26 / 26 对齐。
 
+### 第五轮：5 处配置写在全局 DB 锁内失效代理配置缓存
+
+- 位置：`database/dao/proxy.rs`（`update_global_proxy_config` /
+  `update_proxy_config_for_app` / `update_circuit_breaker_config` /
+  `set_proxy_flags_sync`）、`database/dao/settings.rs`（`set_setting`）
+- 现状：这 5 个写入函数都是 `let conn = lock_conn!(self.conn)` 开头，
+  然后 `conn.execute(...)`，最后 `self.invalidate_proxy_request_config_cache()`。
+  而 `Database::conn` 是**全进程唯一**的 `Mutex<Connection>`（`database/mod.rs:82`）、
+  `proxy_request_config_cache` 是另有一把 `Mutex`——于是每一次配置写入都在持有
+  `conn` 的情况下去拿第二把锁，把全局 DB 临界区无谓拉长。
+- 取证（读侧确认无死锁、只是临界区白等）：`get_proxy_request_configs`
+  （`dao/proxy.rs:236`）的读法是「先在 `{}` 块里取 `proxy_request_config_cache`
+  并立刻释放，未命中再去 `spawn_blocking` 里取 `conn`」，**从不同时持有两把**，
+  所以现在形不成环、没有死锁。但写侧这个顺序（`conn` → `cache`）与读侧相反，
+  是一处随时会踩的锁顺序陷阱：读侧哪天改成持缓存锁查库，立刻死锁。
+- 处理：5 处一律在失效缓存前 `drop(conn)`，先放全局 DB 锁再取缓存锁。
+  写库与失效缓存的相对次序不变（仍是先写后失效），失败路径也不变
+  （`?` 提前返回时同样不做失效）。
+- 证据（`cargo clippy --lib -j 2 -- -W clippy::significant_drop_tightening`，
+  同口径前后对比）：该 lint 命中从 **191 → 185**，`dao/proxy.rs` 18 → 14、
+  `dao/settings.rs` 6 → 5，净清 6 处「临时值带显著 Drop 却拖到晚释放」。
+- 状态：**已完成**
+- 测试：无新增用例——这 5 个函数改的是锁的持有范围，不改任何可观测行为
+  （写库结果、缓存失效时序、错误路径全同），现有 `dao/proxy`、`dao/settings`
+  与 `services::proxy` 的用例即覆盖。`cargo test --lib` 5 009 passed /
+  0 failed / 20 ignored、`cargo test --tests` 5 227 = 5 009 + 218 集成、
+  clippy 0 warning、fmt 干净，与改前逐项一致。
+- 余量：`significant_drop_tightening` 还剩 185 处。逐个看过，绝大多数
+  （`dao/providers.rs` 26、`codex_oauth_auth.rs` 17、`usage_stats.rs` 12、
+  `dao/skills.rs` 11…）是 guard 的最后一次使用就在函数末尾，收紧等于空转；
+  少量像 `circuit_breaker.rs::transition_to_half_open` 那样能省三行原子操作的，
+  收紧会改变「状态置位与计数器清零」的可见顺序、引入竞态，**判定不动**。
+
 ### 验证矩阵（本账本全部改动的收口）
 
 后续每个提交都在本地跑过下面这些，不依赖 CI：
@@ -712,8 +745,6 @@ parseDiff 22 / routingValidation 23 / sessionRowHeight 8）。剩余未覆盖文
 | Rust 格式 | `cargo fmt --check` | 干净 |
 | Rust 单元 + 集成测试 | `cargo test --lib -j 2` | 5 009 passed / 0 failed / 20 ignored |
 | Rust 集成测试 | `cargo test --tests -j 2` | 5 227 = 5 009 lib + 218 集成 |
-| Rust lint | `cargo clippy --lib --all-targets` | 0 warning |
-| Rust 格式 | `cargo fmt --check` | 干净 |
 | Rust release 编译 | `cargo test --lib --release perf_probe` | 28m30s 通过（编译 release profile 的 lib 并链接测试二进制，覆盖面大于单独 `cargo build --lib --release`） |
 | Rust 全部 feature | `cargo clippy/test --all-features` | 0 warning / 5 007 passed |
 | 前端类型 | `pnpm typecheck` | 通过 |
@@ -734,8 +765,14 @@ parseDiff 22 / routingValidation 23 / sessionRowHeight 8）。剩余未覆盖文
   随机失败**（2026-11-12 实测）：16 个集成测试二进制并行链接，先后在
   `provider_service` 和 `skill_sync` 两个不同目标上报同样的错，`-j 1` 也复现。
   当时 C 盘只剩 2.60 GB、`debug/incremental` 15.72 GB。逐文件删掉
-  `src-tauri/target/debug/incremental`（3 933 个文件、纯编译器缓存）后回到
+-  `src-tauri/target/debug/incremental`（3 933 个文件、纯编译器缓存）后回到
   17.15 GB，同样命令立刻全过。**看到 1318 先看磁盘，不要怀疑自己的改动。**
+- 另一条实测：`cargo test --lib --release perf_probe` 从零编 release 会把 C 盘
+  从 17.15 GB 吃到 8.79 GB（约 8.4 GB），跑完紧接着 `cargo test --tests` 就直接
+  `os error 112 磁盘空间不足`。所以顺序应该是：先清 `debug/incremental` 与
+  `release`，再跑 release 探针，最后跑集成测试；或者跑完 release 立刻把
+  `target/release` 删掉。删盘要盯住 `debug/incremental` 和 `release` 这两个
+  可再生目录，`debug/deps` 不要碰。
 - 删除做法：`Get-ChildItem -Recurse -File` 之后逐个
   `[System.IO.File]::Delete($f.FullName)`，不用 `Remove-Item -Recurse`
   （AGENTS.md 的 Windows 安全规则），删完再滚掉空目录。删前用
