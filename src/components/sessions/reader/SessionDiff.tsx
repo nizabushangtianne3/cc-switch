@@ -22,8 +22,14 @@ export type DiffLine =
 const HUNK_HEADER = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
 const PATCH_FILE = /^\*\*\* (?:Add|Update|Delete) File: (.+)$/;
 
-/** 解析 unified diff（git diff、Codex FileChange）与 Codex apply_patch 文本 */
-const parseDiff = (text: string): DiffLine[] => {
+/**
+ * 解析 unified diff（git diff、Codex FileChange）与 Codex apply_patch 文本
+ *
+ * 导出只为单测：文件头成对判定、`index` 行只在首个 hunk 前忽略、增删行的行号
+ * 递增、多 hunk 之间插 gap、尾部空上下文行修剪、连续同路径合并——十二条分支
+ * 此前只能隔着组件触达。
+ */
+export const parseDiff = (text: string): DiffLine[] => {
   const lines: DiffLine[] = [];
   let oldNo: number | undefined;
   let newNo: number | undefined;

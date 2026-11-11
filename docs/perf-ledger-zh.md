@@ -175,6 +175,30 @@
 
 #### P2-3-1 `useTemplateValues` 的四条核心路径此前零直接覆盖
 
+#### P2-3-4 `parseDiff` 十二条分支零覆盖，另记两处非直观行为
+
+- 位置：[`src/components/sessions/reader/SessionDiff.tsx`](src/components/sessions/reader/SessionDiff.tsx)
+  `parseDiff`（88 行，`SessionDiff` 组件唯一的真实逻辑）
+- 现状：unified diff（git diff / Codex FileChange）与 apply_patch 两种文本的解析
+  全是私有函数，只能隔着组件触达。
+- 处理：导出 `parseDiff`，新增
+  [tests/components/sessions/reader/parseDiff.test.ts](tests/components/sessions/reader/parseDiff.test.ts)
+  22 个用例，覆盖：文件头成对判定（孤立 `--- ` 不算文件头）、`index` 行只在首个
+  hunk 之前忽略（hunk 里以 `index ` 开头的 prose 要留下）、`/dev/null` 目标丢弃、
+  多 hunk 之间插 gap 并重置行号、hunk 头带 `,count` 与尾部散文、hunk 头解析失败时
+  行号不赋值也不递增、CRLF、`diff --git` / `*** Begin Patch` / `\ No newline`
+  等元数据行跳过、apply_patch 的 `Add/Update/Delete File` 与 `*** Move to:`、
+  连续同路径文件头合并、中间空行保留而尾部空上下文行修剪。
+- 状态：**已完成**
+- 测试：`pnpm vitest run tests/components/sessions/reader/parseDiff.test.ts`
+  22 passed（初版 4 条断言失败，全是我预期写错，已逐个核对真实行为后修正，代码未动）；
+  `pnpm typecheck`、prettier 通过；全量 `pnpm vitest run` **4 106 passed / 0 failed**
+- 顺带记下两处非直观行为（测试按现实钉住，未改代码）：
+  1. 孤立的 `--- x`（下一条不是 `+++ `）会落进「`-` 开头」的 del 分支，
+     于是内容是 `-- x`（剥掉一个 `-`），不是 context 行。
+  2. 整行空白不算「空上下文行」：剥掉行首一个空格后还剩两个空格，而末尾修剪只剥
+     `text === ""` 的那些，所以 `parseDiff("   ")` 会留下一条 context。
+
 #### P2-3-3 把剩余 165 个未覆盖文件按「有没有可测的纯逻辑」分类收口
 
 - 对 165 个未覆盖文件再扫一遍「非导出的顶层函数/常量」数量，**27 个文件有 ≥3 个**，
