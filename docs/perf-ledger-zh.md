@@ -950,6 +950,32 @@ parseDiff 22 / routingValidation 23 / sessionRowHeight 8）。剩余未覆盖文
    `import.meta.glob(eager:false)` + `ProviderIcon` 异步化 + 核对
    currentColor 不退化），是独立排期的大件。
 
+#### 评估后不改（第九轮补）：`providerConfigUtils.ts` 按「读 / 写」拆开
+
+- 动机：主入口只用它的 7 个「读取 / 判断」类导出（`extractProviderBaseUrl`、
+  `extractCodexBaseUrl`、`extractCodexWireApi`、`isCodexAnthropicWireApi`、
+  `isCodexChatWireApi`、`extractCodexExperimentalBearerToken`、
+  `hasExplicitNonOpenAiCodexModelProvider`），其余 18 个「写入 / 设置」类导出
+  只被懒加载的供应商表单用。
+- 闭合依赖算过了：主入口那 7 个的传递闭包是 9 个导出 / 740 行，
+  闭包外 18 个导出 / 1 046 行，且**闭包内没有任何一条指向闭包外的反向边**——
+  按读/写拆在依赖方向上是干净的，比早前「按通用 / Codex TOML 拆」那条路更可行。
+- **卡点有两个，都比账本早前记的那条更硬**：
+  1. **私有助手被读写两侧共用**：文件有 85 个顶层声明、57 个私有，
+     `getTomlSectionRange` / `getTopLevelEndIndex` / `findTomlAssignments` /
+     `tomlBasicString` / `unescapeTomlBasicString` 这些 TOML 扫描原语同时服务
+     两侧（例：`getTomlSectionRange` 被 `extractCodexWireApi`【读】和
+     `setCodexWireApi`【写】同时用）。要拆就得再抽第三块「TOML 原语」模块，
+     1 786 行三重划分，改动面与出错面都很大。
+  2. **Rollup 已经把写侧摇掉了**。用独有字面量验证：`setCodexModelName` 独有的
+     `default_subagent_model` **只出现在 `AuthSettingsPanel-*.js`（懒加载块）**，
+     不在 `main-*.js`。也就是说那 1 046 行本来就没进主入口，拆了也拿不到体积。
+- 结论：**不改，且比早前那次评估更该不改**。早前卡在
+  `extractProviderBaseUrl` → `extractCodexBaseUrl` 的交叉依赖，实际真要做是
+  抽 TOML 原语模块；而抽之前先量一下就会发现摇树已经代劳了。
+- 方法学收获：**「某个导出只在懒加载方用」不等于「它的代码在主入口里」**。
+  先搜一个该导出独有的字面量、确认它真的在 `main-*.js`，再决定要不要拆。
+
 ### 验证矩阵（本账本全部改动的收口）
 
 后续每个提交都在本地跑过下面这些，不依赖 CI：
