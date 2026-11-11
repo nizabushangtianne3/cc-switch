@@ -175,6 +175,32 @@
 
 #### P2-3-1 `useTemplateValues` 的四条核心路径此前零直接覆盖
 
+#### P2-3-3 把剩余 165 个未覆盖文件按「有没有可测的纯逻辑」分类收口
+
+- 对 165 个未覆盖文件再扫一遍「非导出的顶层函数/常量」数量，**27 个文件有 ≥3 个**，
+  但其中一大半是 UI 基元（`ui/dropdown-menu` 15 个、`ui/table` 8 个、`ui/card`
+  6 个、`ui/command` 6 个、`ui/tooltip` / `tabs` / `popover` 各 4 个）——那些私有
+  「函数」是 forwardRef 包装和 variant 工厂，不是业务逻辑，测它们等于测设计系统。
+  真正该补的集中在 6 个文件。
+- 已按此标准补掉第二个：[`src/tray-panel/usePanelTheme.ts`](src/tray-panel/usePanelTheme.ts)
+  66 行、4 个私有函数，新增 [tests/hooks/usePanelTheme.test.ts](tests/hooks/usePanelTheme.test.ts)
+  9 个用例。钉住的是它的三态语义：`explicit` 为 `null` 表示跟随系统、
+  `true`/`false` 表示用户显式选了 dark/light；以及 localStorage 抛异常或存了
+  垃圾值（如 `"solarized"`）时都回落系统、另一个窗口改选择后 `refreshKey` 变化要跟着变。
+- 状态：**已完成**
+- 测试：`pnpm vitest run tests/hooks/usePanelTheme.test.ts` 9 passed；
+  `pnpm typecheck`、prettier 通过；全量 `pnpm vitest run` **4 084 passed / 0 failed**
+- 剩余待补（都是渲染型组件，逻辑散在 JSX 里，逐个性价比低）：
+  `sessions/reader/SessionDiff.tsx`（`buildInputDiff` 是真 diff 逻辑，值得单独抽出来测）、
+  `sessions/reader/SessionStepDetails.tsx`、`sessions/SessionItem.tsx`、
+  `settings/sections/RoutingSection.tsx`、`usage/UsageSettingsSheet.tsx`。
+- 顺带纠正上一条记录里的一个误判：之前把 `useTemplateValues` 的 renderHook OOM
+  归因为「测试结构」。这一轮用 `renderHook` 测 `usePanelTheme` 一次通过，
+  说明 renderHook 本身没问题——那个 OOM 的真实原因是我的 props 工厂每次渲染
+  新建 `presetEntries`，而 hook 的 `useMemo → useEffect → setState` 链条放大了它。
+  记账改为上述说法，并给 `usePanelTheme` 的测试加了 `documentElement` class 清理，
+  避免深色类污染同文件后续用例。
+
 #### P2-3-2 图标取色逻辑四条纯函数零覆盖，另发现一处注释与代码不一致
 
 - 位置：[`src/icons/extracted/index.ts`](src/icons/extracted/index.ts)
