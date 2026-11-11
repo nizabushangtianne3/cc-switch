@@ -1094,6 +1094,24 @@ parseDiff 22 / routingValidation 23 / sessionRowHeight 8）。剩余未覆盖文
   `controller.rs` **9 167 → 1 915 行**；`contract_tests.rs` 566 行；
   `mode_tests.rs` 6 032 行。
 
+### 第十四轮：`commands/misc.rs` 测试外迁——12601 行减到 6595 行
+
+- 扫描：`misc.rs` 12 601 行里 `#[cfg(test)] mod tests` 占 7 159-12 600
+  （5 442 行），生产代码 7 158 行（工具生命周期 / 版本探测 / 终端启动 /
+  WSL / Windows PATH 搜索）。
+- 做法：测试整块搬到 `commands/misc_tests.rs`（5 001 行），`misc.rs` 用
+  `#[path]` 挂载；清理了外迁时残留的一行多余 `use super::*;`。
+- 验证：`cargo test --lib` 5 009 passed / 0 failed / 20 ignored；
+  `cargo test --tests -j 2` 汇总 5 227 passed / 0 failed；
+  `clippy --lib --all-targets` 0 warning；`fmt --check` 干净。
+  `misc.rs` **12 601 → 6 595 行**，`misc_tests.rs` 5 001 行。
+- 剩余同类候选（>=1 500 行内联测试）：`transform_codex_chat.rs` 4 306 /
+  `session_usage_codex.rs` 4 115 / `usage_stats.rs` 3 391 / `codex_config.rs`
+  3 332 / `transform_responses.rs` 2 958 / `streaming_responses.rs` 2 924 /
+  `backup.rs` 2 332 / `claude.rs` 2 136 / `transform_gemini.rs` 2 027 /
+  `skill.rs` 1 963 / `transform.rs` 1 683 / `session_usage_pi.rs` 1 601 /
+  `coding_plan.rs` 1 540，同套路可继续。
+
 ### 验证矩阵（本账本全部改动的收口）
 
 后续每个提交都在本地跑过下面这些，不依赖 CI：
