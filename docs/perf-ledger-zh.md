@@ -1123,6 +1123,19 @@ parseDiff 22 / routingValidation 23 / sessionRowHeight 8）。剩余未覆盖文
   `clippy --lib --all-targets` 0 warning；`fmt --check` 干净。
   `transform_codex_chat.rs` **6 841 → 2 363 行**。
 
+### 第十六轮：`session_usage_codex.rs` + `usage_stats.rs` 测试外迁
+
+- 扫描：`session_usage_codex.rs` 6 666 行里内嵌测试占 2 551-6 665（4 115 行），
+  生产代码 2 550 行；`usage_stats.rs` 6 605 行里内嵌测试占 3 214-6 604（3 391 行），
+  生产代码 3 213 行。
+- 做法：两份测试分别搬到 `session_usage_codex_tests.rs`（3 805 行）与
+  `usage_stats_tests.rs`（3 126 行），源文件 `#[path]` 挂载；残留的重复
+  `use super::*;` 各清掉一行。
+- 验证：`cargo test --lib` 5 009 passed / 0 failed / 20 ignored；
+  `cargo test --tests -j 2` 汇总 5 227 passed / 0 failed；
+  `clippy --lib --all-targets` 0 warning；`fmt --check` 干净。
+  `session_usage_codex.rs` **6 666 → 2 403 行**；`usage_stats.rs` **6 605 → 2 983 行**。
+
 ### 验证矩阵（本账本全部改动的收口）
 
 后续每个提交都在本地跑过下面这些，不依赖 CI：
