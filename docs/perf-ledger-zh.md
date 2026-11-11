@@ -152,6 +152,26 @@
 
 #### 审计结论：TS 侧没有死导出
 
+#### 审计后不改：聚焦重拉与 IPC 批量查询
+
+- 主 `queryClient` 用默认 `staleTime: 0` + `refetchOnWindowFocus: true`，即每次窗口
+  聚焦会把 stale 的 query 全量重拉一遍。看着像浪费，但取证后判定是**有意设计**：
+  - `src/tray-panel/main.tsx:17` 显式写了 `refetchOnWindowFocus: false`——作者知道
+    这个开关，并只在托盘面板关掉它；
+  - 20+ 处 query 按重要性分别配了 `staleTime`（30 s / 60 s / 5 min / `Infinity`），
+    其中 `useSkills`、`useHermes`、`useOpenClaw`、`useSidebarStatus` 这类常驻查询
+    都给了值；剩 54 个 `useQuery` 没写 `staleTime`，多数在懒加载组件里
+    （`PiNativePromptResources` / `FetchedModelPicker` / `UsageDashboard`…），
+    只在挂载期间才会被聚焦触发。
+  - 「回到 app 就看到外部 CLI 改过的配置」正是聚焦重拉在这里的价值，mutation 又都
+    主动 `invalidateQueries`，加 `staleTime` 不改善未知路径、只削弱这条已知路径。
+- 结论：不改。真要动就逐 query 过语义，且收益无法在本仓库里量化。
+- 顺手确认两处此前没细看的每请求路径都已经优化到位，下一轮不用再查：
+  - `unsupported_param_rectifier::cached_params`：两层用 `&str` 直查
+    （`String: Borrow<str>`），不命中路径零分配，命中才 clone + sort；
+  - `commands/provider.rs::get_providers`：`spawn_blocking` + `ProviderService::list`，
+    返回的 `IndexMap<String, Provider>` 是卡片渲染的固有数据面，要瘦身得改 API 形状。
+
 - 扫法：正则提 `src/**` 下全部 1,794 个导出符号名，
   `rg -w -c -- <name> <repo root>` 数全仓出现次数，`<= 1` 即「除定义处无人引用」。
 - 结果：**0 个**。`AddProviderDialog`、`applyCopilotApiFormat`、`buildSwitchSections`
