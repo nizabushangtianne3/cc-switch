@@ -30,7 +30,7 @@ import { SkillsIcon } from "@/components/BrandIcons";
 import { useUpdate } from "@/contexts/UpdateContext";
 import { sidebarWidth, useSidebarCollapsed } from "@/hooks/useSidebarCollapsed";
 import { useMoneyFormat } from "@/hooks/useMoneyFormat";
-import { useSettingsQuery } from "@/lib/query";
+import { useSettingsQuery } from "@/lib/query/queries";
 import {
   fmtInt,
   formatHitRatePercent,

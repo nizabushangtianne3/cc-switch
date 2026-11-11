@@ -20,7 +20,7 @@ import { isProxyAppId, isStackAppId } from "@/config/appConfig";
 import { settingsApi } from "@/lib/api";
 import { providersApi } from "@/lib/api/providers";
 import { proxyApi } from "@/lib/api/proxy";
-import { useSettingsQuery } from "@/lib/query";
+import { useSettingsQuery } from "@/lib/query/queries";
 import {
   proxyKeys,
   useAdoptCodexStackCatalog,

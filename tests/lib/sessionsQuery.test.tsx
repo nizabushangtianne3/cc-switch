@@ -32,7 +32,6 @@ import {
   useSessionTranscript,
 } from "@/lib/query/sessions";
 import { sessionKeys, stableKey } from "@/lib/query/sessionKeys";
-import { useSessionMessagesQuery as legacyExport } from "@/lib/query";
 
 const message = (content: string, turnId = "t1"): SessionMessage => ({
   role: "user",
@@ -246,8 +245,7 @@ describe("useSessionTranscript", () => {
 });
 
 describe("useSessionMessagesQuery", () => {
-  it("一次性读取；旧入口 @/lib/query 仍可用", async () => {
-    expect(legacyExport).toBe(useSessionMessagesQuery);
+  it("一次性读取", async () => {
     api.getMessages.mockResolvedValue([message("a")]);
     const { result } = renderHook(
       () => useSessionMessagesQuery("claude", "/a"),

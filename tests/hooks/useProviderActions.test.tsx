@@ -46,7 +46,7 @@ const useUpdateProviderMutationMock = vi.fn(() => updateProviderMutation);
 const useDeleteProviderMutationMock = vi.fn(() => deleteProviderMutation);
 const useSwitchProviderMutationMock = vi.fn(() => switchProviderMutation);
 
-vi.mock("@/lib/query", () => ({
+vi.mock("@/lib/query/mutations", () => ({
   useAddProviderMutation: () => useAddProviderMutationMock(),
   useUpdateProviderMutation: () => useUpdateProviderMutationMock(),
   useDeleteProviderMutation: () => useDeleteProviderMutationMock(),

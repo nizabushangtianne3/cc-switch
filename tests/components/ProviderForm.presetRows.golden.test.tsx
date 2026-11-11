@@ -103,8 +103,8 @@ vi.mock("@/components/providers/forms/hooks", async (importOriginal) => {
   };
 });
 
-vi.mock("@/lib/query", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/query")>();
+vi.mock("@/lib/query/queries", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/query/queries")>();
   return {
     ...actual,
     useSettingsQuery: () => ({

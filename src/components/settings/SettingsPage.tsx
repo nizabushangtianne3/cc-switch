@@ -31,7 +31,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { settingsApi, type AppId } from "@/lib/api";
-import { useSettingsQuery } from "@/lib/query";
+import { useSettingsQuery } from "@/lib/query/queries";
 import type { SettingsSection } from "@/lib/navigation";
 import { AppPageHeader } from "@/components/shell/AppPageHeader";
 import { DirectoryInput } from "@/components/settings/DirectorySettings";

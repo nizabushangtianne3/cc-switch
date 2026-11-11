@@ -10,7 +10,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "@/components/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { MotionConfig } from "framer-motion";
-import { queryClient } from "@/lib/query";
+import { queryClient } from "@/lib/query/queryClient";
 import { settingsApi } from "@/lib/api";
 import { I18nextProvider } from "react-i18next";
 import { Toaster } from "@/components/ui/sonner";

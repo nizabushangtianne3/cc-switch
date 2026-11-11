@@ -5,7 +5,7 @@ import { useSettingsForm } from "@/hooks/useSettingsForm";
 
 const useSettingsQueryMock = vi.fn();
 
-vi.mock("@/lib/query", () => ({
+vi.mock("@/lib/query/queries", () => ({
   useSettingsQuery: (...args: unknown[]) => useSettingsQueryMock(...args),
 }));
 

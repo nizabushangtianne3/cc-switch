@@ -27,11 +27,11 @@ import {
 } from "@/hooks/useSessionContentSearch";
 import { useSettings } from "@/hooks/useSettings";
 import {
-  piKeys,
-  useDeleteSessionMutation,
   useSessionsQuery,
   useSettingsQuery,
-} from "@/lib/query";
+} from "@/lib/query/queries";
+import { useDeleteSessionMutation } from "@/lib/query/mutations";
+import { piKeys } from "@/lib/query/pi";
 import { piApi, sessionsApi, type AppId } from "@/lib/api";
 import type { SessionMeta } from "@/types";
 import { DEFAULT_VISIBLE_APPS } from "@/config/appConfig";

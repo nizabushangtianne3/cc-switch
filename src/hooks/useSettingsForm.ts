@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useSettingsQuery } from "@/lib/query";
+import { useSettingsQuery } from "@/lib/query/queries";
 import type { Settings } from "@/types";
 
 type Language = "zh" | "zh-TW" | "en" | "ja" | "tr" | "ko" | "ru";

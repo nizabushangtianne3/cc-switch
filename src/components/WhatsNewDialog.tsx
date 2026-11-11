@@ -14,7 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useNewLayoutNoticePending } from "@/components/shell/NewLayoutDialog";
 import { settingsApi } from "@/lib/api";
-import { useSettingsQuery } from "@/lib/query";
+import { useSettingsQuery } from "@/lib/query/queries";
 import {
   WHATS_NEW_ENTRIES,
   changelogUrl,

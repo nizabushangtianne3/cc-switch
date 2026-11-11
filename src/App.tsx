@@ -27,10 +27,10 @@ import type { EnvConflict } from "@/types/env";
 import type { SubscriptionQuota } from "@/types/subscription";
 import {
   providersQueryOptions,
-  proxyKeys,
   useProvidersQuery,
   useSettingsQuery,
-} from "@/lib/query";
+} from "@/lib/query/queries";
+import { proxyKeys } from "@/lib/query/proxy";
 import {
   piApi,
   providersApi,

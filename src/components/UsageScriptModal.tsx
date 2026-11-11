@@ -11,7 +11,7 @@ import {
   copilotGetUsageForAccount,
 } from "@/lib/api/copilot";
 import { isCopilotByok } from "@/config/copilotEnv";
-import { useSettingsQuery } from "@/lib/query";
+import { useSettingsQuery } from "@/lib/query/queries";
 import { resolveManagedAccountId } from "@/lib/authBinding";
 import { resolveCodexOfficialIdentity } from "@/utils/providerCapabilities";
 import { extractErrorMessage } from "@/utils/errorUtils";

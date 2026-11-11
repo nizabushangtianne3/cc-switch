@@ -23,7 +23,7 @@ import {
 import { resolveUsageRange } from "@/lib/usageRange";
 import type { UsageRangeSelection } from "@/types/usage";
 import { useMoneyFormat } from "@/hooks/useMoneyFormat";
-import { useSettingsQuery } from "@/lib/query";
+import { useSettingsQuery } from "@/lib/query/queries";
 import type { UsageMetric } from "./rememberedChoice";
 
 interface UsageTrendChartProps {

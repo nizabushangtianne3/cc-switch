@@ -4,11 +4,9 @@ import { toast } from "@/lib/toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { providersApi, settingsApi } from "@/lib/api";
 import { syncCurrentProvidersLiveSafe } from "@/utils/postChangeSync";
-import {
-  invalidatePiDirectoryCaches,
-  useSettingsQuery,
-  useSaveSettingsMutation,
-} from "@/lib/query";
+import { useSettingsQuery } from "@/lib/query/queries";
+import { useSaveSettingsMutation } from "@/lib/query/mutations";
+import { invalidatePiDirectoryCaches } from "@/lib/query/pi";
 import type { Settings } from "@/types";
 import { useSettingsForm, type SettingsFormState } from "./useSettingsForm";
 import {

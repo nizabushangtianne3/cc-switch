@@ -32,7 +32,7 @@ vi.mock("@/lib/api", () => ({
   },
   settingsApi: { save: mocks.save, openExternal: mocks.openExternal },
 }));
-vi.mock("@/lib/query", () => ({
+vi.mock("@/lib/query/queries", () => ({
   useSettingsQuery: () => ({ data: mocks.settings }),
 }));
 vi.mock("@tauri-apps/api/app", () => ({

@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import UsageScriptModal from "@/components/UsageScriptModal";
 import { PricingEditModal } from "@/components/usage/PricingEditModal";
 
-vi.mock("@/lib/query", () => ({
+vi.mock("@/lib/query/queries", () => ({
   useSettingsQuery: () => ({ data: { usageConfirmed: true } }),
 }));
 vi.mock("@/lib/query/usage", () => ({

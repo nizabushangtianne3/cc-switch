@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { providersApi, settingsApi } from "@/lib/api";
-import { useSettingsQuery } from "@/lib/query";
+import { useSettingsQuery } from "@/lib/query/queries";
 import { markSeen } from "@/lib/whatsNew";
 import type { Settings } from "@/types";
 

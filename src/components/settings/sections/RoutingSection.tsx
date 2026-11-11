@@ -6,7 +6,7 @@ import { toast } from "@/lib/toast";
 import { ChevronRight, Loader2 } from "lucide-react";
 import type { AppId } from "@/lib/api";
 import { proxyApi } from "@/lib/api/proxy";
-import { useProvidersQuery } from "@/lib/query";
+import { useProvidersQuery } from "@/lib/query/queries";
 import {
   useGlobalProxyConfig,
   useProxyClientHost,

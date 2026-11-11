@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import type { AppId } from "@/lib/api/types";
 import { DEFAULT_VISIBLE_APPS } from "@/config/appConfig";
-import { useSettingsQuery } from "@/lib/query";
+import { useSettingsQuery } from "@/lib/query/queries";
 
 /**
  * MCP / Skills 矩阵只列「应用」页里设为显示的应用。隐藏只影响界面，

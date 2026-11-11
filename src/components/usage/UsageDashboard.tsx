@@ -43,7 +43,7 @@ import {
   useRequestLogs,
   useSessionUsageLastSync,
 } from "@/lib/query/usage";
-import { useSettingsQuery } from "@/lib/query";
+import { useSettingsQuery } from "@/lib/query/queries";
 import { DEFAULT_VISIBLE_APPS } from "@/config/appConfig";
 import { useUsageEventBridge } from "@/hooks/useUsageEventBridge";
 import { useUsageAutoRefresh } from "@/hooks/useUsageAutoRefresh";

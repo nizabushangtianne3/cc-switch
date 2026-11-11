@@ -111,7 +111,7 @@ vi.mock("@/hooks/useImportExport", () => ({
     useImportExportSpy(options),
 }));
 
-vi.mock("@/lib/query", () => ({
+vi.mock("@/lib/query/queries", () => ({
   useSettingsQuery: () => ({ data: savedSettings }),
 }));
 

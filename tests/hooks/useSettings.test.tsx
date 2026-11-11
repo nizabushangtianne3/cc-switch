@@ -44,14 +44,18 @@ vi.mock("@/hooks/useSettingsMetadata", () => ({
   useSettingsMetadata: () => metadataMock,
 }));
 
-vi.mock("@/lib/query", () => ({
-  invalidatePiDirectoryCaches: (...args: unknown[]) =>
-    invalidatePiDirectoryCachesMock(...args),
+vi.mock("@/lib/query/queries", () => ({
   useSettingsQuery: (...args: unknown[]) => useSettingsQueryMock(...args),
+}));
+vi.mock("@/lib/query/mutations", () => ({
   useSaveSettingsMutation: () => ({
     mutateAsync: mutateAsyncMock,
     isPending: false,
   }),
+}));
+vi.mock("@/lib/query/pi", () => ({
+  invalidatePiDirectoryCaches: (...args: unknown[]) =>
+    invalidatePiDirectoryCachesMock(...args),
 }));
 
 vi.mock("@tanstack/react-query", async () => {

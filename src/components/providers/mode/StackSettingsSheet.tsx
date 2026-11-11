@@ -5,7 +5,7 @@ import { toast } from "@/lib/toast";
 import type { Settings } from "@/types";
 import type { ProxyStackSubagentModel } from "@/types/proxy";
 import { settingsApi } from "@/lib/api";
-import { useSettingsQuery } from "@/lib/query";
+import { useSettingsQuery } from "@/lib/query/queries";
 import { extractErrorMessage } from "@/utils/errorUtils";
 import {
   Sheet,

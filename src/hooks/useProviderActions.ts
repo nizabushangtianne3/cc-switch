@@ -25,7 +25,7 @@ import {
   useUpdateProviderMutation,
   useDeleteProviderMutation,
   useSwitchProviderMutation,
-} from "@/lib/query";
+} from "@/lib/query/mutations";
 import { proxyKeys } from "@/lib/query/proxy";
 import { usageKeys } from "@/lib/query/usage";
 import { routeSwitchNotification } from "@/utils/routeSwitchNotification";

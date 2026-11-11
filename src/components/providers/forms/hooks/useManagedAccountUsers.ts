@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import type { ManagedAuthProvider } from "@/lib/api/auth";
-import { useProvidersQuery } from "@/lib/query";
+import { useProvidersQuery } from "@/lib/query/queries";
 import {
   findManagedAccountUsers,
   type ManagedAccountUser,
