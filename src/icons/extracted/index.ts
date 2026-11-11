@@ -234,7 +234,8 @@ export function hasIcon(name: string): boolean {
   return key in icons || key in iconUrls;
 }
 
-function hexChannels(hex: string): [number, number, number] | null {
+/** 导出只为单测：三位 / 四位缩写展开与非法输入拒绝是 `isDarkInk` 的前置。 */
+export function hexChannels(hex: string): [number, number, number] | null {
   let h = hex.slice(1);
   if (h.length === 3 || h.length === 4) {
     h = [...h.slice(0, 3)].map((c) => c + c).join("");
@@ -258,7 +259,11 @@ export function isDarkInk(color?: string): boolean {
 const MASK_BLOCK = /(<(defs|clipPath|mask)\b[\s\S]*?<\/\2>)/g;
 const PAINT_ATTR = /\b(fill|stroke)="([^"]+)"/g;
 
-function paintedColors(svg: string): string[] {
+/**
+ * 导出只为单测：`<defs>` / `<clipPath>` / `<mask>` 里的颜色是遮罩语义、不算墨色，
+ * 这条排除规则是 `adaptSvgToTheme` 判断单墨色的前提。
+ */
+export function paintedColors(svg: string): string[] {
   return [...svg.replace(MASK_BLOCK, "").matchAll(PAINT_ATTR)].map((m) => m[2]);
 }
 

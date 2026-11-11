@@ -175,6 +175,26 @@
 
 #### P2-3-1 `useTemplateValues` 的四条核心路径此前零直接覆盖
 
+#### P2-3-2 图标取色逻辑四条纯函数零覆盖，另发现一处注释与代码不一致
+
+- 位置：[`src/icons/extracted/index.ts`](src/icons/extracted/index.ts)
+- 现状：`hexChannels` / `paintedColors` / `isDarkInk` / `adaptSvgToTheme` 四条
+  此前只有 `needsLightBacking` 被间接跑到，剩下全是零覆盖。而它们是这个文件里
+  唯一有分支的地方：三位/四位 hex 缩写展开、`<defs>`/`<clipPath>`/`<mask>`
+  遮罩色不算墨色、单墨色图标才改写成 `currentColor`、遮罩块在改写时必须原样保留。
+- 处理：导出 `hexChannels` 与 `paintedColors`（另两个本来就是 exported），
+  新增 [tests/icons/extractedColorLogic.test.ts](tests/icons/extractedColorLogic.test.ts)
+  21 个用例，把上面每条分支钉住。
+- 状态：**已完成**
+- 测试：`pnpm vitest run tests/icons/extractedColorLogic.test.ts` 21 passed；
+  `pnpm typecheck`、prettier 通过；全量 `pnpm vitest run` **4 075 passed / 0 failed**
+- ⚠️ **发现一处注释与代码不一致（未改，只记录）**：
+  `isDarkInk` 的注释写「三个通道都很低（深红、深蓝这类有色的深色不算）」，
+  但实现是 `Math.max(...rgb) <= 0x50`——于是 `#300000`（深红）、`#000030`（深蓝）
+  都判成墨色，与注释相反。影响面：这类图标会被改写成 `currentColor`，
+  在深色卡片上跟着文字色变浅。测试按**现实行为**断言并把分歧写进用例名，
+  没有改代码——要改属于视觉决策，得先看图。
+
 - 位置：[`src/components/providers/forms/hooks/useTemplateValues.ts`](src/components/providers/forms/hooks/useTemplateValues.ts)
 - 现状：`collectTemplatePaths` / `getValueAtPath` / `setValueAtPath` /
   `applyTemplateValuesToConfigString` 四条**模块私有**，只能隔着 hook 间接覆盖，
@@ -316,6 +336,12 @@
   这条顺带把每张卡 render 时的取色开销归零，且可以用「名单与运行时分析结果逐 key
   相等」的测试兜住。
 - 状态：**待办**（收益已实测，见下；改动面大且收益薄，排在不改档）
+- 补一次实测校准此前「1~3 ms」的估计：在 vitest（dev、未打包）里
+  `await import("@/icons/extracted")` 20 次，**每次 74.57 ms**——但那个数里绝大部分是
+  vite 对 154 个模块的逐个转换，不是生产成本。生产上这 180 KB 是那个 566 kB 共享块
+  里的一段字符串字面量，chunk 下载后 V8 只需解析它一次，按 GB/s 量级折算约
+  0.2~0.4 ms。判定不变：为一个 0.3 ms 的解析把 `ProviderIcon` 改成异步、还要核对
+  currentColor 不退化，不划算。
 - 附带把那条「顺带」也量了，免得下一轮再琢磨一遍：`needsLightBacking` 的取色判断
   热路径每轮（154 个 key 全查一遍）**0.041 ms**，冷路径（含 102 个 SVG 的解析与
   取色）是一次性的 1~5 ms 量级。把它固化成预计算名单只能省掉这两项里更小的那个，
