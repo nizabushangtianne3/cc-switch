@@ -649,17 +649,72 @@ parseDiff 22 / routingValidation 23 / sessionRowHeight 8）。剩余未覆盖文
 `fullCommand` 是单行格式化包装，`UsageSettingsSheet.tsx` 没有私有顶层函数，
 其余是 UI 基元——按同一标准继续补的边际收益已经很低。
 
+### 第四轮：`log_request` 每请求重建常量 SQL，并把纯计算留在全局 DB 锁内
+
+- 位置：[`src-tauri/src/proxy/usage/logger.rs`](src-tauri/src/proxy/usage/logger.rs)
+  `UsageLogger::log_request`（每个代理请求都要在这里落一行 `proxy_request_logs`）
+- 现状：原实现有三处叠加。
+  1. `format!("{insert_verb} INTO proxy_request_logs (26 列) VALUES (?1..?26)")`：
+     字符串内容只随动词在 `INSERT OR IGNORE` / `INSERT OR REPLACE` 之间变化，
+     却每个请求都 `format!` 出一条约 1.4 KB 的 String（一次堆分配 + 一次整段拷贝）。
+  2. `conn.execute(&sql, ...)`：rusqlite 的 `Connection::execute` 内部就是
+     `prepare(sql)`，**每次调用都重新解析这段 SQL**。同类的 DAO 全都用了
+     `prepare_cached`——`database/dao/providers.rs` 11 处、`dao/proxy.rs` 6 处、
+     `dao/settings.rs` 2 处、`services/session_usage.rs` 4 处、`usage_stats.rs` 4 处；
+     只有这条每请求的热路径没用。`services/usage_stats.rs:806` 的注释甚至已经写明
+     「prepare_cached 稳定命中，也省掉每行的 format! 分配」——同一个优化在别处做了，
+     唯独漏了这里。
+  3. `lock_conn!(self.db.conn)` 在函数第 2 行就取锁，随后锁内做了 5 次 `to_string()`、
+     `chrono::Utc::now()`、`is_cache_inclusive_app` 字符串比较、
+     `UsageSemantic::from_log`（4 次 String clone）、`bound_error_message`。
+     `Database::conn` 是 `Mutex<Connection>` 且**全进程唯一**（`database/mod.rs:82`），
+     锁内多待一微秒就是所有 DAO 一起多等。
+
+- 处理：列清单与 26 个占位符提成一份 `const`，两条语句按动词用 `LazyLock<String>`
+  各拼一次（进程内首条日志时），之后每次只是一个 `&str` 选择；`execute` 换成
+  `prepare_cached`；纯计算全部挪到取锁之前，`drop(stmt)` / `drop(conn)` 在写完行、
+  发通知之前显式释放。锁的获取次数、持锁期间的库操作顺序（读 `load_existing_semantic`
+  → 可能的兜底读 → INSERT）完全不变，原子性不变。
+- 证据（`cargo test --lib --release perf_probe -- --ignored --nocapture`，
+  同一进程内 A/B，两侧 SQL 文本由测试断言逐字节一致）：
+
+  | 环节 | 改造前 | 改造后 | 降幅 |
+  | --- | --- | --- | --- |
+  | 拼 SQL | 0.160 µs/次 | 0.000 µs/次 | -100% |
+  | 准备语句 | 7.609 µs/次 | 0.307 µs/次 | **-96.0%** |
+  | 合计（每行日志） | 7.769 µs | 0.307 µs | **-7.46 µs** |
+
+  同一轮探针的其它读数作参照：`full forward, pure passthrough` 1.097 ms、
+  `serialize to bytes` 0.427 ms。这 7.46 µs 约占纯透传整条转发的 0.7%——绝对量不大，
+  但它是每请求必付、且原先付在全局 DB 锁内的一份；并发落库时收益比串行读数更明显。
+
+- 同类余量扫描：`\.execute\(&?\s*format!` 全仓扫完，生产代码只剩 2 处，都在
+  `database/schema.rs` 的建表 / 迁移路径。另外 7 个出现 `let sql = format!` 的文件
+  （`session_manager/content.rs`、`services/session_usage{,_opencode}.rs`、
+  `services/usage_stats.rs`、`services/sql_helpers.rs`、`dao/mcp.rs`）插进来的都是
+  表名 / 列名 / 可变 WHERE 子句，是**真动态**、提不成常量，且都不在每请求路径上。
+  结论：**这一类只有 `log_request` 一处，已收口。**
+- 状态：**已完成**
+- 测试（新增 2 个，`proxy::usage::logger::tests` 从 11 → 13 个）：
+  - `log_request_binds_every_declared_column`：写满一行、把 26 列逐一读回来比对，
+    把「列数 / 占位符数 / 参数个数」钉在运行时。列清单是从 `format!` 提成常量的，
+    差一个占位符只有真写一行时才报错，必须有能看见它的用例。
+  - `both_log_sql_statements_declare_the_same_columns`：两条语句的列清单与 26 个
+    占位符必须共用同一份，且各自 26 / 26 对齐。
+
 ### 验证矩阵（本账本全部改动的收口）
 
 后续每个提交都在本地跑过下面这些，不依赖 CI：
 
 | 维度 | 命令 | 结果 |
 | --- | --- | --- |
-| Rust 单元 + 集成测试 | `cargo test --lib -j 2` | 5 007 passed / 0 failed / 19 ignored |
-| Rust 集成测试 | `cargo test --tests -j 2` | 218 passed / 0 failed |
 | Rust lint | `cargo clippy --lib --all-targets` | 0 warning |
 | Rust 格式 | `cargo fmt --check` | 干净 |
-| Rust release 编译 | `cargo build --lib --release` | 9m18s 通过（fat LTO、codegen-units=1） |
+| Rust 单元 + 集成测试 | `cargo test --lib -j 2` | 5 009 passed / 0 failed / 20 ignored |
+| Rust 集成测试 | `cargo test --tests -j 2` | 5 227 = 5 009 lib + 218 集成 |
+| Rust lint | `cargo clippy --lib --all-targets` | 0 warning |
+| Rust 格式 | `cargo fmt --check` | 干净 |
+| Rust release 编译 | `cargo test --lib --release perf_probe` | 28m30s 通过（编译 release profile 的 lib 并链接测试二进制，覆盖面大于单独 `cargo build --lib --release`） |
 | Rust 全部 feature | `cargo clippy/test --all-features` | 0 warning / 5 007 passed |
 | 前端类型 | `pnpm typecheck` | 通过 |
 | 前端格式 | `pnpm prettier --check` | 通过（`useClaudeAccountQuota.test.tsx` 是改动前就有的既有问题，未动） |
@@ -675,6 +730,16 @@ parseDiff 22 / routingValidation 23 / sessionRowHeight 8）。剩余未覆盖文
 按 AGENTS.md 第 5 条清掉这两个可再生目录后回到 24.3 GB。`debug/incremental` 是
 纯编译器缓存、`release` 是可再生产物，删了只让下一次构建变慢，不影响任何源数据。
 
+- **C 盘剩余空间低于约 3 GB 时，`cargo test --tests` 会以 `link.exe` 退出码 1318
+  随机失败**（2026-11-12 实测）：16 个集成测试二进制并行链接，先后在
+  `provider_service` 和 `skill_sync` 两个不同目标上报同样的错，`-j 1` 也复现。
+  当时 C 盘只剩 2.60 GB、`debug/incremental` 15.72 GB。逐文件删掉
+  `src-tauri/target/debug/incremental`（3 933 个文件、纯编译器缓存）后回到
+  17.15 GB，同样命令立刻全过。**看到 1318 先看磁盘，不要怀疑自己的改动。**
+- 删除做法：`Get-ChildItem -Recurse -File` 之后逐个
+  `[System.IO.File]::Delete($f.FullName)`，不用 `Remove-Item -Recurse`
+  （AGENTS.md 的 Windows 安全规则），删完再滚掉空目录。删前用
+  `Resolve-Path` 验一次目标确实在工作区内。
 
 ## 落地清单（第一轮，提交 da72f940）
 

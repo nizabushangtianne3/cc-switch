@@ -8,6 +8,7 @@ use crate::services::sql_helpers::{INPUT_TOKEN_SEMANTICS_FRESH, INPUT_TOKEN_SEMA
 use crate::services::usage_stats::{find_model_pricing_row, is_placeholder_pricing_model};
 use rusqlite::OptionalExtension;
 use rust_decimal::Decimal;
+use std::sync::LazyLock;
 
 /// `proxy_request_logs.error_message` 的字符数上限。上游错误体（中转站整页
 /// HTML、长 JSON）原样入库时，高频报错能把库撑到数 GB（#6706）。按字符而非
@@ -113,6 +114,26 @@ pub struct UsageLogger<'a> {
     db: &'a Database,
 }
 
+/// `proxy_request_logs` 的列清单与 26 个占位符。两个动词共用同一份，
+/// 免得把这段 SQL 在源码里抄两遍。
+const PROXY_REQUEST_LOGS_COLUMNS: &str = "\
+INTO proxy_request_logs (
+    request_id, provider_id, api_key_id, app_type, model, request_model, pricing_model,
+    input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+    input_token_semantics,
+    input_cost_usd, output_cost_usd, cache_read_cost_usd, cache_creation_cost_usd, total_cost_usd,
+    latency_ms, first_token_ms, status_code, error_message, session_id,
+    provider_type, is_streaming, cost_multiplier, created_at
+) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)";
+
+/// 落库语句只在进程内首条日志时拼一次。`prepare_cached` 按 SQL 文本命中
+/// rusqlite 的语句缓存，之后每个请求都是查表 + 绑定参数：既不重新解析
+/// 这段 SQL，也不再为它分配。
+pub(crate) static INSERT_OR_IGNORE_LOG_SQL: LazyLock<String> =
+    LazyLock::new(|| format!("INSERT OR IGNORE {PROXY_REQUEST_LOGS_COLUMNS}"));
+static INSERT_OR_REPLACE_LOG_SQL: LazyLock<String> =
+    LazyLock::new(|| format!("INSERT OR REPLACE {PROXY_REQUEST_LOGS_COLUMNS}"));
+
 impl<'a> UsageLogger<'a> {
     pub fn new(db: &'a Database) -> Self {
         Self { db }
@@ -120,8 +141,8 @@ impl<'a> UsageLogger<'a> {
 
     /// 记录成功的请求
     pub fn log_request(&self, log: &RequestLog) -> Result<(), AppError> {
-        let conn = crate::database::lock_conn!(self.db.conn);
-
+        // 纯计算全部在取锁之前做完：`db.conn` 是全进程唯一的一把互斥量，
+        // 每个代理请求都要在这里落一行，锁内多待一微秒就是所有 DAO 一起多等。
         let (input_cost, output_cost, cache_read_cost, cache_creation_cost, total_cost) =
             if let Some(cost) = &log.cost {
                 (
@@ -141,6 +162,7 @@ impl<'a> UsageLogger<'a> {
                 )
             };
 
+        let error_message = log.error_message.as_deref().map(bound_error_message);
         let created_at = chrono::Utc::now().timestamp();
         let input_token_semantics =
             if crate::services::sql_helpers::is_cache_inclusive_app(log.app_type.as_str()) {
@@ -149,6 +171,8 @@ impl<'a> UsageLogger<'a> {
                 INPUT_TOKEN_SEMANTICS_FRESH
             };
         let semantic = UsageSemantic::from_log(log, input_token_semantics);
+
+        let conn = crate::database::lock_conn!(self.db.conn);
         let existing = Self::load_existing_semantic(&conn, &log.request_id)?;
 
         let (request_id, replace_session_log, collision) = match existing {
@@ -182,55 +206,48 @@ impl<'a> UsageLogger<'a> {
             }
         };
 
-        let insert_verb = if replace_session_log {
-            "INSERT OR REPLACE"
+        // 两条语句只差动词，列清单与 26 个占位符完全相同：常量拼一次缓存住，
+        // 别再每个请求 format! 出一条 1.4 KB 的 SQL，也别再每次重新解析它。
+        let sql: &str = if replace_session_log {
+            &INSERT_OR_REPLACE_LOG_SQL
         } else {
-            "INSERT OR IGNORE"
+            &INSERT_OR_IGNORE_LOG_SQL
         };
-        let error_message = log.error_message.as_deref().map(bound_error_message);
-        let sql = format!(
-            "{insert_verb} INTO proxy_request_logs (
-                request_id, provider_id, api_key_id, app_type, model, request_model, pricing_model,
-                input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
-                input_token_semantics,
-                input_cost_usd, output_cost_usd, cache_read_cost_usd, cache_creation_cost_usd, total_cost_usd,
-                latency_ms, first_token_ms, status_code, error_message, session_id,
-                provider_type, is_streaming, cost_multiplier, created_at
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)"
-        );
-        let affected_rows = conn
-            .execute(
-                &sql,
-                rusqlite::params![
-                    request_id,
-                    log.provider_id,
-                    log.api_key_id.clone().unwrap_or_default(),
-                    log.app_type,
-                    log.model,
-                    log.request_model,
-                    log.pricing_model,
-                    log.usage.input_tokens,
-                    log.usage.output_tokens,
-                    log.usage.cache_read_tokens,
-                    log.usage.cache_creation_tokens,
-                    input_token_semantics,
-                    input_cost,
-                    output_cost,
-                    cache_read_cost,
-                    cache_creation_cost,
-                    total_cost,
-                    log.latency_ms as i64,
-                    log.first_token_ms.map(|v| v as i64),
-                    log.status_code as i64,
-                    error_message,
-                    log.session_id,
-                    log.provider_type,
-                    log.is_streaming as i64,
-                    log.cost_multiplier,
-                    created_at,
-                ],
-            )
+        let mut stmt = conn
+            .prepare_cached(sql)
             .map_err(|e| AppError::Database(format!("记录请求日志失败: {e}")))?;
+        let affected_rows = stmt
+            .execute(rusqlite::params![
+                request_id,
+                log.provider_id,
+                log.api_key_id.clone().unwrap_or_default(),
+                log.app_type,
+                log.model,
+                log.request_model,
+                log.pricing_model,
+                log.usage.input_tokens,
+                log.usage.output_tokens,
+                log.usage.cache_read_tokens,
+                log.usage.cache_creation_tokens,
+                input_token_semantics,
+                input_cost,
+                output_cost,
+                cache_read_cost,
+                cache_creation_cost,
+                total_cost,
+                log.latency_ms as i64,
+                log.first_token_ms.map(|v| v as i64),
+                log.status_code as i64,
+                error_message,
+                log.session_id,
+                log.provider_type,
+                log.is_streaming as i64,
+                log.cost_multiplier,
+                created_at,
+            ])
+            .map_err(|e| AppError::Database(format!("记录请求日志失败: {e}")))?;
+        drop(stmt);
+        drop(conn);
 
         if affected_rows > 0 {
             if collision {
@@ -728,6 +745,164 @@ mod tests {
         assert_eq!(count, 1);
         assert_eq!(request_model, "req-model");
         Ok(())
+    }
+
+    /// 列清单是从 `format!` 提成常量的：占位符个数或绑定参数只要和列数差一个，
+    /// rusqlite 就只在真正写一行时才报错。写满一行再把 26 列逐一读回来，
+    /// 把「列数 / 占位符数 / 参数个数」钉在运行时。
+    #[test]
+    fn log_request_binds_every_declared_column() -> Result<(), AppError> {
+        let db = Database::memory()?;
+        let logger = UsageLogger::new(&db);
+        let log = RequestLog {
+            request_id: "all-columns".to_string(),
+            provider_id: "provider-p".to_string(),
+            api_key_id: Some("key-fp".to_string()),
+            app_type: "codex".to_string(),
+            model: "model-m".to_string(),
+            request_model: "req-m".to_string(),
+            pricing_model: "price-m".to_string(),
+            usage: TokenUsage {
+                input_tokens: 11,
+                output_tokens: 22,
+                cache_read_tokens: 33,
+                cache_creation_tokens: 44,
+                cache_creation_1h_tokens: 55,
+                model: None,
+                message_id: None,
+            },
+            cost: Some(CostBreakdown {
+                input_cost: Decimal::new(11, 6),
+                output_cost: Decimal::new(22, 6),
+                cache_read_cost: Decimal::new(33, 6),
+                cache_creation_cost: Decimal::new(44, 6),
+                total_cost: Decimal::new(110, 6),
+            }),
+            latency_ms: 1234,
+            first_token_ms: Some(56),
+            status_code: 418,
+            error_message: Some("boom".to_string()),
+            session_id: Some("sess-1".to_string()),
+            provider_type: Some("codex".to_string()),
+            is_streaming: true,
+            cost_multiplier: "1.5".to_string(),
+        };
+        logger.log_request(&log)?;
+
+        let expected_semantics = if crate::services::sql_helpers::is_cache_inclusive_app("codex") {
+            INPUT_TOKEN_SEMANTICS_TOTAL
+        } else {
+            INPUT_TOKEN_SEMANTICS_FRESH
+        };
+        let conn = crate::database::lock_conn!(db.conn);
+        // 26 列各自按真实类型读出，再统一成文本：列数对不上时这一行直接失败，
+        // 比留一个 12 项以上就没有 Debug 的元组更好定位。
+        let written: Vec<String> = conn.query_row(
+            "SELECT request_id, provider_id, api_key_id, app_type, model, request_model, pricing_model,
+                    input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+                    input_token_semantics,
+                    input_cost_usd, output_cost_usd, cache_read_cost_usd, cache_creation_cost_usd, total_cost_usd,
+                    latency_ms, first_token_ms, status_code, error_message, session_id,
+                    provider_type, is_streaming, cost_multiplier, created_at
+             FROM proxy_request_logs WHERE request_id = 'all-columns'",
+            [],
+            |row| {
+                Ok(vec![
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, String>(6)?,
+                    row.get::<_, i64>(7)?.to_string(),
+                    row.get::<_, i64>(8)?.to_string(),
+                    row.get::<_, i64>(9)?.to_string(),
+                    row.get::<_, i64>(10)?.to_string(),
+                    row.get::<_, i64>(11)?.to_string(),
+                    row.get::<_, String>(12)?,
+                    row.get::<_, String>(13)?,
+                    row.get::<_, String>(14)?,
+                    row.get::<_, String>(15)?,
+                    row.get::<_, String>(16)?,
+                    row.get::<_, i64>(17)?.to_string(),
+                    row.get::<_, i64>(18)?.to_string(),
+                    row.get::<_, i64>(19)?.to_string(),
+                    row.get::<_, String>(20)?,
+                    row.get::<_, String>(21)?,
+                    row.get::<_, String>(22)?,
+                    row.get::<_, i64>(23)?.to_string(),
+                    row.get::<_, String>(24)?,
+                    row.get::<_, i64>(25)?.to_string(),
+                ])
+            },
+        )?;
+        drop(conn);
+
+        let created_at = written[25].parse::<i64>().expect("真实时间戳");
+        assert!(created_at > 0, "created_at 要落成真实时间戳");
+        let expected = vec![
+            "all-columns".to_string(),
+            "provider-p".to_string(),
+            "key-fp".to_string(),
+            "codex".to_string(),
+            "model-m".to_string(),
+            "req-m".to_string(),
+            "price-m".to_string(),
+            "11".to_string(),
+            "22".to_string(),
+            "33".to_string(),
+            "44".to_string(),
+            expected_semantics.to_string(),
+            "0.000011".to_string(),
+            "0.000022".to_string(),
+            "0.000033".to_string(),
+            "0.000044".to_string(),
+            "0.000110".to_string(),
+            "1234".to_string(),
+            "56".to_string(),
+            "418".to_string(),
+            "boom".to_string(),
+            "sess-1".to_string(),
+            "codex".to_string(),
+            "1".to_string(),
+            "1.5".to_string(),
+            written[25].clone(),
+        ];
+        assert_eq!(written, expected, "26 列必须逐一落在声明的顺序上");
+        Ok(())
+    }
+
+    /// 两条落库语句只差动词：列清单和 26 个占位符必须共用同一份。改漏一边，
+    /// 写入就会在个别分支上少绑一列，而那种错只在对应分支被触发时才炸。
+    #[test]
+    fn both_log_sql_statements_declare_the_same_columns() {
+        /// 列清单加占位符：两条语句唯一共享的部分。
+        fn shared(sql: &str) -> &str {
+            sql.split_once("INTO proxy_request_logs")
+                .expect("两条语句都写 proxy_request_logs")
+                .1
+        }
+
+        assert_eq!(
+            shared(&INSERT_OR_IGNORE_LOG_SQL),
+            shared(&INSERT_OR_REPLACE_LOG_SQL)
+        );
+        assert!(INSERT_OR_IGNORE_LOG_SQL.starts_with("INSERT OR IGNORE INTO proxy_request_logs"));
+        assert!(INSERT_OR_REPLACE_LOG_SQL.starts_with("INSERT OR REPLACE INTO proxy_request_logs"));
+        for sql in [&*INSERT_OR_IGNORE_LOG_SQL, &*INSERT_OR_REPLACE_LOG_SQL] {
+            let (columns, placeholders) = shared(sql)
+                .split_once(") VALUES (")
+                .expect("列清单之后跟着占位符");
+            let column_count = columns.split(',').filter(|c| !c.trim().is_empty()).count();
+            let placeholder_count = placeholders
+                .trim_end_matches(')')
+                .split(',')
+                .filter(|slot| !slot.trim().is_empty())
+                .count();
+            assert_eq!(column_count, 26, "{sql}");
+            assert_eq!(placeholder_count, 26, "{sql}");
+        }
     }
 
     #[test]

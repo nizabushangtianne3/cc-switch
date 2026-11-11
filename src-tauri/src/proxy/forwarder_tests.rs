@@ -5644,6 +5644,41 @@ mod perf_probe {
 
         requests.lock().await.clone()
     }
+
+    /// 每个代理请求都要落一行 usage。改造前每行都 `format!` 出一条约 1.4 KB 的
+    /// SQL，再让 rusqlite 每次重新解析它；改造后是静态常量 + 语句缓存。
+    /// 同一进程内对照两条路径，避免跨轮测量的机器噪声。
+    #[test]
+    #[ignore]
+    fn log_request_sql_costs() {
+        use crate::proxy::usage::logger::INSERT_OR_IGNORE_LOG_SQL;
+
+        let db = Database::memory().expect("in-memory db");
+        // 探针不需要 lock_conn! 的错误映射：拿不到锁就该直接炸掉。
+        let conn = db.conn.lock().expect("db conn");
+        let iterations = 20_000;
+
+        let sql: &str = &INSERT_OR_IGNORE_LOG_SQL;
+        let columns = &sql["INSERT OR IGNORE ".len()..];
+        // 静态常量的内容就是这条 format! 的结果：改造前后写出的 SQL 逐字节一致。
+        assert_eq!(sql, &format!("INSERT OR IGNORE {columns}"));
+
+        time_calls("format! SQL per log", iterations, || {
+            std::hint::black_box(format!("INSERT OR IGNORE {columns}"));
+        });
+        time_calls("static SQL per log", iterations, || {
+            std::hint::black_box(sql);
+        });
+        // 每次 prepare 都要重新解析这条 1.4 KB 的 SQL，是改造前真正的大头；
+        // prepare_cached 第一次之后只查表，所以两边的迭代次数分开给。
+        time_calls("prepare (re-parses SQL)", iterations / 10, || {
+            std::hint::black_box(conn.prepare(sql).unwrap());
+        });
+        time_calls("prepare_cached (statement cache)", iterations, || {
+            std::hint::black_box(conn.prepare_cached(sql).unwrap());
+        });
+        drop(conn);
+    }
 }
 
 /// Drop 不能 await，所以递减必须同步生效：不进 tokio runtime 也立刻可见。
